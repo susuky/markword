@@ -1,10 +1,11 @@
+import html
 import re
 import tempfile
 
 import gradio as gr
 import markdown as md
 from docx import Document
-
+from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Pt, RGBColor
 from weasyprint import HTML
@@ -89,12 +90,81 @@ _MERMAID_BLOCK_RE = re.compile(
 _MD_EXTENSIONS = [
     'tables',
     'fenced_code',
-    'codehilite',
     'toc',
-    'nl2br',
     'sane_lists',
     'smarty',
 ]
+
+
+_PREVIEW_CSS = '''
+body {
+    font-family: "Noto Sans CJK TC", "Noto Sans CJK SC", "WenQuanYi Micro Hei",
+                 "Microsoft JhengHei", "PingFang TC", sans-serif;
+    line-height: 1.8;
+    color: #1e293b;
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 1.5rem;
+    background: #fff;
+}
+h1 { color: #1e3a5f; border-bottom: 2px solid #6366f1; padding-bottom: .3em; }
+h2 { color: #334155; border-bottom: 1px solid #e2e8f0; padding-bottom: .2em; }
+h3 { color: #475569; }
+code {
+    background: #eef2ff;
+    color: #4338ca;
+    padding: 0.15em 0.4em;
+    border-radius: 4px;
+    font-size: 0.9em;
+    font-family: "JetBrains Mono", "Fira Code", "Noto Sans Mono CJK TC", monospace;
+}
+pre {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    padding: 1em;
+    border-radius: 8px;
+    overflow-x: auto;
+}
+pre code {
+    background: transparent;
+    color: #334155;
+    padding: 0;
+}
+blockquote {
+    border-left: 4px solid #6366f1;
+    margin: 1em 0;
+    padding: 0.5em 1em;
+    background: #f8fafc;
+    color: #475569;
+}
+table {
+    border-collapse: collapse;
+    width: 100%;
+    margin: 1em 0;
+}
+th, td {
+    border: 1px solid #cbd5e1;
+    padding: 0.6em 1em;
+    text-align: left;
+}
+th {
+    background: #f1f5f9;
+    font-weight: 600;
+}
+tr:nth-child(even) { background: #f8fafc; }
+img { max-width: 100%; height: auto; }
+a { color: #6366f1; text-decoration: none; }
+a:hover { text-decoration: underline; }
+hr { border: none; border-top: 1px solid #e2e8f0; margin: 2em 0; }
+.mermaid {
+    display: flex;
+    justify-content: center;
+    margin: 1.5em 0;
+    background: #f8fafc;
+    padding: 1em;
+    border-radius: 8px;
+}
+'''
 
 
 def _replace_mermaid_blocks(md_text: str) -> tuple[str, bool]:
@@ -137,106 +207,49 @@ def _build_html_page(body_html: str, has_mermaid: bool = False) -> str:
             '<script>mermaid.initialize({startOnLoad:true, theme:"default"});</script>'
         )
 
-    return f'''<!DOCTYPE html>
-<html lang="zh-Hant">
-<head>
-<meta charset="UTF-8">
-<style>
-body {{
-    font-family: "Noto Sans CJK TC", "Noto Sans CJK SC", "WenQuanYi Micro Hei",
-                 "Microsoft JhengHei", "PingFang TC", sans-serif;
-    line-height: 1.8;
-    color: #1e293b;
-    max-width: 800px;
-    margin: 0 auto;
-    padding: 2rem;
-    background: #fff;
-}}
-h1 {{ color: #1e3a5f; border-bottom: 2px solid #6366f1; padding-bottom: .3em; }}
-h2 {{ color: #334155; border-bottom: 1px solid #e2e8f0; padding-bottom: .2em; }}
-h3 {{ color: #475569; }}
-code {{
-    background: #f1f5f9;
-    padding: 0.15em 0.4em;
-    border-radius: 4px;
-    font-size: 0.9em;
-    font-family: "JetBrains Mono", "Fira Code", "Noto Sans Mono CJK TC", monospace;
-}}
-pre {{
-    background: #1e293b;
-    color: #e2e8f0;
-    padding: 1em;
-    border-radius: 8px;
-    overflow-x: auto;
-}}
-pre code {{
-    background: transparent;
-    color: inherit;
-    padding: 0;
-}}
-blockquote {{
-    border-left: 4px solid #6366f1;
-    margin: 1em 0;
-    padding: 0.5em 1em;
-    background: #f8fafc;
-    color: #475569;
-}}
-table {{
-    border-collapse: collapse;
-    width: 100%;
-    margin: 1em 0;
-}}
-th, td {{
-    border: 1px solid #cbd5e1;
-    padding: 0.6em 1em;
-    text-align: left;
-}}
-th {{
-    background: #f1f5f9;
-    font-weight: 600;
-}}
-tr:nth-child(even) {{ background: #f8fafc; }}
-img {{ max-width: 100%; height: auto; }}
-a {{ color: #6366f1; text-decoration: none; }}
-a:hover {{ text-decoration: underline; }}
-hr {{ border: none; border-top: 1px solid #e2e8f0; margin: 2em 0; }}
-.mermaid {{
-    display: flex;
-    justify-content: center;
-    margin: 1.5em 0;
-    background: #f8fafc;
-    padding: 1em;
-    border-radius: 8px;
-}}
-</style>
-{mermaid_script}
-</head>
-<body>
-{body_html}
-</body>
-</html>'''
+    return (
+        f'<!DOCTYPE html>\n<html lang="zh-Hant">\n<head>\n'
+        f'<meta charset="UTF-8">\n'
+        f'<style>{_PREVIEW_CSS}</style>\n'
+        f'{mermaid_script}\n'
+        f'</head>\n<body>\n{body_html}\n</body>\n</html>'
+    )
 
 
 def render_preview(md_text: str) -> str:
     '''
     Convert markdown text to styled HTML for live preview.
 
-    Handles mermaid code blocks by replacing them with <div class="mermaid">
-    and loading mermaid.js from CDN.
+    Uses an iframe with srcdoc to ensure Mermaid.js scripts execute properly
+    since Gradio strips script tags from gr.HTML components.
 
     Args:
         md_text: Raw markdown string.
 
     Returns:
-        Rendered HTML string wrapped in a styled document.
+        An iframe HTML tag containing the rendered preview, or a placeholder
+        message if input is empty.
     '''
     if not md_text or not md_text.strip():
-        return '<div style="color:#94a3b8;padding:2rem;text-align:center;">' \
-               '請在左側輸入 Markdown 文字以預覽</div>'
+        return (
+            '<div style="color:#94a3b8;padding:2rem;text-align:center;'
+            'font-size:1.1em;">請在左側輸入 Markdown 文字以預覽</div>'
+        )
 
     processed, has_mermaid = _replace_mermaid_blocks(md_text)
     body_html = md.markdown(processed, extensions=_MD_EXTENSIONS)
-    return _build_html_page(body_html, has_mermaid)
+    full_html = _build_html_page(body_html, has_mermaid)
+
+    # Wrap in an iframe via srcdoc so that <script> tags (mermaid.js) execute.
+    # Gradio's gr.HTML sanitizes script tags, but iframe srcdoc is preserved.
+    escaped = html.escape(full_html, quote=True)
+    return (
+        f'<iframe srcdoc="{escaped}" '
+        f'style="width:100%;min-height:600px;border:1px solid #e2e8f0;'
+        f'border-radius:8px;background:#fff;" '
+        f'sandbox="allow-scripts allow-same-origin">'
+        f'</iframe>'
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -293,9 +306,6 @@ def export_pdf(md_text: str) -> str | None:
 # ---------------------------------------------------------------------------
 
 _HEADING_RE = re.compile(r'^(#{1,6})\s+(.+)$')
-_BOLD_RE = re.compile(r'\*\*(.+?)\*\*|__(.+?)__')
-_ITALIC_RE = re.compile(r'(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)|(?<!_)_(?!_)(.+?)(?<!_)_(?!_)')
-_CODE_INLINE_RE = re.compile(r'`([^`]+)`')
 _UL_RE = re.compile(r'^[-*+]\s+(.+)$')
 _OL_RE = re.compile(r'^\d+\.\s+(.+)$')
 _BLOCKQUOTE_RE = re.compile(r'^>\s*(.*)$')
@@ -407,7 +417,6 @@ def export_word(md_text: str) -> str | None:
             run = p.add_run(f'{label}\n{code_text}' if label else code_text)
             _set_cjk_font(run, font_name='Noto Sans Mono CJK TC', size_pt=9)
             run.font.color.rgb = RGBColor(0x1e, 0x29, 0x3b)
-            from docx.oxml import OxmlElement
             pPr = p._element.get_or_add_pPr()
             shd = OxmlElement('w:shd')
             shd.set(qn('w:fill'), 'F1F5F9')
@@ -557,6 +566,20 @@ graph TD
 '''
 
 
+# Custom CSS injected into gr.Blocks to fix tab layout width issues.
+_GRADIO_CUSTOM_CSS = '''
+.gradio-container {
+    max-width: 100% !important;
+}
+.tabs > .tab-content {
+    width: 100% !important;
+}
+.tabitem {
+    width: 100% !important;
+}
+'''
+
+
 def create_app() -> gr.Blocks:
     '''
     Construct the Gradio UI blocks application with tabs for word counting
@@ -570,7 +593,11 @@ def create_app() -> gr.Blocks:
         secondary_hue='slate',
     )
 
-    with gr.Blocks(theme=theme, title='文字工具箱 - 字數統計 & Markdown 預覽') as demo:
+    with gr.Blocks(
+        theme=theme,
+        title='文字工具箱 - 字數統計 & Markdown 預覽',
+        css=_GRADIO_CUSTOM_CSS,
+    ) as demo:
         gr.Markdown(
             '''
             # 📝 文字工具箱
@@ -581,8 +608,8 @@ def create_app() -> gr.Blocks:
         with gr.Tabs():
             # =============== Tab 1: Word Count ===============
             with gr.Tab('📊 字數統計'):
-                with gr.Row():
-                    with gr.Column(scale=3):
+                with gr.Row(equal_height=False):
+                    with gr.Column(scale=3, min_width=400):
                         text_input = gr.Textbox(
                             label='請貼上或輸入文字',
                             placeholder='在此處貼上文字...',
@@ -595,7 +622,7 @@ def create_app() -> gr.Blocks:
                                 '清空內容', variant='secondary',
                             )
 
-                    with gr.Column(scale=2):
+                    with gr.Column(scale=2, min_width=300):
                         gr.Markdown('### 📊 統計結果')
                         with gr.Row():
                             total_chars_num = gr.Number(
@@ -650,12 +677,12 @@ def create_app() -> gr.Blocks:
 
             # =============== Tab 2: Markdown Preview ===============
             with gr.Tab('🔍 Markdown 預覽'):
-                with gr.Row():
-                    with gr.Column(scale=1):
+                with gr.Row(equal_height=False):
+                    with gr.Column(scale=1, min_width=400):
                         md_input = gr.Textbox(
                             label='Markdown 原始碼',
                             placeholder='在此輸入 Markdown 文字...',
-                            lines=24,
+                            lines=28,
                             max_lines=50,
                             value=_SAMPLE_MD,
                         )
@@ -673,9 +700,9 @@ def create_app() -> gr.Blocks:
                             label='Word 下載', visible=False,
                         )
 
-                    with gr.Column(scale=1):
+                    with gr.Column(scale=1, min_width=400):
+                        gr.Markdown('### 👁️ 即時預覽')
                         preview_html = gr.HTML(
-                            label='即時預覽',
                             value=render_preview(_SAMPLE_MD),
                         )
 

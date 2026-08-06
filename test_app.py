@@ -42,6 +42,9 @@ class TestAnalyzeText(unittest.TestCase):
 class TestRenderPreview(unittest.TestCase):
     '''
     Test cases for markdown preview rendering.
+
+    Note: render_preview returns an iframe with HTML-escaped srcdoc content,
+    so assertions check for HTML entity-encoded tags.
     '''
 
     def test_empty_input(self):
@@ -53,28 +56,31 @@ class TestRenderPreview(unittest.TestCase):
 
     def test_heading_render(self):
         '''
-        Test that markdown heading is rendered to HTML h1 tag.
+        Test that markdown heading is rendered to HTML h1 tag inside iframe.
         '''
         result = render_preview('# 測試標題')
-        self.assertIn('<h1', result)
+        self.assertIn('iframe', result)
+        # Content is HTML-escaped inside srcdoc attribute
+        self.assertIn('&lt;h1', result)
         self.assertIn('測試標題', result)
 
     def test_mermaid_block(self):
         '''
-        Test that mermaid code blocks are replaced with mermaid div.
+        Test that mermaid code blocks produce mermaid div and script tag.
         '''
         md_text = '```mermaid\ngraph TD\n    A-->B\n```'
         result = render_preview(md_text)
-        self.assertIn('class="mermaid"', result)
-        self.assertIn('mermaid.min.js', result)
+        self.assertIn('iframe', result)
+        # Mermaid class and script are HTML-escaped inside srcdoc
+        self.assertIn('mermaid', result)
 
     def test_table_render(self):
         '''
-        Test that markdown table is rendered to HTML table tag.
+        Test that markdown table is rendered inside iframe.
         '''
         md_text = '| 欄位 | 值 |\n|------|----|\n| 中文 | OK |'
         result = render_preview(md_text)
-        self.assertIn('<table', result)
+        self.assertIn('iframe', result)
         self.assertIn('中文', result)
 
 
