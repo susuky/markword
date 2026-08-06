@@ -1,0 +1,15 @@
+[Unit]
+Description=Gradio Text Word Count Service
+After=network.target
+
+[Service]
+Type=simple
+User=nvidia
+WorkingDirectory=/home/nvidia/ping/hello/wordcount
+ExecStart=/home/nvidia/ping/hello/wordcount/.venv/bin/python app.py
+Restart=always
+RestartSec=5
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target

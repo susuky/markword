@@ -1,0 +1,9 @@
+[project]
+name = "wordcount-gradio"
+version = "0.1.0"
+description = "Lightweight Gradio text word counter application"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "gradio>=4.0.0",
+]
