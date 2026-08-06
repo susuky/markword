@@ -20,6 +20,9 @@ from weasyprint import HTML
 
 from themes import THEMES, Theme
 
+EXPORT_DIR = os.path.abspath('exports')
+os.makedirs(EXPORT_DIR, exist_ok=True)
+
 
 # ---------------------------------------------------------------------------
 # Word count logic
@@ -305,7 +308,7 @@ def export_pdf(md_text: str, theme_name: str = 'Light') -> str | None:
     theme = THEMES.get(theme_name, THEMES['Light'])
     html_str = _render_md_to_html_for_export(md_text, theme)
 
-    tmp_dir = tempfile.mkdtemp(prefix='md_exp_')
+    tmp_dir = tempfile.mkdtemp(dir=EXPORT_DIR, prefix='pdf_')
     out_path = os.path.join(tmp_dir, filename)
     HTML(string=html_str).write_pdf(out_path)
     return out_path
@@ -597,7 +600,7 @@ def export_word(md_text: str, theme_name: str = 'Light') -> str | None:
             p.add_run('─' * 50)
             continue
 
-    tmp_dir = tempfile.mkdtemp(prefix='md_exp_')
+    tmp_dir = tempfile.mkdtemp(dir=EXPORT_DIR, prefix='word_')
     out_path = os.path.join(tmp_dir, filename)
     doc.save(out_path)
     return out_path
@@ -853,7 +856,7 @@ def create_app() -> gr.Blocks:
                     '''
                     path = export_pdf(md_text, theme_name)
                     if path:
-                        return f'/file={path}'
+                        return f'/gradio_api/file={path}'
                     return ''
 
                 export_pdf_btn.click(
@@ -873,7 +876,7 @@ def create_app() -> gr.Blocks:
                     '''
                     path = export_word(md_text, theme_name)
                     if path:
-                        return f'/file={path}'
+                        return f'/gradio_api/file={path}'
                     return ''
 
                 export_word_btn.click(
@@ -895,4 +898,5 @@ if __name__ == '__main__':
         server_name='0.0.0.0',
         server_port=27860,
         share=False,
+        allowed_paths=[EXPORT_DIR, tempfile.gettempdir()],
     )
