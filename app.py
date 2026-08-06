@@ -16,6 +16,8 @@ import gradio as gr
 import markdown as md
 from weasyprint import HTML
 
+from themes import THEMES, Theme
+
 
 # ---------------------------------------------------------------------------
 # Word count logic
@@ -96,116 +98,26 @@ _MERMAID_BLOCK_RE = re.compile(
 _MD_EXTENSIONS = [
     'tables',
     'fenced_code',
+    'codehilite',
     'toc',
     'sane_lists',
     'smarty',
 ]
 
-_PREVIEW_CSS = '''
-body {
-    font-family: "Noto Sans CJK TC", "Noto Sans CJK SC", "WenQuanYi Micro Hei",
-                 "Microsoft JhengHei", "PingFang TC", sans-serif;
-    line-height: 1.8;
-    color: #1e293b;
-    max-width: 800px;
-    margin: 0 auto;
-    padding: 1.5rem;
-    background: #fff;
-}
-h1 { color: #1e3a5f; border-bottom: 2px solid #6366f1; padding-bottom: .3em; }
-h2 { color: #334155; border-bottom: 1px solid #e2e8f0; padding-bottom: .2em; }
-h3 { color: #475569; }
-code {
-    background: #eef2ff;
-    color: #4338ca;
-    padding: 0.15em 0.4em;
-    border-radius: 4px;
-    font-size: 0.9em;
-    font-family: "JetBrains Mono", "Fira Code", "Noto Sans Mono CJK TC", monospace;
-}
-pre {
-    background: #f8fafc;
-    border: 1px solid #e2e8f0;
-    padding: 1em;
-    border-radius: 8px;
-    overflow-x: auto;
-}
-pre code {
-    background: transparent;
-    color: #334155;
-    padding: 0;
-}
-blockquote {
-    border-left: 4px solid #6366f1;
-    margin: 1em 0;
-    padding: 0.5em 1em;
-    background: #f8fafc;
-    color: #475569;
-}
-table {
-    border-collapse: collapse;
-    width: 100%;
-    margin: 1em 0;
-}
-th, td {
-    border: 1px solid #cbd5e1;
-    padding: 0.6em 1em;
-    text-align: left;
-}
-th {
-    background: #f1f5f9;
-    font-weight: 600;
-}
-tr:nth-child(even) { background: #f8fafc; }
-img { max-width: 100%; height: auto; }
-a { color: #6366f1; text-decoration: none; }
-a:hover { text-decoration: underline; }
-hr { border: none; border-top: 1px solid #e2e8f0; margin: 2em 0; }
-span.chk {
-    color: #10b981;
-    font-weight: bold;
-    font-size: 1.1em;
-}
-span.crs {
-    color: #ef4444;
-    font-weight: bold;
-    font-size: 1.1em;
-}
-.mermaid {
-    display: flex;
-    justify-content: center;
-    margin: 1.5em 0;
-    background: #f8fafc;
-    padding: 1em;
-    border-radius: 8px;
-}
-.mermaid-img {
-    text-align: center;
-    margin: 1.5em 0;
-}
-.mermaid-img img {
-    max-width: 100%;
-    height: auto;
-    border-radius: 8px;
-    border: 1px solid #e2e8f0;
-    padding: 8px;
-    background: #fff;
-}
-'''
 
-
-def _fetch_mermaid_png(code: str) -> bytes | None:
+def _fetch_mermaid_png(code: str, mermaid_theme: str = 'default') -> bytes | None:
     '''
     Fetch rendered PNG bytes for a Mermaid diagram from mermaid.ink API.
 
     Args:
         code: Mermaid diagram source string.
+        mermaid_theme: Mermaid theme identifier ('default' or 'dark').
 
     Returns:
         PNG image bytes, or None if fetching fails.
     '''
     try:
-        payload = json.dumps({'code': code})
+        payload = json.dumps({'code': code, 'mermaid': {'theme': mermaid_theme}})
         b64_str = base64.urlsafe_b64encode(payload.encode('utf-8')).decode('utf-8')
         url = f'https://mermaid.ink/img/{b64_str}'
         req = urllib.request.Request(
@@ -255,13 +167,14 @@ def _replace_mermaid_blocks(md_text: str) -> tuple[str, bool]:
     return _MERMAID_BLOCK_RE.sub(_replacer, md_text), has_mermaid
 
 
-def _build_html_page(body_html: str, has_mermaid: bool = False) -> str:
+def _build_html_page(body_html: str, theme: Theme, has_mermaid: bool = False) -> str:
     '''
     Wrap rendered HTML body in a full HTML document with CSS styling
     and optional Mermaid.js script.
 
     Args:
         body_html: The rendered HTML content.
+        theme: Selected Theme instance.
         has_mermaid: Whether to include mermaid.js script tag.
 
     Returns:
@@ -272,27 +185,28 @@ def _build_html_page(body_html: str, has_mermaid: bool = False) -> str:
         mermaid_script = (
             '<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/'
             'mermaid.min.js"></script>\n'
-            '<script>mermaid.initialize({startOnLoad:true, theme:"default"});</script>'
+            f'<script>mermaid.initialize({{startOnLoad:true, theme:"{theme.mermaid_theme}"}});</script>'
         )
 
     return (
         f'<!DOCTYPE html>\n<html lang="zh-Hant">\n<head>\n'
         f'<meta charset="UTF-8">\n'
-        f'<style>{_PREVIEW_CSS}</style>\n'
+        f'<style>{theme.css}</style>\n'
         f'{mermaid_script}\n'
         f'</head>\n<body>\n{body_html}\n</body>\n</html>'
     )
 
 
-def render_preview(md_text: str) -> str:
+def render_preview(md_text: str, theme_name: str = 'Light') -> str:
     '''
-    Convert markdown text to styled HTML for live preview.
+    Convert markdown text to styled HTML for live preview using selected theme.
 
     Uses an iframe with srcdoc to ensure Mermaid.js scripts execute properly
     since Gradio strips script tags from gr.HTML components.
 
     Args:
         md_text: Raw markdown string.
+        theme_name: Selected theme name ('Light', 'Dark', 'Nord', 'Dracula').
 
     Returns:
         An iframe HTML tag containing the rendered preview, or a placeholder
@@ -304,15 +218,16 @@ def render_preview(md_text: str) -> str:
             'font-size:1.1em;">請在左側輸入 Markdown 文字以預覽</div>'
         )
 
+    theme = THEMES.get(theme_name, THEMES['Light'])
     processed, has_mermaid = _replace_mermaid_blocks(md_text)
     body_html = md.markdown(processed, extensions=_MD_EXTENSIONS)
-    full_html = _build_html_page(body_html, has_mermaid)
+    full_html = _build_html_page(body_html, theme, has_mermaid)
 
     escaped = html.escape(full_html, quote=True)
     return (
-        f'<iframe srcdoc="{escaped}" '
-        f'style="width:100%;min-height:600px;border:1px solid #e2e8f0;'
-        f'border-radius:8px;background:#fff;" '
+        f'<iframe class="preview-iframe" srcdoc="{escaped}" '
+        f'style="width:100%;height:850px;min-height:850px;border:1px solid #cbd5e1;'
+        f'border-radius:8px;background:{theme.body_bg};" '
         f'sandbox="allow-scripts allow-same-origin">'
         f'</iframe>'
     )
@@ -322,19 +237,20 @@ def render_preview(md_text: str) -> str:
 # Export: PDF
 # ---------------------------------------------------------------------------
 
-def _render_md_to_html_for_export(md_text: str) -> str:
+def _render_md_to_html_for_export(md_text: str, theme: Theme) -> str:
     '''
     Convert markdown to a print-ready HTML document with rendered Mermaid diagrams.
 
     Args:
         md_text: Raw markdown string.
+        theme: Selected Theme instance.
 
     Returns:
         Complete HTML string suitable for weasyprint PDF generation.
     '''
     def _mermaid_replacer(match: re.Match) -> str:
         code = match.group(1).strip()
-        png_data = _fetch_mermaid_png(code)
+        png_data = _fetch_mermaid_png(code, theme.mermaid_theme)
         if png_data:
             b64_img = base64.b64encode(png_data).decode('utf-8')
             return f'<div class="mermaid-img"><img src="data:image/png;base64,{b64_img}" alt="Mermaid Diagram" /></div>'
@@ -343,15 +259,16 @@ def _render_md_to_html_for_export(md_text: str) -> str:
     processed = _MERMAID_BLOCK_RE.sub(_mermaid_replacer, md_text)
     body_html = md.markdown(processed, extensions=_MD_EXTENSIONS)
     body_html = _sanitize_emojis_for_export(body_html)
-    return _build_html_page(body_html, has_mermaid=False)
+    return _build_html_page(body_html, theme, has_mermaid=False)
 
 
-def export_pdf(md_text: str) -> str | None:
+def export_pdf(md_text: str, theme_name: str = 'Light') -> str | None:
     '''
-    Export markdown text to a PDF file.
+    Export markdown text to a PDF file styled with the selected theme.
 
     Args:
         md_text: Raw markdown string.
+        theme_name: Selected theme name.
 
     Returns:
         Path to the generated PDF file, or None if input is empty.
@@ -359,7 +276,8 @@ def export_pdf(md_text: str) -> str | None:
     if not md_text or not md_text.strip():
         return None
 
-    html_str = _render_md_to_html_for_export(md_text)
+    theme = THEMES.get(theme_name, THEMES['Light'])
+    html_str = _render_md_to_html_for_export(md_text, theme)
     tmp = tempfile.NamedTemporaryFile(suffix='.pdf', delete=False, prefix='md_export_')
     HTML(string=html_str).write_pdf(tmp.name)
     return tmp.name
@@ -392,19 +310,25 @@ def _set_cjk_font(run, font_name: str = 'Noto Sans CJK TC', size_pt: int = 11):
 def _append_node_to_paragraph(
     p,
     node,
+    theme: Theme,
     is_bold: bool = False,
     is_italic: bool = False,
     is_code: bool = False,
+    code_class: str = '',
 ) -> None:
     '''
     Recursively parse HTML DOM nodes and append formatted runs to a Word paragraph.
 
+    Applies syntax token colors to Pygments highlighted code blocks.
+
     Args:
         p: Word paragraph object.
         node: BeautifulSoup HTML node.
+        theme: Selected Theme instance.
         is_bold: Whether current context is bold text.
         is_italic: Whether current context is italic text.
         is_code: Whether current context is code text.
+        code_class: Pygments span class for code syntax highlighting.
     '''
     if isinstance(node, NavigableString):
         text = str(node)
@@ -417,41 +341,63 @@ def _append_node_to_paragraph(
             )
             run.bold = is_bold
             run.italic = is_italic
+
+            # Apply syntax highlighting colors in code blocks
             if is_code:
-                run.font.color.rgb = RGBColor(0x43, 0x38, 0xca)
-            if '✓' in text:
-                run.font.color.rgb = RGBColor(0x10, 0xb9, 0x81)
-                run.bold = True
-            elif '✗' in text:
-                run.font.color.rgb = RGBColor(0xef, 0x44, 0x44)
-                run.bold = True
+                if code_class in ('k', 'kn', 'kr', 'kd'):
+                    run.font.color.rgb = RGBColor(0xd7, 0x3a, 0x49)  # Keyword - Red/Pink
+                    run.bold = True
+                elif code_class in ('s', 's1', 's2', 'sd'):
+                    run.font.color.rgb = RGBColor(0x03, 0x2f, 0x62)  # String - Dark Blue/Green
+                elif code_class in ('c', 'c1', 'cm', 'ch'):
+                    run.font.color.rgb = RGBColor(0x6a, 0x73, 0x7d)  # Comment - Gray
+                    run.italic = True
+                elif code_class in ('nf', 'fm'):
+                    run.font.color.rgb = RGBColor(0x6f, 0x42, 0xc1)  # Function - Purple
+                    run.bold = True
+                elif code_class in ('mi', 'mf', 'mh'):
+                    run.font.color.rgb = RGBColor(0x00, 0x5c, 0x9e)  # Number - Blue
+                else:
+                    run.font.color.rgb = theme.docx_colors.code_text
+            else:
+                if '✓' in text:
+                    run.font.color.rgb = RGBColor(0x10, 0xb9, 0x81)
+                    run.bold = True
+                elif '✗' in text:
+                    run.font.color.rgb = RGBColor(0xef, 0x44, 0x44)
+                    run.bold = True
+
         return
 
     tag = node.name.lower() if node.name else ''
     child_bold = is_bold or tag in ('strong', 'b')
     child_italic = is_italic or tag in ('em', 'i')
     child_code = is_code or tag in ('code', 'kbd', 'samp')
+    child_class = node.get('class', [''])[0] if node.name else ''
 
     for child in node.children:
         _append_node_to_paragraph(
             p,
             child,
+            theme,
             is_bold=child_bold,
             is_italic=child_italic,
             is_code=child_code,
+            code_class=child_class or code_class,
         )
 
 
-def export_word(md_text: str) -> str | None:
+def export_word(md_text: str, theme_name: str = 'Light') -> str | None:
     '''
-    Export markdown text to a Word (.docx) file with CJK font support.
+    Export markdown text to a Word (.docx) file styled with the selected theme.
 
     Converts Markdown to HTML DOM elements and maps them into Word document
     structures (headings, formatted text runs, lists, tables, blockquotes,
-    code blocks, and embedded Mermaid diagram PNGs).
+    Pygments code blocks, and embedded Mermaid diagram PNGs).
 
     Args:
         md_text: Raw markdown string.
+        theme_name: Selected theme name.
 
     Returns:
         Path to the generated .docx file, or None if input is empty.
@@ -459,6 +405,7 @@ def export_word(md_text: str) -> str | None:
     if not md_text or not md_text.strip():
         return None
 
+    theme = THEMES.get(theme_name, THEMES['Light'])
     doc = Document()
 
     # Set default font for the document
@@ -478,7 +425,7 @@ def export_word(md_text: str) -> str | None:
 
     def _mermaid_word_replacer(match: re.Match) -> str:
         code = match.group(1).strip()
-        png_data = _fetch_mermaid_png(code)
+        png_data = _fetch_mermaid_png(code, theme.mermaid_theme)
         placeholder_id = f'MERMAID_IMG_PLACEHOLDER_{len(mermaid_images)}'
         if png_data:
             tmp_img = tempfile.NamedTemporaryFile(suffix='.png', delete=False, prefix='mermaid_')
@@ -490,7 +437,7 @@ def export_word(md_text: str) -> str | None:
 
     processed_md = _MERMAID_BLOCK_RE.sub(_mermaid_word_replacer, md_text)
 
-    # Convert Markdown to HTML
+    # Convert Markdown to HTML with Pygments codehilite
     body_html = md.markdown(processed_md, extensions=_MD_EXTENSIONS)
     body_html = body_html.replace('✅', '✓').replace('❌', '✗')
 
@@ -512,9 +459,15 @@ def export_word(md_text: str) -> str | None:
             level = int(tag[1])
             h = doc.add_heading(level=min(level, 9))
             for child in element.children:
-                _append_node_to_paragraph(h, child)
+                _append_node_to_paragraph(h, child, theme)
+
+            # Apply theme color to headings
+            h_color = theme.docx_colors.h1 if level == 1 else (
+                theme.docx_colors.h2 if level == 2 else theme.docx_colors.h3
+            )
             for run in h.runs:
                 _set_cjk_font(run, size_pt=max(18 - level * 2, 11))
+                run.font.color.rgb = h_color
             continue
 
         # Paragraph
@@ -530,7 +483,7 @@ def export_word(md_text: str) -> str | None:
 
             p = doc.add_paragraph()
             for child in element.children:
-                _append_node_to_paragraph(p, child)
+                _append_node_to_paragraph(p, child, theme)
             continue
 
         # Lists (ul / ol)
@@ -541,7 +494,7 @@ def export_word(md_text: str) -> str | None:
                 for child in li.children:
                     if child.name in ('ul', 'ol'):
                         continue
-                    _append_node_to_paragraph(p, child)
+                    _append_node_to_paragraph(p, child, theme)
             continue
 
         # Blockquote
@@ -550,21 +503,34 @@ def export_word(md_text: str) -> str | None:
             p.paragraph_format.left_indent = Inches(0.25)
             p.add_run('│ ')
             for child in element.children:
-                _append_node_to_paragraph(p, child, is_italic=True)
+                _append_node_to_paragraph(p, child, theme, is_italic=True)
             for run in p.runs:
-                run.font.color.rgb = RGBColor(0x47, 0x55, 0x69)
+                run.font.color.rgb = theme.docx_colors.quote
             continue
 
-        # Code block (pre)
+        # Code block (pre / codehilite)
+        if tag in ('pre', 'div') and 'codehilite' in element.get('class', []):
+            code_pre = element.find('pre') or element
+            p = doc.add_paragraph()
+            for child in code_pre.children:
+                _append_node_to_paragraph(p, child, theme, is_code=True)
+
+            pPr = p._element.get_or_add_pPr()
+            shd = OxmlElement('w:shd')
+            shd.set(qn('w:fill'), theme.docx_colors.code_block_bg)
+            shd.set(qn('w:val'), 'clear')
+            pPr.append(shd)
+            continue
+
         if tag == 'pre':
             code_text = element.get_text()
             p = doc.add_paragraph()
             run = p.add_run(code_text)
             _set_cjk_font(run, font_name='Noto Sans Mono CJK TC', size_pt=9.5)
-            run.font.color.rgb = RGBColor(0x33, 0x41, 0x55)
+            run.font.color.rgb = theme.docx_colors.body
             pPr = p._element.get_or_add_pPr()
             shd = OxmlElement('w:shd')
-            shd.set(qn('w:fill'), 'F8FAFC')
+            shd.set(qn('w:fill'), theme.docx_colors.code_block_bg)
             shd.set(qn('w:val'), 'clear')
             pPr.append(shd)
             continue
@@ -584,9 +550,16 @@ def export_word(md_text: str) -> str | None:
                             cell.text = ''
                             p = cell.paragraphs[0]
                             for child in cell_el.children:
-                                _append_node_to_paragraph(p, child, is_bold=(ri == 0))
+                                _append_node_to_paragraph(p, child, theme, is_bold=(ri == 0))
                             for run in p.runs:
                                 _set_cjk_font(run, size_pt=10)
+
+                            if ri == 0:
+                                tcPr = cell._element.get_or_add_tcPr()
+                                shd = OxmlElement('w:shd')
+                                shd.set(qn('w:fill'), theme.docx_colors.table_header_bg)
+                                shd.set(qn('w:val'), 'clear')
+                                tcPr.append(shd)
             continue
 
         # Horizontal rule
@@ -615,7 +588,7 @@ _SAMPLE_MD = '''# Markdown 預覽範例
 - ✅ 清單 (有序 / 無序)
 - ✅ 表格
 - ✅ 引言區塊
-- ✅ 程式碼區塊
+- ✅ 程式碼區塊 (含語法高亮)
 - ✅ Mermaid 流程圖
 
 ## 表格範例
@@ -624,17 +597,22 @@ _SAMPLE_MD = '''# Markdown 預覽範例
 |------|------|------|
 | 中文支援 | ✅ | 完整 CJK 支援 |
 | Mermaid | ✅ | 流程圖、序列圖等 |
-| 匯出 PDF | ✅ | 支援中文字型 |
-| 匯出 Word | ✅ | .docx 格式 |
+| 匯出 PDF | ✅ | 支援中文字型 & 主題配色 |
+| 匯出 Word | ✅ | .docx 格式 & 語法高亮 |
 
-## 程式碼區塊
+## 程式碼區塊 (Python)
 
 ```python
-def hello():
-    print('你好世界！')
+def hello_world(name: str) -> str:
+    # 這是註解說明
+    greeting = f'你好，{name}！'
+    print(greeting)
+    return greeting
+
+hello_world('使用者')
 ```
 
-> 這是一段引言，支援中文排版。
+> 這是一段引言，支援中文排版與主題配色。
 
 ## Mermaid 流程圖
 
@@ -662,13 +640,26 @@ _GRADIO_CUSTOM_CSS = '''
 .tabitem {
     width: 100% !important;
 }
+div[data-testid="html"], .gradio-html {
+    background: transparent !important;
+    border: none !important;
+    padding: 0 !important;
+    box-shadow: none !important;
+}
+.preview-iframe {
+    width: 100% !important;
+    height: 850px !important;
+    min-height: 850px !important;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+}
 '''
 
 
 def create_app() -> gr.Blocks:
     '''
     Construct the Gradio UI blocks application with tabs for word counting
-    and markdown preview with export capabilities.
+    and markdown preview with theme switching and export capabilities.
 
     Returns:
         gr.Blocks instance with two tabs: word count and markdown preview.
@@ -686,7 +677,7 @@ def create_app() -> gr.Blocks:
         gr.Markdown(
             '''
             # 📝 文字工具箱
-            字數統計 · Markdown 即時預覽 · 匯出 PDF / Word
+            字數統計 · Markdown 即時預覽 (含多主題/語法高亮) · 匯出 PDF / Word
             '''
         )
 
@@ -767,67 +758,69 @@ def create_app() -> gr.Blocks:
                         md_input = gr.Textbox(
                             label='Markdown 原始碼',
                             placeholder='在此輸入 Markdown 文字...',
-                            lines=28,
+                            lines=26,
                             max_lines=50,
                             value=_SAMPLE_MD,
                         )
+
+                        theme_select = gr.Dropdown(
+                            choices=list(THEMES.keys()),
+                            value='Light',
+                            label='🎨 選擇渲染主題',
+                            interactive=True,
+                        )
+
                         with gr.Row():
-                            export_pdf_btn = gr.Button(
+                            export_pdf_btn = gr.DownloadButton(
                                 '📄 匯出 PDF', variant='primary',
                             )
-                            export_word_btn = gr.Button(
+                            export_word_btn = gr.DownloadButton(
                                 '📝 匯出 Word', variant='primary',
                             )
-                        pdf_download = gr.File(
-                            label='PDF 下載', visible=False,
-                        )
-                        word_download = gr.File(
-                            label='Word 下載', visible=False,
-                        )
 
                     with gr.Column(scale=1, min_width=400):
                         gr.Markdown('### 👁️ 即時預覽')
                         preview_html = gr.HTML(
-                            value=render_preview(_SAMPLE_MD),
+                            value=render_preview(_SAMPLE_MD, 'Light'),
                         )
 
-                # Live preview
+                # Live preview on text or theme change
                 md_input.change(
                     fn=render_preview,
-                    inputs=[md_input],
+                    inputs=[md_input, theme_select],
                     outputs=[preview_html],
                 )
 
-                # PDF export
-                def _do_export_pdf(md_text: str):
+                theme_select.change(
+                    fn=render_preview,
+                    inputs=[md_input, theme_select],
+                    outputs=[preview_html],
+                )
+
+                # PDF export (direct download)
+                def _do_export_pdf(md_text: str, theme_name: str) -> str | None:
                     '''
-                    Handle PDF export button click.
+                    Handle PDF export button click and return filepath for download.
                     '''
-                    path = export_pdf(md_text)
-                    if path:
-                        return gr.update(value=path, visible=True)
-                    return gr.update(visible=False)
+                    return export_pdf(md_text, theme_name)
 
                 export_pdf_btn.click(
                     fn=_do_export_pdf,
-                    inputs=[md_input],
-                    outputs=[pdf_download],
+                    inputs=[md_input, theme_select],
+                    outputs=[export_pdf_btn],
                 )
 
-                # Word export
-                def _do_export_word(md_text: str):
+                # Word export (direct download)
+                def _do_export_word(md_text: str, theme_name: str) -> str | None:
                     '''
-                    Handle Word export button click.
+                    Handle Word export button click and return filepath for download.
                     '''
-                    path = export_word(md_text)
-                    if path:
-                        return gr.update(value=path, visible=True)
-                    return gr.update(visible=False)
+                    return export_word(md_text, theme_name)
 
                 export_word_btn.click(
                     fn=_do_export_word,
-                    inputs=[md_input],
-                    outputs=[word_download],
+                    inputs=[md_input, theme_select],
+                    outputs=[export_word_btn],
                 )
 
     return demo

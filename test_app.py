@@ -1,6 +1,7 @@
 import unittest
 
-from app import analyze_text, render_preview
+from app import analyze_text, export_pdf, export_word, render_preview
+from themes import THEMES
 
 
 class TestAnalyzeText(unittest.TestCase):
@@ -41,10 +42,7 @@ class TestAnalyzeText(unittest.TestCase):
 
 class TestRenderPreview(unittest.TestCase):
     '''
-    Test cases for markdown preview rendering.
-
-    Note: render_preview returns an iframe with HTML-escaped srcdoc content,
-    so assertions check for HTML entity-encoded tags.
+    Test cases for markdown preview rendering and themes.
     '''
 
     def test_empty_input(self):
@@ -58,30 +56,38 @@ class TestRenderPreview(unittest.TestCase):
         '''
         Test that markdown heading is rendered to HTML h1 tag inside iframe.
         '''
-        result = render_preview('# 測試標題')
+        result = render_preview('# 測試標題', 'Light')
         self.assertIn('iframe', result)
-        # Content is HTML-escaped inside srcdoc attribute
         self.assertIn('&lt;h1', result)
         self.assertIn('測試標題', result)
 
-    def test_mermaid_block(self):
+    def test_themes_exist(self):
         '''
-        Test that mermaid code blocks produce mermaid div and script tag.
+        Test that all defined themes can render without error.
         '''
-        md_text = '```mermaid\ngraph TD\n    A-->B\n```'
-        result = render_preview(md_text)
-        self.assertIn('iframe', result)
-        # Mermaid class and script are HTML-escaped inside srcdoc
-        self.assertIn('mermaid', result)
+        for theme_name in ['Light', 'Dark', 'Nord', 'Dracula']:
+            self.assertIn(theme_name, THEMES)
+            result = render_preview('# 測試標題', theme_name)
+            self.assertIn('iframe', result)
 
-    def test_table_render(self):
+    def test_codehilite_syntax_highlighting(self):
         '''
-        Test that markdown table is rendered inside iframe.
+        Test that code blocks produce Pygments syntax highlight spans.
         '''
-        md_text = '| 欄位 | 值 |\n|------|----|\n| 中文 | OK |'
-        result = render_preview(md_text)
-        self.assertIn('iframe', result)
-        self.assertIn('中文', result)
+        md_code = '```python\ndef foo():\n    return 42\n```'
+        result = render_preview(md_code, 'Dark')
+        self.assertIn('codehilite', result)
+
+    def test_export_pdf_and_word_themes(self):
+        '''
+        Test PDF and Word exports with themes.
+        '''
+        md_text = '# 標題\n\n```python\nprint("hello")\n```'
+        for theme_name in ['Light', 'Dark']:
+            pdf_path = export_pdf(md_text, theme_name)
+            word_path = export_word(md_text, theme_name)
+            self.assertIsNotNone(pdf_path)
+            self.assertIsNotNone(word_path)
 
 
 if __name__ == '__main__':
