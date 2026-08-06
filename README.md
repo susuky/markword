@@ -17,6 +17,10 @@ Gradio 文字字數統計與 Markdown 即時預覽工具，支援 Mermaid 流程
   - **📄 匯出 PDF**：帶有選定主題配色與 Pygments 語法高亮，Mermaid 自動轉為圖檔
   - **📝 匯出 Word (.docx)**：標題主題配色、程式碼區塊語法高亮、表格與 Mermaid 圖片
 
+### Screenshot
+![word count](assets/wordcount.jpg)
+
+![markdown preview](assets/markdown_preview.jpg)
 ---
 
 ## 🚀 快速開始 (使用 `uv`)
