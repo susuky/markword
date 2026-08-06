@@ -1,6 +1,8 @@
+import os
+import time
 import unittest
 
-from app import _get_export_filename, analyze_text, export_pdf, export_word, render_preview
+from app import _cleanup_old_exports, _get_export_filename, analyze_text, export_pdf, export_word, render_preview, EXPORT_DIR
 from themes import THEMES
 
 
@@ -69,6 +71,19 @@ class TestExportFilename(unittest.TestCase):
         filename = _get_export_filename(md_text, 'pdf')
         self.assertTrue(filename.startswith('export_'))
         self.assertTrue(filename.endswith('.pdf'))
+
+    def test_cleanup_old_exports(self):
+        '''
+        Test that _cleanup_old_exports removes old temporary export files.
+        '''
+        dummy_dir = os.path.join(EXPORT_DIR, 'test_old_dir')
+        os.makedirs(dummy_dir, exist_ok=True)
+        # Set mtime to 1 hour ago
+        old_time = time.time() - 3600
+        os.utime(dummy_dir, (old_time, old_time))
+
+        _cleanup_old_exports(max_age_seconds=600)
+        self.assertFalse(os.path.exists(dummy_dir))
 
 
 class TestRenderPreview(unittest.TestCase):

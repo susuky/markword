@@ -4,7 +4,9 @@ import html
 import json
 import os
 import re
+import shutil
 import tempfile
+import time
 import urllib.parse
 import urllib.request
 
@@ -22,6 +24,31 @@ from themes import THEMES, Theme
 
 EXPORT_DIR = os.path.abspath('exports')
 os.makedirs(EXPORT_DIR, exist_ok=True)
+
+
+def _cleanup_old_exports(max_age_seconds: int = 600) -> None:
+    '''
+    Clean up temporary export files and directories older than max_age_seconds.
+
+    Args:
+        max_age_seconds: Age threshold in seconds (default: 600s / 10 minutes).
+    '''
+    try:
+        now = time.time()
+        if not os.path.exists(EXPORT_DIR):
+            return
+        for item in os.listdir(EXPORT_DIR):
+            item_path = os.path.join(EXPORT_DIR, item)
+            try:
+                if now - os.path.getmtime(item_path) > max_age_seconds:
+                    if os.path.isdir(item_path):
+                        shutil.rmtree(item_path, ignore_errors=True)
+                    else:
+                        os.remove(item_path)
+            except Exception:
+                pass
+    except Exception:
+        pass
 
 
 # ---------------------------------------------------------------------------
@@ -304,6 +331,7 @@ def export_pdf(md_text: str, theme_name: str = 'Light') -> str | None:
     if not md_text or not md_text.strip():
         return None
 
+    _cleanup_old_exports()
     filename = _get_export_filename(md_text, ext='pdf')
     theme = THEMES.get(theme_name, THEMES['Light'])
     html_str = _render_md_to_html_for_export(md_text, theme)
@@ -436,6 +464,7 @@ def export_word(md_text: str, theme_name: str = 'Light') -> str | None:
     if not md_text or not md_text.strip():
         return None
 
+    _cleanup_old_exports()
     filename = _get_export_filename(md_text, ext='docx')
     theme = THEMES.get(theme_name, THEMES['Light'])
     doc = Document()

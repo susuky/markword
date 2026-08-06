@@ -1,6 +1,6 @@
 # Gradio 線上文字字數統計 & Markdown 預覽服務
 
-極簡、高效且低依賴的 Gradio 文字字數統計與 Markdown 即時預覽工具，支援多主題切換、Pygments 語法高亮、Mermaid 流程圖渲染以及 PDF / Word 格式匯出。
+Gradio 文字字數統計與 Markdown 即時預覽工具，支援 Mermaid 流程圖渲染以及 PDF / Word 格式匯出。
 
 ## 🌟 功能特點
 
