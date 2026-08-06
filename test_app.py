@@ -1,6 +1,6 @@
 import unittest
 
-from app import analyze_text, export_pdf, export_word, render_preview
+from app import _get_export_filename, analyze_text, export_pdf, export_word, render_preview
 from themes import THEMES
 
 
@@ -38,6 +38,37 @@ class TestAnalyzeText(unittest.TestCase):
         self.assertEqual(eng, 2)
         self.assertEqual(digits, 7)
         self.assertEqual(lines, 2)
+
+
+class TestExportFilename(unittest.TestCase):
+    '''
+    Test cases for export filename determination (_get_export_filename).
+    '''
+
+    def test_h1_header(self):
+        '''
+        Test that filename uses H1 header if present.
+        '''
+        md_text = '# 我的專案報告\n\n這是內容'
+        filename = _get_export_filename(md_text, 'pdf')
+        self.assertEqual(filename, '我的專案報告.pdf')
+
+    def test_h1_with_formatting(self):
+        '''
+        Test H1 header with markdown formatting characters cleaned.
+        '''
+        md_text = '# **重點** *說明*\n\n這是內容'
+        filename = _get_export_filename(md_text, 'docx')
+        self.assertEqual(filename, '重點 說明.docx')
+
+    def test_no_h1_header(self):
+        '''
+        Test fallback to export_{hash} when no H1 header is present.
+        '''
+        md_text = '## H2 標題\n沒有 H1 標題'
+        filename = _get_export_filename(md_text, 'pdf')
+        self.assertTrue(filename.startswith('export_'))
+        self.assertTrue(filename.endswith('.pdf'))
 
 
 class TestRenderPreview(unittest.TestCase):
@@ -80,7 +111,7 @@ class TestRenderPreview(unittest.TestCase):
 
     def test_export_pdf_and_word_themes(self):
         '''
-        Test PDF and Word exports with themes.
+        Test PDF and Word exports with themes and custom filename.
         '''
         md_text = '# 標題\n\n```python\nprint("hello")\n```'
         for theme_name in ['Light', 'Dark']:
@@ -88,6 +119,8 @@ class TestRenderPreview(unittest.TestCase):
             word_path = export_word(md_text, theme_name)
             self.assertIsNotNone(pdf_path)
             self.assertIsNotNone(word_path)
+            self.assertTrue(pdf_path.endswith('標題.pdf'))
+            self.assertTrue(word_path.endswith('標題.docx'))
 
 
 if __name__ == '__main__':

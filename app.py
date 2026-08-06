@@ -1,6 +1,8 @@
 import base64
+import hashlib
 import html
 import json
+import os
 import re
 import tempfile
 import urllib.parse
@@ -103,6 +105,29 @@ _MD_EXTENSIONS = [
     'sane_lists',
     'smarty',
 ]
+
+
+def _get_export_filename(md_text: str, ext: str = 'pdf') -> str:
+    '''
+    Determine default export filename based on H1 header or MD5 content hash.
+
+    Args:
+        md_text: Raw markdown text string.
+        ext: Target file extension without dot (e.g. 'pdf' or 'docx').
+
+    Returns:
+        Clean filename string including extension.
+    '''
+    h1_match = re.search(r'^\s*#\s+(.+)$', md_text, re.MULTILINE)
+    if h1_match:
+        raw_title = h1_match.group(1).strip()
+        raw_title = re.sub(r'[*_`~]', '', raw_title)
+        clean_title = re.sub(r'[\\/:*?"<>|\r\n\t]', '_', raw_title).strip(' ._')
+        if clean_title:
+            return f'{clean_title}.{ext}'
+
+    text_hash = hashlib.md5(md_text.encode('utf-8')).hexdigest()[:8]
+    return f'export_{text_hash}.{ext}'
 
 
 def _fetch_mermaid_png(code: str, mermaid_theme: str = 'default') -> bytes | None:
@@ -276,11 +301,14 @@ def export_pdf(md_text: str, theme_name: str = 'Light') -> str | None:
     if not md_text or not md_text.strip():
         return None
 
+    filename = _get_export_filename(md_text, ext='pdf')
     theme = THEMES.get(theme_name, THEMES['Light'])
     html_str = _render_md_to_html_for_export(md_text, theme)
-    tmp = tempfile.NamedTemporaryFile(suffix='.pdf', delete=False, prefix='md_export_')
-    HTML(string=html_str).write_pdf(tmp.name)
-    return tmp.name
+
+    tmp_dir = tempfile.mkdtemp(prefix='md_exp_')
+    out_path = os.path.join(tmp_dir, filename)
+    HTML(string=html_str).write_pdf(out_path)
+    return out_path
 
 
 # ---------------------------------------------------------------------------
@@ -405,6 +433,7 @@ def export_word(md_text: str, theme_name: str = 'Light') -> str | None:
     if not md_text or not md_text.strip():
         return None
 
+    filename = _get_export_filename(md_text, ext='docx')
     theme = THEMES.get(theme_name, THEMES['Light'])
     doc = Document()
 
@@ -568,9 +597,10 @@ def export_word(md_text: str, theme_name: str = 'Light') -> str | None:
             p.add_run('─' * 50)
             continue
 
-    tmp = tempfile.NamedTemporaryFile(suffix='.docx', delete=False, prefix='md_export_')
-    doc.save(tmp.name)
-    return tmp.name
+    tmp_dir = tempfile.mkdtemp(prefix='md_exp_')
+    out_path = os.path.join(tmp_dir, filename)
+    doc.save(out_path)
+    return out_path
 
 
 # ---------------------------------------------------------------------------
@@ -658,9 +688,11 @@ div[data-testid="html"], .gradio-html {
 _DOWNLOAD_JS = '''
 (url) => {
     if (url) {
+        const rawName = url.split('/').pop();
+        const filename = decodeURIComponent(rawName);
         const a = document.createElement('a');
         a.href = url;
-        a.download = url.split('/').pop().replace('md_export_', '') || 'export';
+        a.download = filename;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
@@ -791,6 +823,10 @@ def create_app() -> gr.Blocks:
                                 '📝 匯出 Word', variant='primary',
                             )
 
+                        # Hidden textboxes to store output file URLs for JS download trigger
+                        pdf_url_box = gr.Textbox(visible=False)
+                        word_url_box = gr.Textbox(visible=False)
+
                     with gr.Column(scale=1, min_width=400):
                         gr.Markdown('### 👁️ 即時預覽')
                         preview_html = gr.HTML(
@@ -810,7 +846,7 @@ def create_app() -> gr.Blocks:
                     outputs=[preview_html],
                 )
 
-                # PDF export (instant single-click download)
+                # PDF export (instant single-click download with custom filename via chained JS)
                 def _do_export_pdf(md_text: str, theme_name: str) -> str:
                     '''
                     Handle PDF export button click and return file URL for JS download.
@@ -823,11 +859,14 @@ def create_app() -> gr.Blocks:
                 export_pdf_btn.click(
                     fn=_do_export_pdf,
                     inputs=[md_input, theme_select],
-                    outputs=[],
+                    outputs=[pdf_url_box],
+                ).then(
+                    fn=None,
+                    inputs=[pdf_url_box],
                     js=_DOWNLOAD_JS,
                 )
 
-                # Word export (instant single-click download)
+                # Word export (instant single-click download with custom filename via chained JS)
                 def _do_export_word(md_text: str, theme_name: str) -> str:
                     '''
                     Handle Word export button click and return file URL for JS download.
@@ -840,7 +879,10 @@ def create_app() -> gr.Blocks:
                 export_word_btn.click(
                     fn=_do_export_word,
                     inputs=[md_input, theme_select],
-                    outputs=[],
+                    outputs=[word_url_box],
+                ).then(
+                    fn=None,
+                    inputs=[word_url_box],
                     js=_DOWNLOAD_JS,
                 )
 
