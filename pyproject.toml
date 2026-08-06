@@ -6,4 +6,7 @@ readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
     "gradio>=4.0.0",
+    "markdown>=3.5",
+    "weasyprint>=60.0",
+    "python-docx>=1.0.0",
 ]
