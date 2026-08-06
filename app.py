@@ -1,13 +1,19 @@
+import base64
 import html
+import json
 import re
 import tempfile
+import urllib.parse
+import urllib.request
 
-import gradio as gr
-import markdown as md
+from bs4 import BeautifulSoup, NavigableString
 from docx import Document
+from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
-from docx.shared import Pt, RGBColor
+from docx.shared import Inches, Pt, RGBColor
+import gradio as gr
+import markdown as md
 from weasyprint import HTML
 
 
@@ -79,7 +85,7 @@ def clear_input() -> tuple[str, int, int, int, int, int, int, int]:
 
 
 # ---------------------------------------------------------------------------
-# Markdown preview logic
+# Markdown preview & Mermaid rendering logic
 # ---------------------------------------------------------------------------
 
 _MERMAID_BLOCK_RE = re.compile(
@@ -94,7 +100,6 @@ _MD_EXTENSIONS = [
     'sane_lists',
     'smarty',
 ]
-
 
 _PREVIEW_CSS = '''
 body {
@@ -156,6 +161,16 @@ img { max-width: 100%; height: auto; }
 a { color: #6366f1; text-decoration: none; }
 a:hover { text-decoration: underline; }
 hr { border: none; border-top: 1px solid #e2e8f0; margin: 2em 0; }
+span.chk {
+    color: #10b981;
+    font-weight: bold;
+    font-size: 1.1em;
+}
+span.crs {
+    color: #ef4444;
+    font-weight: bold;
+    font-size: 1.1em;
+}
 .mermaid {
     display: flex;
     justify-content: center;
@@ -164,13 +179,66 @@ hr { border: none; border-top: 1px solid #e2e8f0; margin: 2em 0; }
     padding: 1em;
     border-radius: 8px;
 }
+.mermaid-img {
+    text-align: center;
+    margin: 1.5em 0;
+}
+.mermaid-img img {
+    max-width: 100%;
+    height: auto;
+    border-radius: 8px;
+    border: 1px solid #e2e8f0;
+    padding: 8px;
+    background: #fff;
+}
 '''
+
+
+def _fetch_mermaid_png(code: str) -> bytes | None:
+    '''
+    Fetch rendered PNG bytes for a Mermaid diagram from mermaid.ink API.
+
+    Args:
+        code: Mermaid diagram source string.
+
+    Returns:
+        PNG image bytes, or None if fetching fails.
+    '''
+    try:
+        payload = json.dumps({'code': code})
+        b64_str = base64.urlsafe_b64encode(payload.encode('utf-8')).decode('utf-8')
+        url = f'https://mermaid.ink/img/{b64_str}'
+        req = urllib.request.Request(
+            url,
+            headers={'User-Agent': 'Mozilla/5.0'}
+        )
+        with urllib.request.urlopen(req, timeout=8) as response:
+            if response.status == 200:
+                return response.read()
+    except Exception:
+        pass
+    return None
+
+
+def _sanitize_emojis_for_export(text: str) -> str:
+    '''
+    Replace color emojis with clean HTML / Unicode symbols for PDF export.
+
+    Args:
+        text: Markdown or HTML text containing color emojis.
+
+    Returns:
+        Sanitized text with standard web symbols.
+    '''
+    text = text.replace('✅', '<span class="chk">✓</span>')
+    text = text.replace('❌', '<span class="crs">✗</span>')
+    return text
 
 
 def _replace_mermaid_blocks(md_text: str) -> tuple[str, bool]:
     '''
     Extract mermaid code blocks and replace them with <div class="mermaid">
-    placeholders for client-side rendering.
+    placeholders for client-side rendering in browser preview.
 
     Args:
         md_text: Raw markdown string.
@@ -240,8 +308,6 @@ def render_preview(md_text: str) -> str:
     body_html = md.markdown(processed, extensions=_MD_EXTENSIONS)
     full_html = _build_html_page(body_html, has_mermaid)
 
-    # Wrap in an iframe via srcdoc so that <script> tags (mermaid.js) execute.
-    # Gradio's gr.HTML sanitizes script tags, but iframe srcdoc is preserved.
     escaped = html.escape(full_html, quote=True)
     return (
         f'<iframe srcdoc="{escaped}" '
@@ -258,27 +324,25 @@ def render_preview(md_text: str) -> str:
 
 def _render_md_to_html_for_export(md_text: str) -> str:
     '''
-    Convert markdown to a print-ready HTML document (no mermaid.js).
-
-    Mermaid blocks are rendered as styled <pre> blocks in the export since
-    mermaid.js requires a browser runtime.
+    Convert markdown to a print-ready HTML document with rendered Mermaid diagrams.
 
     Args:
         md_text: Raw markdown string.
 
     Returns:
-        Complete HTML string suitable for weasyprint.
+        Complete HTML string suitable for weasyprint PDF generation.
     '''
-    def _mermaid_to_pre(match: re.Match) -> str:
+    def _mermaid_replacer(match: re.Match) -> str:
         code = match.group(1).strip()
-        return (
-            f'<pre style="background:#f0f4f8;padding:1em;border-radius:8px;'
-            f'border:1px solid #cbd5e1;font-size:0.85em;white-space:pre-wrap;">'
-            f'[Mermaid Diagram]\n{code}</pre>'
-        )
+        png_data = _fetch_mermaid_png(code)
+        if png_data:
+            b64_img = base64.b64encode(png_data).decode('utf-8')
+            return f'<div class="mermaid-img"><img src="data:image/png;base64,{b64_img}" alt="Mermaid Diagram" /></div>'
+        return f'<pre class="mermaid-fallback">[Mermaid Diagram]\n{html.escape(code)}</pre>'
 
-    processed = _MERMAID_BLOCK_RE.sub(_mermaid_to_pre, md_text)
+    processed = _MERMAID_BLOCK_RE.sub(_mermaid_replacer, md_text)
     body_html = md.markdown(processed, extensions=_MD_EXTENSIONS)
+    body_html = _sanitize_emojis_for_export(body_html)
     return _build_html_page(body_html, has_mermaid=False)
 
 
@@ -305,16 +369,6 @@ def export_pdf(md_text: str) -> str | None:
 # Export: Word (.docx)
 # ---------------------------------------------------------------------------
 
-_HEADING_RE = re.compile(r'^(#{1,6})\s+(.+)$')
-_UL_RE = re.compile(r'^[-*+]\s+(.+)$')
-_OL_RE = re.compile(r'^\d+\.\s+(.+)$')
-_BLOCKQUOTE_RE = re.compile(r'^>\s*(.*)$')
-_HR_RE = re.compile(r'^(-{3,}|_{3,}|\*{3,})$')
-_TABLE_SEP_RE = re.compile(r'^\|[\s\-:|]+\|$')
-_TABLE_ROW_RE = re.compile(r'^\|(.+)\|$')
-_CODE_FENCE_RE = re.compile(r'^```')
-
-
 def _set_cjk_font(run, font_name: str = 'Noto Sans CJK TC', size_pt: int = 11):
     '''
     Set font for a run supporting CJK characters.
@@ -335,43 +389,66 @@ def _set_cjk_font(run, font_name: str = 'Noto Sans CJK TC', size_pt: int = 11):
     rFonts.set(qn('w:eastAsia'), font_name)
 
 
-def _add_styled_paragraph(
-    doc: Document,
-    text: str,
-    style: str = 'Normal',
-    bold: bool = False,
-    italic: bool = False,
-    font_size: int = 11,
-    font_color: RGBColor | None = None,
+def _append_node_to_paragraph(
+    p,
+    node,
+    is_bold: bool = False,
+    is_italic: bool = False,
+    is_code: bool = False,
 ) -> None:
     '''
-    Add a paragraph with CJK font support and optional styling.
+    Recursively parse HTML DOM nodes and append formatted runs to a Word paragraph.
 
     Args:
-        doc: The Document to add the paragraph to.
-        text: Paragraph text.
-        style: Word style name.
-        bold: Whether to bold the text.
-        italic: Whether to italicize the text.
-        font_size: Font size in points.
-        font_color: Optional RGB color for text.
+        p: Word paragraph object.
+        node: BeautifulSoup HTML node.
+        is_bold: Whether current context is bold text.
+        is_italic: Whether current context is italic text.
+        is_code: Whether current context is code text.
     '''
-    p = doc.add_paragraph(style=style)
-    run = p.add_run(text)
-    _set_cjk_font(run, size_pt=font_size)
-    run.bold = bold
-    run.italic = italic
-    if font_color:
-        run.font.color.rgb = font_color
+    if isinstance(node, NavigableString):
+        text = str(node)
+        if text:
+            run = p.add_run(text)
+            _set_cjk_font(
+                run,
+                font_name='Noto Sans Mono CJK TC' if is_code else 'Noto Sans CJK TC',
+                size_pt=9.5 if is_code else 11,
+            )
+            run.bold = is_bold
+            run.italic = is_italic
+            if is_code:
+                run.font.color.rgb = RGBColor(0x43, 0x38, 0xca)
+            if '✓' in text:
+                run.font.color.rgb = RGBColor(0x10, 0xb9, 0x81)
+                run.bold = True
+            elif '✗' in text:
+                run.font.color.rgb = RGBColor(0xef, 0x44, 0x44)
+                run.bold = True
+        return
+
+    tag = node.name.lower() if node.name else ''
+    child_bold = is_bold or tag in ('strong', 'b')
+    child_italic = is_italic or tag in ('em', 'i')
+    child_code = is_code or tag in ('code', 'kbd', 'samp')
+
+    for child in node.children:
+        _append_node_to_paragraph(
+            p,
+            child,
+            is_bold=child_bold,
+            is_italic=child_italic,
+            is_code=child_code,
+        )
 
 
 def export_word(md_text: str) -> str | None:
     '''
     Export markdown text to a Word (.docx) file with CJK font support.
 
-    Parses markdown line-by-line to create structured Word document elements
-    including headings, lists, code blocks, blockquotes, tables, and
-    horizontal rules.
+    Converts Markdown to HTML DOM elements and maps them into Word document
+    structures (headings, formatted text runs, lists, tables, blockquotes,
+    code blocks, and embedded Mermaid diagram PNGs).
 
     Args:
         md_text: Raw markdown string.
@@ -396,119 +473,129 @@ def export_word(md_text: str) -> str | None:
         rPr.insert(0, rFonts)
     rFonts.set(qn('w:eastAsia'), 'Noto Sans CJK TC')
 
-    lines = md_text.split('\n')
-    i = 0
-    while i < len(lines):
-        line = lines[i]
+    # Handle Mermaid diagrams: render to PNG temp files before HTML parsing
+    mermaid_images: dict[str, str] = {}
 
-        # Fenced code block
-        if _CODE_FENCE_RE.match(line):
-            lang = line.strip('`').strip()
-            code_lines = []
-            i += 1
-            while i < len(lines) and not _CODE_FENCE_RE.match(lines[i]):
-                code_lines.append(lines[i])
-                i += 1
-            code_text = '\n'.join(code_lines)
-            label = f'[{lang}]' if lang and lang != 'mermaid' else ''
-            if lang == 'mermaid':
-                label = '[Mermaid Diagram]'
-            p = doc.add_paragraph()
-            run = p.add_run(f'{label}\n{code_text}' if label else code_text)
-            _set_cjk_font(run, font_name='Noto Sans Mono CJK TC', size_pt=9)
-            run.font.color.rgb = RGBColor(0x1e, 0x29, 0x3b)
-            pPr = p._element.get_or_add_pPr()
-            shd = OxmlElement('w:shd')
-            shd.set(qn('w:fill'), 'F1F5F9')
-            shd.set(qn('w:val'), 'clear')
-            pPr.append(shd)
-            i += 1
+    def _mermaid_word_replacer(match: re.Match) -> str:
+        code = match.group(1).strip()
+        png_data = _fetch_mermaid_png(code)
+        placeholder_id = f'MERMAID_IMG_PLACEHOLDER_{len(mermaid_images)}'
+        if png_data:
+            tmp_img = tempfile.NamedTemporaryFile(suffix='.png', delete=False, prefix='mermaid_')
+            tmp_img.write(png_data)
+            tmp_img.close()
+            mermaid_images[placeholder_id] = tmp_img.name
+            return f'<p class="mermaid-img-p">{placeholder_id}</p>'
+        return f'<pre class="code-block">[Mermaid Diagram]\n{code}</pre>'
+
+    processed_md = _MERMAID_BLOCK_RE.sub(_mermaid_word_replacer, md_text)
+
+    # Convert Markdown to HTML
+    body_html = md.markdown(processed_md, extensions=_MD_EXTENSIONS)
+    body_html = body_html.replace('✅', '✓').replace('❌', '✗')
+
+    soup = BeautifulSoup(body_html, 'html.parser')
+
+    for element in soup.children:
+        if isinstance(element, NavigableString):
+            text = str(element).strip()
+            if text:
+                p = doc.add_paragraph()
+                run = p.add_run(text)
+                _set_cjk_font(run)
             continue
 
-        # Heading
-        heading_match = _HEADING_RE.match(line)
-        if heading_match:
-            level = len(heading_match.group(1))
-            text = heading_match.group(2).strip()
-            h = doc.add_heading(text, level=min(level, 9))
+        tag = element.name.lower() if element.name else ''
+
+        # Headings (h1 - h6)
+        if tag in ('h1', 'h2', 'h3', 'h4', 'h5', 'h6'):
+            level = int(tag[1])
+            h = doc.add_heading(level=min(level, 9))
+            for child in element.children:
+                _append_node_to_paragraph(h, child)
             for run in h.runs:
                 _set_cjk_font(run, size_pt=max(18 - level * 2, 11))
-            i += 1
             continue
 
-        # Horizontal rule
-        if _HR_RE.match(line.strip()):
+        # Paragraph
+        if tag == 'p':
+            p_text = element.get_text().strip()
+            if p_text in mermaid_images:
+                img_path = mermaid_images[p_text]
+                p = doc.add_paragraph()
+                p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                run = p.add_run()
+                run.add_picture(img_path, width=Inches(5.5))
+                continue
+
             p = doc.add_paragraph()
-            p.add_run('─' * 50)
-            i += 1
+            for child in element.children:
+                _append_node_to_paragraph(p, child)
             continue
 
-        # Table
-        if _TABLE_ROW_RE.match(line.strip()):
-            rows_data = []
-            while i < len(lines) and _TABLE_ROW_RE.match(lines[i].strip()):
-                if not _TABLE_SEP_RE.match(lines[i].strip()):
-                    cells = [
-                        c.strip()
-                        for c in lines[i].strip().strip('|').split('|')
-                    ]
-                    rows_data.append(cells)
-                i += 1
-            if rows_data:
-                num_cols = max(len(r) for r in rows_data)
-                table = doc.add_table(rows=len(rows_data), cols=num_cols)
-                table.style = 'Table Grid'
-                for ri, row_data in enumerate(rows_data):
-                    for ci, cell_text in enumerate(row_data):
-                        if ci < num_cols:
-                            cell = table.cell(ri, ci)
-                            cell.text = cell_text
-                            for p in cell.paragraphs:
-                                for run in p.runs:
-                                    _set_cjk_font(run, size_pt=10)
-                                    if ri == 0:
-                                        run.bold = True
+        # Lists (ul / ol)
+        if tag in ('ul', 'ol'):
+            list_style = 'List Bullet' if tag == 'ul' else 'List Number'
+            for li in element.find_all('li', recursive=False):
+                p = doc.add_paragraph(style=list_style)
+                for child in li.children:
+                    if child.name in ('ul', 'ol'):
+                        continue
+                    _append_node_to_paragraph(p, child)
             continue
 
         # Blockquote
-        bq_match = _BLOCKQUOTE_RE.match(line)
-        if bq_match:
-            text = bq_match.group(1)
-            _add_styled_paragraph(
-                doc, f'│ {text}',
-                italic=True,
-                font_color=RGBColor(0x47, 0x55, 0x69),
-            )
-            i += 1
+        if tag == 'blockquote':
+            p = doc.add_paragraph()
+            p.paragraph_format.left_indent = Inches(0.25)
+            p.add_run('│ ')
+            for child in element.children:
+                _append_node_to_paragraph(p, child, is_italic=True)
+            for run in p.runs:
+                run.font.color.rgb = RGBColor(0x47, 0x55, 0x69)
             continue
 
-        # Unordered list
-        ul_match = _UL_RE.match(line)
-        if ul_match:
-            p = doc.add_paragraph(style='List Bullet')
-            run = p.add_run(ul_match.group(1))
-            _set_cjk_font(run)
-            i += 1
+        # Code block (pre)
+        if tag == 'pre':
+            code_text = element.get_text()
+            p = doc.add_paragraph()
+            run = p.add_run(code_text)
+            _set_cjk_font(run, font_name='Noto Sans Mono CJK TC', size_pt=9.5)
+            run.font.color.rgb = RGBColor(0x33, 0x41, 0x55)
+            pPr = p._element.get_or_add_pPr()
+            shd = OxmlElement('w:shd')
+            shd.set(qn('w:fill'), 'F8FAFC')
+            shd.set(qn('w:val'), 'clear')
+            pPr.append(shd)
             continue
 
-        # Ordered list
-        ol_match = _OL_RE.match(line)
-        if ol_match:
-            p = doc.add_paragraph(style='List Number')
-            run = p.add_run(ol_match.group(1))
-            _set_cjk_font(run)
-            i += 1
+        # Table
+        if tag == 'table':
+            rows = element.find_all('tr')
+            if rows:
+                num_cols = max(len(r.find_all(['th', 'td'])) for r in rows)
+                table = doc.add_table(rows=len(rows), cols=num_cols)
+                table.style = 'Table Grid'
+                for ri, tr in enumerate(rows):
+                    cells = tr.find_all(['th', 'td'])
+                    for ci, cell_el in enumerate(cells):
+                        if ci < num_cols:
+                            cell = table.cell(ri, ci)
+                            cell.text = ''
+                            p = cell.paragraphs[0]
+                            for child in cell_el.children:
+                                _append_node_to_paragraph(p, child, is_bold=(ri == 0))
+                            for run in p.runs:
+                                _set_cjk_font(run, size_pt=10)
             continue
 
-        # Normal paragraph (skip empty lines)
-        if line.strip():
-            _add_styled_paragraph(doc, line)
+        # Horizontal rule
+        if tag == 'hr':
+            p = doc.add_paragraph()
+            p.add_run('─' * 50)
+            continue
 
-        i += 1
-
-    tmp = tempfile.NamedTemporaryFile(
-        suffix='.docx', delete=False, prefix='md_export_',
-    )
+    tmp = tempfile.NamedTemporaryFile(suffix='.docx', delete=False, prefix='md_export_')
     doc.save(tmp.name)
     return tmp.name
 
@@ -565,8 +652,6 @@ graph TD
 *感謝使用本工具！*
 '''
 
-
-# Custom CSS injected into gr.Blocks to fix tab layout width issues.
 _GRADIO_CUSTOM_CSS = '''
 .gradio-container {
     max-width: 100% !important;
