@@ -655,6 +655,19 @@ div[data-testid="html"], .gradio-html {
 }
 '''
 
+_DOWNLOAD_JS = '''
+(url) => {
+    if (url) {
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = url.split('/').pop().replace('md_export_', '') || 'export';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+    }
+}
+'''
+
 
 def create_app() -> gr.Blocks:
     '''
@@ -771,10 +784,10 @@ def create_app() -> gr.Blocks:
                         )
 
                         with gr.Row():
-                            export_pdf_btn = gr.DownloadButton(
+                            export_pdf_btn = gr.Button(
                                 '📄 匯出 PDF', variant='primary',
                             )
-                            export_word_btn = gr.DownloadButton(
+                            export_word_btn = gr.Button(
                                 '📝 匯出 Word', variant='primary',
                             )
 
@@ -797,30 +810,38 @@ def create_app() -> gr.Blocks:
                     outputs=[preview_html],
                 )
 
-                # PDF export (direct download)
-                def _do_export_pdf(md_text: str, theme_name: str) -> str | None:
+                # PDF export (instant single-click download)
+                def _do_export_pdf(md_text: str, theme_name: str) -> str:
                     '''
-                    Handle PDF export button click and return filepath for download.
+                    Handle PDF export button click and return file URL for JS download.
                     '''
-                    return export_pdf(md_text, theme_name)
+                    path = export_pdf(md_text, theme_name)
+                    if path:
+                        return f'/file={path}'
+                    return ''
 
                 export_pdf_btn.click(
                     fn=_do_export_pdf,
                     inputs=[md_input, theme_select],
-                    outputs=[export_pdf_btn],
+                    outputs=[],
+                    js=_DOWNLOAD_JS,
                 )
 
-                # Word export (direct download)
-                def _do_export_word(md_text: str, theme_name: str) -> str | None:
+                # Word export (instant single-click download)
+                def _do_export_word(md_text: str, theme_name: str) -> str:
                     '''
-                    Handle Word export button click and return filepath for download.
+                    Handle Word export button click and return file URL for JS download.
                     '''
-                    return export_word(md_text, theme_name)
+                    path = export_word(md_text, theme_name)
+                    if path:
+                        return f'/file={path}'
+                    return ''
 
                 export_word_btn.click(
                     fn=_do_export_word,
                     inputs=[md_input, theme_select],
-                    outputs=[export_word_btn],
+                    outputs=[],
+                    js=_DOWNLOAD_JS,
                 )
 
     return demo
