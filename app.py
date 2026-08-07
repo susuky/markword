@@ -222,6 +222,151 @@ def _replace_mermaid_blocks(md_text: str) -> tuple[str, bool]:
     return _MERMAID_BLOCK_RE.sub(_replacer, md_text), has_mermaid
 
 
+def _annotate_html_lines(md_text: str, body_html: str) -> str:
+    '''
+    Annotate top-level HTML element blocks with data-line attributes corresponding
+    to line numbers in the original Markdown source text.
+
+    Builds a precise block map by walking through the markdown source line by
+    line, tracking multi-line constructs (code blocks, tables, blockquotes,
+    lists) so each top-level HTML element gets the correct start line and
+    end line annotations for accurate scroll synchronisation.
+
+    Args:
+        md_text: Raw markdown text string.
+        body_html: Rendered HTML body string.
+
+    Returns:
+        HTML string with data-line / data-end-line attributes on top-level
+        element nodes.
+    '''
+    if not md_text or not body_html:
+        return body_html
+
+    lines = md_text.splitlines()
+    # Each entry: (start_line, end_line) – both 1-indexed, inclusive.
+    block_ranges: list[tuple[int, int]] = []
+
+    in_code_block = False
+    code_block_start = 0
+    in_table = False
+    table_start = 0
+    in_list = False
+    list_start = 0
+    in_blockquote = False
+    blockquote_start = 0
+
+    for i, line in enumerate(lines, 1):
+        stripped = line.strip()
+
+        # --- fenced code block ---
+        if stripped.startswith('```'):
+            if not in_code_block:
+                in_code_block = True
+                code_block_start = i
+            else:
+                in_code_block = False
+                block_ranges.append((code_block_start, i))
+            continue
+        if in_code_block:
+            continue
+
+        # --- table ---
+        is_table_row = stripped.startswith('|') and '|' in stripped[1:]
+        if is_table_row:
+            if not in_table:
+                in_table = True
+                table_start = i
+            continue
+        elif in_table:
+            in_table = False
+            block_ranges.append((table_start, i - 1))
+
+        # --- blockquote ---
+        is_quote = stripped.startswith('>')
+        if is_quote:
+            if not in_blockquote:
+                in_blockquote = True
+                blockquote_start = i
+            continue
+        elif in_blockquote:
+            in_blockquote = False
+            block_ranges.append((blockquote_start, i - 1))
+
+        # --- list item ---
+        is_list_item = bool(
+            re.match(r'^[-*+]\s|^\d+\.\s', stripped)
+        )
+        is_list_continuation = (
+            in_list and stripped and not is_list_item
+            and (line.startswith('  ') or line.startswith('\t'))
+        )
+        if is_list_item or is_list_continuation:
+            if not in_list:
+                in_list = True
+                list_start = i
+            continue
+        elif in_list:
+            in_list = False
+            block_ranges.append((list_start, i - 1))
+
+        # --- blank line ---
+        if not stripped:
+            continue
+
+        # --- heading ---
+        if re.match(r'^#{1,6}\s', stripped):
+            block_ranges.append((i, i))
+            continue
+
+        # --- hr ---
+        if re.match(r'^(---|\*\*\*|___)\s*$', stripped):
+            block_ranges.append((i, i))
+            continue
+
+        # --- paragraph (contiguous non-blank lines) ---
+        para_start = i
+        # The paragraph ends when we reach a blank line or a special block
+        # start. Since we iterate one line at a time we just record the single
+        # line; the next non-blank continuation will be a new paragraph entry
+        # but the annotation step below merges adjacent paragraph entries that
+        # share the same top-level HTML element.
+        block_ranges.append((para_start, para_start))
+
+    # Flush any unterminated multi-line blocks
+    total_lines = len(lines)
+    if in_code_block:
+        block_ranges.append((code_block_start, total_lines))
+    if in_table:
+        block_ranges.append((table_start, total_lines))
+    if in_blockquote:
+        block_ranges.append((blockquote_start, total_lines))
+    if in_list:
+        block_ranges.append((list_start, total_lines))
+
+    # Sort by start line (should already be mostly sorted)
+    block_ranges.sort(key=lambda r: r[0])
+
+    try:
+        soup = BeautifulSoup(body_html, 'html.parser')
+        top_elements = [
+            child for child in soup.contents if getattr(child, 'name', None)
+        ]
+
+        for idx, el in enumerate(top_elements):
+            if idx < len(block_ranges):
+                start, end = block_ranges[idx]
+                el['data-line'] = str(start)
+                el['data-end-line'] = str(end)
+            else:
+                el['data-line'] = str(total_lines)
+                el['data-end-line'] = str(total_lines)
+
+        return str(soup)
+    except Exception:
+        return body_html
+
+
 def _build_html_page(body_html: str, theme: Theme, has_mermaid: bool = False) -> str:
     '''
     Wrap rendered HTML body in a full HTML document with CSS styling
@@ -243,12 +388,114 @@ def _build_html_page(body_html: str, theme: Theme, has_mermaid: bool = False) ->
             f'<script>mermaid.initialize({{startOnLoad:true, theme:"{theme.mermaid_theme}"}});</script>'
         )
 
+    scroll_script = '''
+<script>
+(function() {
+    /* ---- helpers ---- */
+    function getLineElements() {
+        var els = document.querySelectorAll('[data-line]');
+        var result = [];
+        for (var i = 0; i < els.length; i++) {
+            var line = parseInt(els[i].getAttribute('data-line'), 10);
+            if (!isNaN(line)) {
+                result.push({ element: els[i], line: line });
+            }
+        }
+        return result;
+    }
+
+    /* Compute the Y offset for a fractional source line using linear
+       interpolation between the two nearest data-line elements
+       (VSCode scroll-sync style). */
+    function getOffsetForLine(targetLine, lineEls) {
+        if (!lineEls.length) return 0;
+        if (targetLine <= lineEls[0].line) return lineEls[0].element.offsetTop;
+        if (targetLine >= lineEls[lineEls.length - 1].line) {
+            return lineEls[lineEls.length - 1].element.offsetTop;
+        }
+        var prev = lineEls[0];
+        for (var i = 1; i < lineEls.length; i++) {
+            if (lineEls[i].line >= targetLine) {
+                var next = lineEls[i];
+                if (next.line === prev.line) return prev.element.offsetTop;
+                var frac = (targetLine - prev.line) / (next.line - prev.line);
+                var prevY = prev.element.offsetTop;
+                var nextY = next.element.offsetTop;
+                return prevY + frac * (nextY - prevY);
+            }
+            prev = lineEls[i];
+        }
+        return prev.element.offsetTop;
+    }
+
+    /* Compute the fractional source line that corresponds to the current
+       scroll position (inverse of getOffsetForLine). */
+    function getLineForOffset(scrollY, lineEls) {
+        if (!lineEls.length) return 1;
+        var prev = lineEls[0];
+        for (var i = 1; i < lineEls.length; i++) {
+            var elTop = lineEls[i].element.offsetTop;
+            if (elTop > scrollY) {
+                var prevTop = prev.element.offsetTop;
+                if (elTop === prevTop) return prev.line;
+                var frac = (scrollY - prevTop) / (elTop - prevTop);
+                return prev.line + frac * (lineEls[i].line - prev.line);
+            }
+            prev = lineEls[i];
+        }
+        return prev.line;
+    }
+
+    /* ---- restore saved position ---- */
+    var savedY = sessionStorage.getItem('markword_iframe_scroll_y');
+    if (savedY !== null) {
+        var restoreY = parseFloat(savedY);
+        if (!isNaN(restoreY)) {
+            window.scrollTo({ top: restoreY, behavior: 'instant' });
+        }
+    }
+
+    /* ---- report scroll to parent (iframe -> textarea) ---- */
+    var isSyncingFromParent = false;
+    var scrollReportTimer = null;
+
+    window.addEventListener('scroll', function() {
+        sessionStorage.setItem('markword_iframe_scroll_y', window.scrollY.toString());
+        if (isSyncingFromParent) return;
+
+        if (scrollReportTimer) cancelAnimationFrame(scrollReportTimer);
+        scrollReportTimer = requestAnimationFrame(function() {
+            var lineEls = getLineElements();
+            var fracLine = getLineForOffset(window.scrollY, lineEls);
+            try {
+                window.parent.postMessage({ type: 'PREVIEW_SCROLLED', line: fracLine }, '*');
+            } catch (e) {}
+            scrollReportTimer = null;
+        });
+    });
+
+    /* ---- receive scroll command from parent (textarea -> iframe) ---- */
+    window.addEventListener('message', function(event) {
+        if (!event.data) return;
+        if (event.data.type === 'SCROLL_TO_LINE') {
+            isSyncingFromParent = true;
+            var lineEls = getLineElements();
+            var targetY = Math.max(0, getOffsetForLine(event.data.line, lineEls));
+            sessionStorage.setItem('markword_iframe_scroll_y', targetY.toString());
+            window.scrollTo({ top: targetY, behavior: 'instant' });
+            setTimeout(function() { isSyncingFromParent = false; }, 120);
+        }
+    });
+})();
+</script>
+'''
+
     return (
         f'<!DOCTYPE html>\n<html lang="zh-Hant">\n<head>\n'
         f'<meta charset="UTF-8">\n'
         f'<style>{theme.css}</style>\n'
         f'{mermaid_script}\n'
-        f'</head>\n<body>\n{body_html}\n</body>\n</html>'
+        f'</head>\n<body>\n{body_html}\n{scroll_script}\n</body>\n</html>'
     )
 
 
@@ -276,7 +523,8 @@ def render_preview(md_text: str, theme_name: str = 'Light') -> str:
     theme = THEMES.get(theme_name, THEMES['Light'])
     processed, has_mermaid = _replace_mermaid_blocks(md_text)
     body_html = md.markdown(processed, extensions=_MD_EXTENSIONS)
-    full_html = _build_html_page(body_html, theme, has_mermaid)
+    annotated_html = _annotate_html_lines(md_text, body_html)
+    full_html = _build_html_page(annotated_html, theme, has_mermaid)
 
     escaped = html.escape(full_html, quote=True)
     return (
@@ -732,6 +980,128 @@ _DOWNLOAD_JS = '''
 }
 '''
 
+_SYNC_SCROLL_JS = '''
+() => {
+    let attempts = 0;
+    function setupSyncScroll() {
+        try {
+            const textareas = document.querySelectorAll('textarea');
+            let mdTextarea = null;
+            for (const ta of textareas) {
+                if (ta.placeholder && ta.placeholder.includes('Markdown')) {
+                    mdTextarea = ta;
+                    break;
+                }
+            }
+            if (!mdTextarea && textareas.length > 1) {
+                mdTextarea = textareas[1];
+            }
+            if (!mdTextarea && textareas.length > 0) {
+                mdTextarea = textareas[0];
+            }
+
+            const iframe = document.querySelector('.preview-iframe');
+
+            if (!mdTextarea || !iframe) {
+                attempts++;
+                if (attempts < 30) {
+                    setTimeout(setupSyncScroll, 300);
+                }
+                return;
+            }
+
+            /* ---- state guards ---- */
+            let isSyncingFromIframe = false;
+            let isSyncingFromTextarea = false;
+            let textareaGuardTimer = null;
+            let iframeGuardTimer = null;
+            let scrollFromTextareaTimer = null;
+
+            /* ---- textarea helpers ---- */
+            function textareaScrollToLine() {
+                const totalLines = mdTextarea.value.split('\\n').length;
+                const scrollMax = mdTextarea.scrollHeight - mdTextarea.clientHeight;
+                if (scrollMax <= 0) return 1;
+                const ratio = mdTextarea.scrollTop / scrollMax;
+                return 1 + ratio * (totalLines - 1);
+            }
+
+            function lineToTextareaScroll(fracLine) {
+                const totalLines = mdTextarea.value.split('\\n').length;
+                const scrollMax = mdTextarea.scrollHeight - mdTextarea.clientHeight;
+                if (totalLines <= 1 || scrollMax <= 0) return 0;
+                const ratio = (fracLine - 1) / (totalLines - 1);
+                return ratio * scrollMax;
+            }
+
+            /* ---- textarea -> iframe ---- */
+            function sendScrollToIframe() {
+                if (isSyncingFromIframe) return;
+                isSyncingFromTextarea = true;
+
+                if (scrollFromTextareaTimer) cancelAnimationFrame(scrollFromTextareaTimer);
+                scrollFromTextareaTimer = requestAnimationFrame(() => {
+                    try {
+                        const fracLine = textareaScrollToLine();
+                        if (iframe && iframe.contentWindow) {
+                            iframe.contentWindow.postMessage({
+                                type: 'SCROLL_TO_LINE',
+                                line: fracLine
+                            }, '*');
+                        }
+                    } catch (e) {}
+                    scrollFromTextareaTimer = null;
+                });
+
+                if (textareaGuardTimer) clearTimeout(textareaGuardTimer);
+                textareaGuardTimer = setTimeout(() => {
+                    isSyncingFromTextarea = false;
+                }, 150);
+            }
+
+            mdTextarea.addEventListener('scroll', sendScrollToIframe, { passive: true });
+            mdTextarea.addEventListener('keyup', sendScrollToIframe, { passive: true });
+            mdTextarea.addEventListener('click', sendScrollToIframe, { passive: true });
+
+            /* ---- iframe -> textarea ---- */
+            window.addEventListener('message', (event) => {
+                if (event.data && event.data.type === 'PREVIEW_SCROLLED') {
+                    if (isSyncingFromTextarea) return;
+                    isSyncingFromIframe = true;
+
+                    try {
+                        const fracLine = event.data.line;
+                        mdTextarea.scrollTop = lineToTextareaScroll(fracLine);
+                    } catch (e) {}
+
+                    if (iframeGuardTimer) clearTimeout(iframeGuardTimer);
+                    iframeGuardTimer = setTimeout(() => {
+                        isSyncingFromIframe = false;
+                    }, 150);
+                }
+            });
+
+            /* ---- re-attach on iframe reload (content change) ---- */
+            const observer = new MutationObserver(() => {
+                const newIframe = document.querySelector('.preview-iframe');
+                if (newIframe && newIframe !== iframe) {
+                    attempts = 0;
+                    setTimeout(setupSyncScroll, 300);
+                }
+            });
+            const previewCol = iframe.closest('.column, [class*="col"]') || iframe.parentElement;
+            if (previewCol) {
+                observer.observe(previewCol, { childList: true, subtree: true });
+            }
+        } catch (e) {
+            console.error('setupSyncScroll error:', e);
+        }
+    }
+
+    setTimeout(setupSyncScroll, 500);
+}
+'''
+
 
 def create_app() -> gr.Blocks:
     '''
@@ -751,6 +1121,14 @@ def create_app() -> gr.Blocks:
         title='文字工具箱 - 字數統計 & Markdown 預覽',
         css=_GRADIO_CUSTOM_CSS,
     ) as demo:
+        demo.load(
+            fn=lambda: None,
+            inputs=[],
+            outputs=[],
+            js=_SYNC_SCROLL_JS,
+            show_progress='hidden',
+        )
+
         gr.Markdown(
             '''
             # 📝 文字工具箱

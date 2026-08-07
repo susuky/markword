@@ -2,7 +2,7 @@ import os
 import time
 import unittest
 
-from app import _cleanup_old_exports, _get_export_filename, analyze_text, export_pdf, export_word, render_preview, EXPORT_DIR
+from app import _annotate_html_lines, _cleanup_old_exports, _get_export_filename, analyze_text, export_pdf, export_word, render_preview, EXPORT_DIR
 from themes import THEMES
 
 
@@ -123,6 +123,15 @@ class TestRenderPreview(unittest.TestCase):
         md_code = '```python\ndef foo():\n    return 42\n```'
         result = render_preview(md_code, 'Dark')
         self.assertIn('codehilite', result)
+
+    def test_data_line_annotation(self):
+        '''
+        Test that _annotate_html_lines adds data-line attributes to HTML tags.
+        '''
+        md_text = '# 標題1\n\n段落內容'
+        body_html = '<h1>標題1</h1>\n<p>段落內容</p>'
+        annotated = _annotate_html_lines(md_text, body_html)
+        self.assertIn('data-line="1"', annotated)
 
     def test_export_pdf_and_word_themes(self):
         '''
