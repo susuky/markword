@@ -5,8 +5,9 @@ After=network.target
 [Service]
 Type=simple
 User=nvidia
-WorkingDirectory=/home/nvidia/ping/hello/wordcount
-ExecStart=/home/nvidia/ping/hello/wordcount/.venv/bin/python app.py
+# Make sure to modify paths to your real paths
+WorkingDirectory=/path/to/your/markword
+ExecStart=/path/to/your/markword/.venv/bin/python app.py
 Restart=always
 RestartSec=5
 Environment=PYTHONUNBUFFERED=1
