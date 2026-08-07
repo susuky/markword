@@ -18,6 +18,7 @@ from docx.oxml.ns import qn
 from docx.shared import Inches, Pt, RGBColor
 import gradio as gr
 import markdown as md
+from markdown_it import MarkdownIt
 from weasyprint import HTML
 
 from themes import THEMES, Theme
@@ -243,128 +244,35 @@ def _annotate_html_lines(md_text: str, body_html: str) -> str:
     if not md_text or not body_html:
         return body_html
 
-    lines = md_text.splitlines()
-    # Each entry: (start_line, end_line) – both 1-indexed, inclusive.
-    block_ranges: list[tuple[int, int]] = []
+def _annotate_html_lines(md_text: str, body_html: str) -> str:
+    '''
+    Render markdown using markdown-it-py (VSCode's exact engine) with AST token
+    data-line attribute injection for 100% accurate source line mapping.
 
-    in_code_block = False
-    code_block_start = 0
-    in_table = False
-    table_start = 0
-    in_list = False
-    list_start = 0
-    in_blockquote = False
-    blockquote_start = 0
+    Args:
+        md_text: Raw markdown text string.
+        body_html: Existing body html (fallback).
 
-    for i, line in enumerate(lines, 1):
-        stripped = line.strip()
-
-        # --- fenced code block ---
-        if stripped.startswith('```'):
-            if not in_code_block:
-                in_code_block = True
-                code_block_start = i
-            else:
-                in_code_block = False
-                block_ranges.append((code_block_start, i))
-            continue
-        if in_code_block:
-            continue
-
-        # --- table ---
-        is_table_row = stripped.startswith('|') and '|' in stripped[1:]
-        if is_table_row:
-            if not in_table:
-                in_table = True
-                table_start = i
-            continue
-        elif in_table:
-            in_table = False
-            block_ranges.append((table_start, i - 1))
-
-        # --- blockquote ---
-        is_quote = stripped.startswith('>')
-        if is_quote:
-            if not in_blockquote:
-                in_blockquote = True
-                blockquote_start = i
-            continue
-        elif in_blockquote:
-            in_blockquote = False
-            block_ranges.append((blockquote_start, i - 1))
-
-        # --- list item ---
-        is_list_item = bool(
-            re.match(r'^[-*+]\s|^\d+\.\s', stripped)
-        )
-        is_list_continuation = (
-            in_list and stripped and not is_list_item
-            and (line.startswith('  ') or line.startswith('\t'))
-        )
-        if is_list_item or is_list_continuation:
-            if not in_list:
-                in_list = True
-                list_start = i
-            continue
-        elif in_list:
-            in_list = False
-            block_ranges.append((list_start, i - 1))
-
-        # --- blank line ---
-        if not stripped:
-            continue
-
-        # --- heading ---
-        if re.match(r'^#{1,6}\s', stripped):
-            block_ranges.append((i, i))
-            continue
-
-        # --- hr ---
-        if re.match(r'^(---|\*\*\*|___)\s*$', stripped):
-            block_ranges.append((i, i))
-            continue
-
-        # --- paragraph (contiguous non-blank lines) ---
-        para_start = i
-        # The paragraph ends when we reach a blank line or a special block
-        # start. Since we iterate one line at a time we just record the single
-        # line; the next non-blank continuation will be a new paragraph entry
-        # but the annotation step below merges adjacent paragraph entries that
-        # share the same top-level HTML element.
-        block_ranges.append((para_start, para_start))
-
-    # Flush any unterminated multi-line blocks
-    total_lines = len(lines)
-    if in_code_block:
-        block_ranges.append((code_block_start, total_lines))
-    if in_table:
-        block_ranges.append((table_start, total_lines))
-    if in_blockquote:
-        block_ranges.append((blockquote_start, total_lines))
-    if in_list:
-        block_ranges.append((list_start, total_lines))
-
-    # Sort by start line (should already be mostly sorted)
-    block_ranges.sort(key=lambda r: r[0])
+    Returns:
+        HTML string with data-line attributes on opening tags.
+    '''
+    if not md_text:
+        return body_html
 
     try:
-        soup = BeautifulSoup(body_html, 'html.parser')
-        top_elements = [
-            child for child in soup.contents if getattr(child, 'name', None)
-        ]
+        md_parser = MarkdownIt('commonmark').enable('table')
 
-        for idx, el in enumerate(top_elements):
-            if idx < len(block_ranges):
-                start, end = block_ranges[idx]
-                el['data-line'] = str(start)
-                el['data-end-line'] = str(end)
-            else:
-                el['data-line'] = str(total_lines)
-                el['data-end-line'] = str(total_lines)
+        def inject_line_numbers(state):
+            for token in state.tokens:
+                if token.map and token.nesting >= 0:
+                    token.attrSet('data-line', str(token.map[0] + 1))
+                    token.attrSet('data-end-line', str(token.map[1]))
 
-        return str(soup)
+        md_parser.core.ruler.push('inject_line_numbers', inject_line_numbers)
+        return md_parser.render(md_text)
     except Exception:
         return body_html
+
 
 
 def _build_html_page(body_html: str, theme: Theme, has_mermaid: bool = False) -> str:
@@ -522,8 +430,7 @@ def render_preview(md_text: str, theme_name: str = 'Light') -> str:
 
     theme = THEMES.get(theme_name, THEMES['Light'])
     processed, has_mermaid = _replace_mermaid_blocks(md_text)
-    body_html = md.markdown(processed, extensions=_MD_EXTENSIONS)
-    annotated_html = _annotate_html_lines(md_text, body_html)
+    annotated_html = _annotate_html_lines(processed, '')
     full_html = _build_html_page(annotated_html, theme, has_mermaid)
 
     escaped = html.escape(full_html, quote=True)
@@ -1018,20 +925,42 @@ _SYNC_SCROLL_JS = '''
             let scrollFromTextareaTimer = null;
 
             /* ---- textarea helpers ---- */
+            function getTextareaLineHeight() {
+                const style = window.getComputedStyle(mdTextarea);
+                let lh = parseFloat(style.lineHeight);
+                if (isNaN(lh) || lh <= 0) {
+                    const fs = parseFloat(style.fontSize) || 14;
+                    lh = fs * 1.4;
+                }
+                return lh;
+            }
+
             function textareaScrollToLine() {
-                const totalLines = mdTextarea.value.split('\\n').length;
                 const scrollMax = mdTextarea.scrollHeight - mdTextarea.clientHeight;
                 if (scrollMax <= 0) return 1;
-                const ratio = mdTextarea.scrollTop / scrollMax;
-                return 1 + ratio * (totalLines - 1);
+
+                const totalLines = mdTextarea.value.split('\\n').length;
+                if (mdTextarea.scrollTop >= scrollMax - 5) {
+                    return totalLines;
+                }
+
+                const lh = getTextareaLineHeight();
+                const topLine = 1 + (mdTextarea.scrollTop / lh);
+                return Math.min(totalLines, Math.max(1, topLine));
             }
 
             function lineToTextareaScroll(fracLine) {
-                const totalLines = mdTextarea.value.split('\\n').length;
                 const scrollMax = mdTextarea.scrollHeight - mdTextarea.clientHeight;
-                if (totalLines <= 1 || scrollMax <= 0) return 0;
-                const ratio = (fracLine - 1) / (totalLines - 1);
-                return ratio * scrollMax;
+                if (scrollMax <= 0) return 0;
+
+                const totalLines = mdTextarea.value.split('\\n').length;
+                if (fracLine >= totalLines) {
+                    return scrollMax;
+                }
+
+                const lh = getTextareaLineHeight();
+                const targetY = (fracLine - 1) * lh;
+                return Math.min(scrollMax, Math.max(0, targetY));
             }
 
             /* ---- textarea -> iframe ---- */
