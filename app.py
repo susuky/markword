@@ -436,7 +436,7 @@ def render_preview(md_text: str, theme_name: str = 'Light') -> str:
     escaped = html.escape(full_html, quote=True)
     return (
         f'<iframe class="preview-iframe" srcdoc="{escaped}" '
-        f'style="width:100%;height:850px;min-height:850px;border:1px solid #cbd5e1;'
+        f'style="width:100%;border:1px solid #cbd5e1;'
         f'border-radius:8px;background:{theme.body_bg};" '
         f'sandbox="allow-scripts allow-same-origin">'
         f'</iframe>'
@@ -862,14 +862,33 @@ div[data-testid="html"], .gradio-html {
     border: none !important;
     padding: 0 !important;
     box-shadow: none !important;
+    height: 100% !important;
+    display: flex !important;
+    flex-direction: column !important;
 }
+:root {
+    --markdown-workspace-height: calc(100vh - 260px);
+}
+
+/* 左邊真正可輸入的 textarea */
+.markdown-editor textarea {
+    height: var(--markdown-workspace-height) !important;
+    min-height: var(--markdown-workspace-height) !important;
+    max-height: var(--markdown-workspace-height) !important;
+    overflow-y: auto !important;
+    resize: none !important;
+}
+
+/* 右邊真正顯示內容的 iframe */
 .preview-iframe {
     width: 100% !important;
-    height: 850px !important;
-    min-height: 850px !important;
+    height: var(--markdown-workspace-height) !important;
+    min-height: var(--markdown-workspace-height) !important;
     border: 1px solid #cbd5e1;
     border-radius: 8px;
+    display: block !important;
 }
+
 '''
 
 _DOWNLOAD_JS = '''
@@ -1061,7 +1080,7 @@ def create_app() -> gr.Blocks:
         gr.Markdown(
             '''
             # 📝 文字工具箱
-            字數統計 · Markdown 即時預覽 (含多主題/語法高亮) · 匯出 PDF / Word
+            字數統計 · Markdown 即時預覽 · 匯出 PDF / Word
             '''
         )
 
@@ -1137,23 +1156,31 @@ def create_app() -> gr.Blocks:
 
             # =============== Tab 2: Markdown Preview ===============
             with gr.Tab('🔍 Markdown 預覽'):
-                with gr.Row(equal_height=False):
+                # 1. Main Workspace: Side-by-Side (Equal Top & Bottom Height)
+                with gr.Row():
                     with gr.Column(scale=1, min_width=400):
                         md_input = gr.Textbox(
                             label='Markdown 原始碼',
                             placeholder='在此輸入 Markdown 文字...',
-                            lines=26,
-                            max_lines=50,
                             value=_SAMPLE_MD,
+                            elem_classes=['markdown-editor'],
+                        )
+                    with gr.Column(scale=1, min_width=400):
+                        preview_html = gr.HTML(
+                            value=render_preview(_SAMPLE_MD, 'Light'),
                         )
 
+                # 2. Control Toolbar at the VERY BOTTOM (Across Full Width)
+                with gr.Row(equal_height=False):
+                    with gr.Column(scale=2, min_width=250):
                         theme_select = gr.Dropdown(
                             choices=list(THEMES.keys()),
                             value='Light',
                             label='🎨 選擇渲染主題',
                             interactive=True,
                         )
-
+                    with gr.Column(scale=3, min_width=300):
+                        gr.Markdown('<div style="height:10px;"></div>')
                         with gr.Row():
                             export_pdf_btn = gr.Button(
                                 '📄 匯出 PDF', variant='primary',
@@ -1166,11 +1193,7 @@ def create_app() -> gr.Blocks:
                         pdf_url_box = gr.Textbox(visible=False)
                         word_url_box = gr.Textbox(visible=False)
 
-                    with gr.Column(scale=1, min_width=400):
-                        gr.Markdown('### 👁️ 即時預覽')
-                        preview_html = gr.HTML(
-                            value=render_preview(_SAMPLE_MD, 'Light'),
-                        )
+
 
                 # Live preview on text or theme change
                 md_input.change(
