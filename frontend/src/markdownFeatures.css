@@ -1,0 +1,54 @@
+.markdown-body .heading-anchor {
+  scroll-margin-top: 1rem;
+}
+
+.markdown-body .task-list {
+  padding-left: .35rem;
+  list-style: none;
+}
+
+.markdown-body .task-list-item {
+  list-style: none;
+}
+
+.markdown-body .task-list-checkbox {
+  width: 1rem;
+  height: 1rem;
+  margin: 0 .55rem 0 0;
+  vertical-align: -.12em;
+  accent-color: var(--md-accent);
+}
+
+.markdown-body .footnotes {
+  margin-top: 2.5rem;
+  color: var(--md-muted);
+  font-size: .9em;
+}
+
+.markdown-body .footnote-ref a,
+.markdown-body .footnote-backref {
+  text-decoration: none;
+}
+
+.markdown-body .footnotes li:target {
+  border-radius: .3rem;
+  background: color-mix(in srgb, var(--md-accent) 12%, transparent);
+}
+
+.markdown-body .math-inline,
+.markdown-body .math-block {
+  font-family: "STIX Two Math", "Cambria Math", serif;
+}
+
+.markdown-body .math-inline {
+  padding: 0 .15em;
+}
+
+.markdown-body .math-block {
+  margin: 1.1rem 0;
+  padding: .8rem 1rem;
+  overflow-x: auto;
+  border: 1px solid var(--md-border);
+  border-radius: .5rem;
+  text-align: center;
+}

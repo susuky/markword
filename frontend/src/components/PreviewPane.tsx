@@ -1,6 +1,13 @@
-import { forwardRef, memo, useEffect, useImperativeHandle, useMemo, useRef } from 'react'
-import mermaid from 'mermaid'
-import { collectSourceAnchors, lineToPreviewOffset, previewOffsetToLine, renderMarkdown } from '../markdown'
+import { forwardRef, memo, useCallback, useEffect, useImperativeHandle, useMemo, useRef } from 'react'
+import {
+  collectSourceAnchors,
+  elementOffsetToSourceLine,
+  lineToPreviewOffset,
+  previewOffsetToLine,
+  renderMarkdown,
+  type SourceAnchor,
+} from '../markdown'
+import '../markdownFeatures.css'
 import type { ThemeName } from '../types'
 
 export interface PreviewHandle {
@@ -12,18 +19,41 @@ interface PreviewPaneProps {
   theme: ThemeName
   onScrollLine: (line: number, atEnd: boolean) => void
   onLayout: () => void
+  onSourceLine?: (line: number) => void
 }
 
 const PreviewPaneComponent = forwardRef<PreviewHandle, PreviewPaneProps>(function PreviewPane(
-  { markdown, theme, onScrollLine, onLayout },
+  { markdown, theme, onScrollLine, onLayout, onSourceLine },
   ref,
 ) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const contentRef = useRef<HTMLElement>(null)
   const suppressScrollRef = useRef(false)
+  const anchorsRef = useRef<SourceAnchor[]>([])
+  const geometryDirtyRef = useRef(true)
+  const layoutFrameRef = useRef<number | null>(null)
   const html = useMemo(() => renderMarkdown(markdown), [markdown])
 
-  const readAnchors = () => contentRef.current ? collectSourceAnchors(contentRef.current) : []
+  const invalidateGeometry = useCallback(() => {
+    geometryDirtyRef.current = true
+    if (layoutFrameRef.current !== null) return
+    layoutFrameRef.current = window.requestAnimationFrame(() => {
+      layoutFrameRef.current = null
+      onLayout()
+    })
+  }, [onLayout])
+
+  const readAnchors = useCallback(() => {
+    if (geometryDirtyRef.current && contentRef.current) {
+      anchorsRef.current = collectSourceAnchors(contentRef.current)
+      geometryDirtyRef.current = false
+    }
+    return anchorsRef.current
+  }, [])
+
+  useEffect(() => {
+    geometryDirtyRef.current = true
+  }, [html, theme])
 
   useImperativeHandle(ref, () => ({
     scrollToLine(line, atEnd = false) {
@@ -32,19 +62,21 @@ const PreviewPaneComponent = forwardRef<PreviewHandle, PreviewPaneProps>(functio
       const maxScroll = scroll.scrollHeight - scroll.clientHeight
       suppressScrollRef.current = true
       scroll.scrollTop = atEnd ? maxScroll : lineToPreviewOffset(line, readAnchors(), maxScroll)
-      window.setTimeout(() => { suppressScrollRef.current = false }, 90)
+      window.setTimeout(() => { suppressScrollRef.current = false }, 100)
     },
-  }))
+  }), [readAnchors])
 
   useEffect(() => {
     let cancelled = false
     const blocks = Array.from(contentRef.current?.querySelectorAll<HTMLElement>('.mermaid-block') || [])
     if (!blocks.length) {
-      onLayout()
+      invalidateGeometry()
       return
     }
 
     void (async () => {
+      const { default: mermaid } = await import('mermaid')
+      if (cancelled) return
       mermaid.initialize({
         startOnLoad: false,
         securityLevel: 'strict',
@@ -61,22 +93,76 @@ const PreviewPaneComponent = forwardRef<PreviewHandle, PreviewPaneProps>(functio
           block.classList.add('is-rendered')
         } catch (error) {
           block.classList.add('has-error')
-          block.innerHTML = `<pre class="mermaid-fallback"><code>${source.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')}</code></pre>`
+          const code = document.createElement('code')
+          code.textContent = source
+          const pre = document.createElement('pre')
+          pre.className = 'mermaid-fallback'
+          pre.append(code)
+          block.replaceChildren(pre)
           console.warn('Mermaid render failed', error)
         }
+        invalidateGeometry()
       }
-      onLayout()
     })()
     return () => { cancelled = true }
-  }, [html, onLayout, theme])
+  }, [html, invalidateGeometry, theme])
+
+  useEffect(() => {
+    let cancelled = false
+    const blocks = Array.from(contentRef.current?.querySelectorAll<HTMLElement>('[data-math-source]') || [])
+    if (!blocks.length) return
+
+    void (async () => {
+      const [{ default: katex }] = await Promise.all([
+        import('katex'),
+        import('katex/dist/katex.min.css'),
+      ])
+      if (cancelled) return
+      for (const block of blocks) {
+        if (cancelled) return
+        const source = decodeURIComponent(block.dataset.mathSource || '')
+        katex.render(source, block, {
+          displayMode: block.dataset.mathDisplay === 'true',
+          output: 'htmlAndMathml',
+          strict: 'warn',
+          throwOnError: false,
+          trust: false,
+        })
+        block.classList.add('is-rendered')
+        invalidateGeometry()
+      }
+    })()
+    return () => { cancelled = true }
+  }, [html, invalidateGeometry])
 
   useEffect(() => {
     const content = contentRef.current
     if (!content) return
-    const observer = new ResizeObserver(onLayout)
-    observer.observe(content)
-    return () => observer.disconnect()
-  }, [onLayout])
+    const resizeObserver = new ResizeObserver(invalidateGeometry)
+    resizeObserver.observe(content)
+    content.querySelectorAll<HTMLElement>('.dynamic-source-block').forEach((block) => resizeObserver.observe(block))
+
+    const images = Array.from(content.querySelectorAll<HTMLImageElement>('img'))
+    const handleImageSettled = () => invalidateGeometry()
+    images.forEach((image) => {
+      if (!image.complete) {
+        image.addEventListener('load', handleImageSettled, { once: true })
+        image.addEventListener('error', handleImageSettled, { once: true })
+      }
+    })
+    invalidateGeometry()
+    return () => {
+      resizeObserver.disconnect()
+      images.forEach((image) => {
+        image.removeEventListener('load', handleImageSettled)
+        image.removeEventListener('error', handleImageSettled)
+      })
+    }
+  }, [html, invalidateGeometry])
+
+  useEffect(() => () => {
+    if (layoutFrameRef.current !== null) window.cancelAnimationFrame(layoutFrameRef.current)
+  }, [])
 
   const handleScroll = () => {
     const scroll = scrollRef.current
@@ -97,6 +183,12 @@ const PreviewPaneComponent = forwardRef<PreviewHandle, PreviewPaneProps>(functio
     window.setTimeout(() => { button.textContent = '複製' }, 1200)
   }
 
+  const handleDoubleClick = (event: React.MouseEvent<HTMLElement>) => {
+    if (!onSourceLine) return
+    const line = elementOffsetToSourceLine(event.target as HTMLElement, event.clientY)
+    if (line !== null) onSourceLine(line)
+  }
+
   return (
     <div className="preview-scroll" ref={scrollRef} onScroll={handleScroll}>
       {markdown.trim() ? (
@@ -105,6 +197,7 @@ const PreviewPaneComponent = forwardRef<PreviewHandle, PreviewPaneProps>(functio
           className={`markdown-body theme-${theme.toLowerCase()}`}
           dangerouslySetInnerHTML={{ __html: html }}
           onClick={handleClick}
+          onDoubleClick={handleDoubleClick}
         />
       ) : (
         <div className="empty-preview">

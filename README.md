@@ -6,8 +6,13 @@ Markword 是以 FastAPI 與 React/Vite 建構的文字統計及 Markdown 編輯�
 
 - 即時統計總字數、中文字、英文單字、數字、全形標點與行數
 - Markdown 即時預覽與編輯器／預覽雙向同步捲動
+- 可點擊文件大綱、預覽雙擊回到原始碼、同步捲動開關
 - Light、Dark、Nord、Dracula 四種主題
-- 程式碼語法高亮與 Mermaid 圖表
+- 程式碼語法高亮、Mermaid、KaTeX、task list 與 footnote
+- 開啟／拖放 `.md`、下載 Markdown 與可攜 HTML
+- CodeMirror 搜尋、摺疊、命令選單、快捷插入、專注與打字機模式
+- IndexedDB 草稿復原、每五分鐘自動版本、手動版本與非破壞還原
+- 手機版編輯／預覽 tabs，以及可安裝的 PWA 離線 app shell
 - 匯出 PDF 與 Word (`.docx`)
 - 單一 FastAPI 程序提供 API 與正式版前端靜態檔
 
@@ -59,6 +64,16 @@ uv run uvicorn backend.main:app --host 0.0.0.0 --port 27860
 ```
 
 瀏覽器開啟 `http://localhost:27860`。重新部署前端變更時，須再次執行 `npm run build`。
+
+## 編輯器操作
+
+- `Ctrl/Cmd+K`：開啟命令選單；也可在空白行輸入 `/` 快速開啟插入命令。
+- `Ctrl/Cmd+F`：搜尋／取代；`Ctrl/Cmd+S`：下載目前 Markdown。
+- `?`：顯示快捷鍵；`Ctrl/Cmd+Shift+F`：專注模式。
+- 左側大綱可跳至標題；雙擊右側預覽區塊可回到對應原始碼。
+- 工具列可開啟或拖放本機 Markdown，並下載 `.md` 或自帶樣式的 `.html`。
+- 草稿存在瀏覽器 IndexedDB；內容變更後每五分鐘建立一個本機版本，最多保留 120 個。還原版本前會先備份目前內容。
+- PWA 只快取編輯器／預覽所需的 app shell 與靜態資源；PDF／Word 仍由本機 FastAPI 服務產生。
 
 可用以下環境變數覆寫預設路徑：
 

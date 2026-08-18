@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { analyzeText } from '../api'
+import { analyzeTextLocally } from '../localStats'
 import { EMPTY_STATS, type TextStats } from '../types'
 
 export function useDebouncedStats(text: string) {
@@ -20,6 +21,7 @@ export function useDebouncedStats(text: string) {
         })
         .catch((error: unknown) => {
           if (error instanceof DOMException && error.name === 'AbortError') return
+          setStats(analyzeTextLocally(text))
           setAvailable(false)
         })
     }, 220)
