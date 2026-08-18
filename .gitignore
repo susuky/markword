@@ -143,3 +143,16 @@ cython_debug/
 .vscode/
 .codex
 wordcount.service
+markword.service
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+
+# Local environment overrides
+.env.*
+!.env.example
+
+# OS / editor metadata
+.DS_Store

@@ -72,6 +72,10 @@ class TestExportFilename(unittest.TestCase):
         self.assertTrue(filename.startswith('export_'))
         self.assertTrue(filename.endswith('.pdf'))
 
+    def test_h1_filename_is_bounded(self):
+        filename = _get_export_filename(f'# {"長" * 300}', 'pdf')
+        self.assertEqual(filename, f'{"長" * 120}.pdf')
+
     def test_cleanup_old_exports(self):
         '''
         Test that _cleanup_old_exports removes old temporary export files.

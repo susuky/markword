@@ -1,14 +1,22 @@
 [project]
-name = "wordcount-gradio"
-version = "0.1.0"
-description = "Lightweight Gradio text word counter application"
+name = "markword"
+version = "0.2.0"
+description = "FastAPI-powered text counter and Markdown editor"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
-    "gradio>=4.0.0",
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.30.0",
     "markdown>=3.5",
+    "markdown-it-py>=3.0.0",
     "weasyprint>=60.0",
     "python-docx>=1.0.0",
     "beautifulsoup4>=4.12.0",
     "pygments>=2.17.0",
+]
+
+[project.optional-dependencies]
+test = [
+    "httpx>=0.27.0",
+    "pytest>=8.0.0",
 ]

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import base64
 import hashlib
 import html
@@ -16,14 +18,22 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Inches, Pt, RGBColor
-import gradio as gr
+# Gradio is a legacy-only dependency.  Keep it lazy so importing the FastAPI
+# backend never pays Gradio's large startup cost when an old environment still
+# happens to have the package installed.
+gr = None
 import markdown as md
 from markdown_it import MarkdownIt
 from weasyprint import HTML
 
 from themes import THEMES, Theme
 
-EXPORT_DIR = os.path.abspath('exports')
+EXPORT_DIR = os.path.abspath(
+    os.getenv(
+        'MARKWORD_EXPORT_DIR',
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), 'exports'),
+    )
+)
 os.makedirs(EXPORT_DIR, exist_ok=True)
 
 
@@ -155,7 +165,11 @@ def _get_export_filename(md_text: str, ext: str = 'pdf') -> str:
         raw_title = re.sub(r'[*_`~]', '', raw_title)
         clean_title = re.sub(r'[\\/:*?"<>|\r\n\t]', '_', raw_title).strip(' ._')
         if clean_title:
-            return f'{clean_title}.{ext}'
+            # Keep enough room for the extension and filesystem metadata while
+            # preserving readable Unicode names in Content-Disposition.
+            clean_title = clean_title[:120].rstrip(' ._')
+            if clean_title:
+                return f'{clean_title}.{ext}'
 
     text_hash = hashlib.md5(md_text.encode('utf-8')).hexdigest()[:8]
     return f'export_{text_hash}.{ext}'
@@ -1059,6 +1073,16 @@ def create_app() -> gr.Blocks:
     Returns:
         gr.Blocks instance with two tabs: word count and markdown preview.
     '''
+    global gr
+    if gr is None:
+        try:
+            import gradio as gradio_module
+        except ImportError as exc:
+            raise RuntimeError(
+                'The legacy Gradio UI is not installed. Run backend.main:app instead.'
+            ) from exc
+        gr = gradio_module
+
     theme = gr.themes.Soft(
         primary_hue='indigo',
         secondary_hue='slate',
@@ -1252,10 +1276,10 @@ def create_app() -> gr.Blocks:
 
 
 if __name__ == '__main__':
-    app = create_app()
-    app.launch(
-        server_name='0.0.0.0',
-        server_port=27860,
-        share=False,
-        allowed_paths=[EXPORT_DIR, tempfile.gettempdir()],
+    import uvicorn
+
+    uvicorn.run(
+        'backend.main:app',
+        host=os.getenv('MARKWORD_HOST', '0.0.0.0'),
+        port=int(os.getenv('MARKWORD_PORT', '27860')),
     )
