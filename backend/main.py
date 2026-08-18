@@ -123,7 +123,7 @@ async def _export_response(
     )
 
     try:
-        path = await run_in_threadpool(exporter, payload.markdown, payload.theme)
+        path = await run_in_threadpool(exporter, payload.markdown, payload.theme, payload.style)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"{export_format} export failed") from exc
 

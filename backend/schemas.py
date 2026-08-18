@@ -3,6 +3,7 @@
 from pydantic import BaseModel, Field, field_validator
 
 from themes import THEMES
+from export_styles import EXPORT_STYLES
 
 
 MAX_TEXT_LENGTH = 5_000_000
@@ -25,6 +26,7 @@ class AnalyzeResponse(BaseModel):
 class ExportRequest(BaseModel):
     markdown: str = Field(min_length=1, max_length=MAX_TEXT_LENGTH)
     theme: str = "Light"
+    style: str = "Classic"
 
     @field_validator("markdown")
     @classmethod
@@ -39,6 +41,14 @@ class ExportRequest(BaseModel):
         if value not in THEMES:
             allowed = ", ".join(THEMES)
             raise ValueError(f"unknown theme; expected one of: {allowed}")
+        return value
+
+    @field_validator("style")
+    @classmethod
+    def style_must_exist(cls, value: str) -> str:
+        if value not in EXPORT_STYLES:
+            allowed = ", ".join(EXPORT_STYLES)
+            raise ValueError(f"unknown style; expected one of: {allowed}")
         return value
 
 

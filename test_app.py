@@ -2,7 +2,7 @@ import os
 import time
 import unittest
 
-from app import _annotate_html_lines, _cleanup_old_exports, _get_export_filename, analyze_text, export_pdf, export_word, render_preview, EXPORT_DIR
+from app import _annotate_html_lines, _cleanup_old_exports, _get_export_filename, _render_md_to_html_for_export, analyze_text, export_pdf, export_word, render_preview, EXPORT_DIR
 from themes import THEMES
 
 
@@ -115,7 +115,7 @@ class TestRenderPreview(unittest.TestCase):
         '''
         Test that all defined themes can render without error.
         '''
-        for theme_name in ['Light', 'Dark', 'Nord', 'Dracula']:
+        for theme_name in ['Light', 'Paper', 'Sage', 'Dark', 'Ocean', 'Nord', 'Dracula', 'Midnight']:
             self.assertIn(theme_name, THEMES)
             result = render_preview('# 測試標題', theme_name)
             self.assertIn('iframe', result)
@@ -149,6 +149,12 @@ class TestRenderPreview(unittest.TestCase):
             self.assertIsNotNone(word_path)
             self.assertTrue(pdf_path.endswith('標題.pdf'))
             self.assertTrue(word_path.endswith('標題.docx'))
+
+    def test_export_layout_css_is_applied(self):
+        html = _render_md_to_html_for_export('# 文件標題\n\n內容', THEMES['Paper'], 'Editorial')
+        self.assertIn('Noto Serif CJK TC', html)
+        self.assertIn('@page', html)
+        self.assertIn('#fbf7ef', html)
 
 
 if __name__ == '__main__':

@@ -9,13 +9,14 @@ Markword 是以 FastAPI 與 React/Vite 建構的文字統計及 Markdown 編輯�
 - 即時統計總字數、中文字、英文單字、數字、全形標點與行數
 - Markdown 即時預覽與編輯器／預覽雙向同步捲動
 - 可點擊文件大綱、預覽雙擊回到原始碼、同步捲動開關
-- Light、Dark、Nord、Dracula 四種主題
+- Light、Paper、Sage、Dark、Ocean、Nord、Dracula、Midnight 八種主題
 - 程式碼語法高亮、Mermaid、KaTeX、task list 與 footnote
 - 開啟／拖放 `.md`、下載 Markdown 與可攜 HTML
 - CodeMirror 搜尋、摺疊、命令選單、快捷插入、專注與打字機模式
 - IndexedDB 草稿復原、每五分鐘自動版本、手動版本與非破壞還原
 - 手機版編輯／預覽 tabs，以及可安裝的 PWA 離線 app shell
-- 匯出 PDF 與 Word (`.docx`)
+- Markdown、可攜 HTML、PDF 與 Word (`.docx`) 集中式匯出
+- 經典、編輯排版、報告、精簡四種 HTML／PDF 成品版型
 - 單一 FastAPI 程序提供 API 與正式版前端靜態檔
 
 ## 專案結構
@@ -74,6 +75,8 @@ uv run uvicorn backend.main:app --host 0.0.0.0 --port 27860
 - `?`：顯示快捷鍵；`Ctrl/Cmd+Shift+F`：專注模式。
 - 左側大綱可跳至標題；雙擊右側預覽區塊可回到對應原始碼。
 - 工具列可開啟或拖放本機 Markdown，並下載 `.md` 或自帶樣式的 `.html`。
+- 「匯出」選單集中 Markdown、HTML、PDF、Word；HTML／PDF 可先選擇經典、編輯排版、報告或精簡版型。
+- 主題同時控制預覽、HTML、PDF、Word 與 Mermaid 配色；可攜 HTML 會嵌入已渲染的 Mermaid SVG。
 - 草稿存在瀏覽器 IndexedDB；內容變更後每五分鐘建立一個本機版本，最多保留 120 個。還原版本前會先備份目前內容。
 - PWA 只快取編輯器／預覽所需的 app shell 與靜態資源；PDF／Word 仍由本機 FastAPI 服務產生。
 
@@ -106,8 +109,8 @@ README 的畫面示範使用另寫的通用 Markdown；實際使用者文件與�
 | `GET` | `/api/health` | 服務健康狀態 |
 | `POST` | `/api/analyze` | 文字統計 |
 | `GET` | `/api/themes` | 取得預覽主題 |
-| `POST` | `/api/export/pdf` | 匯出 PDF |
-| `POST` | `/api/export/docx` | 匯出 Word |
+| `POST` | `/api/export/pdf` | 依 `theme` 與 `style` 匯出 PDF |
+| `POST` | `/api/export/docx` | 依 `theme` 匯出 Word；接受相同 `style` 契約 |
 
 完整 request / response schema 可在 `/docs` 查看。為了讓既有啟動腳本容易遷移，`python app.py` 仍可使用，但新的部署設定建議直接指定 `backend.main:app`。
 

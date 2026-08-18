@@ -16,7 +16,7 @@ import {
   Palette,
   Search,
 } from 'lucide-react'
-import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react'
 import { exportDocument } from './api'
 import { CommandPalette, type CommandAction } from './components/CommandPalette'
 import { EditorPane, type EditorHandle } from './components/EditorPane'
@@ -30,16 +30,8 @@ import { renderMarkdown } from './markdown'
 import './productivity.css'
 import { SAMPLE_MARKDOWN } from './sample'
 import { DraftPersistenceSession, loadPreference, savePreference, type PersistenceStatus } from './storage'
-import type { ThemeName } from './types'
-
-const THEMES: ThemeName[] = ['Light', 'Dark', 'Nord', 'Dracula']
-const THEME_LABELS: Record<ThemeName, string> = { Light: '明亮', Dark: '深色', Nord: 'Nord', Dracula: 'Dracula' }
-const THEME_EXPORT_COLORS: Record<ThemeName, { background: string; text: string; muted: string; border: string; code: string; accent: string }> = {
-  Light: { background: '#ffffff', text: '#263246', muted: '#64748b', border: '#e2e8f0', code: '#f7f8fb', accent: '#4f46e5' },
-  Dark: { background: '#0f172a', text: '#e2e8f0', muted: '#94a3b8', border: '#334155', code: '#1e293b', accent: '#38bdf8' },
-  Nord: { background: '#2e3440', text: '#eceff4', muted: '#d8dee9', border: '#4c566a', code: '#3b4252', accent: '#88c0d0' },
-  Dracula: { background: '#282a36', text: '#f8f8f2', muted: '#bfbfbf', border: '#44475a', code: '#343746', accent: '#bd93f9' },
-}
+import { EXPORT_STYLES, isThemeName, THEME_META, THEMES } from './themeConfig'
+import type { ExportStyleName, ThemeName } from './types'
 
 const MAX_LOCAL_FILE_BYTES = 5_000_000
 
@@ -76,14 +68,14 @@ function collectHeadings(markdown: string): OutlineHeading[] {
   return headings
 }
 
-function portableHtml(markdown: string, theme: ThemeName) {
-  const colors = THEME_EXPORT_COLORS[theme]
+function portableHtml(markdown: string, theme: ThemeName, exportStyle: ExportStyleName, renderedHtml?: string | null) {
+  const colors = THEME_META[theme]
   const title = documentTitle(markdown).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
   return `<!doctype html>
 <html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${title}</title><style>
-:root{color-scheme:${theme === 'Light' ? 'light' : 'dark'}}*{box-sizing:border-box}body{margin:0;background:${colors.background};color:${colors.text};font-family:"Noto Sans TC","Microsoft JhengHei",system-ui,sans-serif;line-height:1.78}.document{width:min(100% - 40px,880px);margin:auto;padding:48px 0 80px}h1,h2{border-bottom:1px solid ${colors.border};padding-bottom:.3em}h1{font-size:2.25rem}h2{font-size:1.55rem;margin-top:1.5em}h3{font-size:1.2rem;margin-top:1.4em}a{color:${colors.accent}}code{background:${colors.code};padding:.14em .35em;border-radius:4px}pre{overflow:auto;background:${colors.code};border:1px solid ${colors.border};border-radius:8px;padding:16px}pre code{padding:0}.copy-code,.mermaid-loading{display:none}.mermaid-fallback{display:block}.mermaid-block{border:1px solid ${colors.border};border-radius:8px;padding:16px}blockquote{margin:1.2em 0;padding:.6em 1em;border-left:3px solid ${colors.accent};color:${colors.muted};background:${colors.code}}table{width:100%;border-collapse:collapse}th,td{border:1px solid ${colors.border};padding:8px 11px;text-align:left}th{background:${colors.code}}img,svg{max-width:100%;height:auto}@media print{.document{width:auto;padding:0}}
-</style></head><body><main class="document">${renderMarkdown(markdown)}</main></body></html>`
+:root{color-scheme:${colors.dark ? 'dark' : 'light'}}*{box-sizing:border-box}body{margin:0;background:${colors.background};color:${colors.text};font-family:"Noto Sans TC","Microsoft JhengHei",system-ui,sans-serif;line-height:1.78}.document{width:min(100% - 40px,880px);margin:auto;padding:48px 0 80px}h1,h2{border-bottom:1px solid ${colors.border};padding-bottom:.3em}h1{font-size:2.25rem}h2{font-size:1.55rem;margin-top:1.5em}h3{font-size:1.2rem;margin-top:1.4em}a{color:${colors.accent}}code{background:${colors.code};padding:.14em .35em;border-radius:4px}pre{overflow:auto;background:${colors.code};border:1px solid ${colors.border};border-radius:8px;padding:16px}pre code{padding:0}.copy-code,.mermaid-loading{display:none}.mermaid-fallback{display:block}.mermaid-block{border:1px solid ${colors.border};border-radius:8px;padding:16px}blockquote{margin:1.2em 0;padding:.6em 1em;border-left:3px solid ${colors.accent};color:${colors.muted};background:${colors.code}}table{width:100%;border-collapse:collapse}th,td{border:1px solid ${colors.border};padding:8px 11px;text-align:left}th{background:${colors.code}}img,svg{max-width:100%;height:auto}@media print{.document{width:auto;padding:0}}
+</style><style>${EXPORT_STYLES[exportStyle].css}</style></head><body><main class="document">${renderedHtml || renderMarkdown(markdown)}</main></body></html>`
 }
 
 export default function App() {
@@ -93,6 +85,8 @@ export default function App() {
   const [split, setSplit] = useState(() => loadPreference('split', 49))
   const [statsOpen, setStatsOpen] = useState(false)
   const [themeOpen, setThemeOpen] = useState(false)
+  const [exportOpen, setExportOpen] = useState(false)
+  const [exportStyle, setExportStyle] = useState<ExportStyleName>(() => loadPreference('export-style', 'Classic'))
   const [exporting, setExporting] = useState<'pdf' | 'docx' | null>(null)
   const [notice, setNotice] = useState('')
   const [activeLine, setActiveLine] = useState(1)
@@ -113,6 +107,8 @@ export default function App() {
   const editorRef = useRef<EditorHandle>(null)
   const previewRef = useRef<PreviewHandle>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const themeMenuRef = useRef<HTMLDivElement>(null)
+  const exportMenuRef = useRef<HTMLDivElement>(null)
   const { stats, available } = useDebouncedStats(markdown)
   const totalLines = Math.max(1, markdown.split('\n').length)
   const headings = useMemo(() => collectHeadings(markdown), [markdown])
@@ -124,7 +120,7 @@ export default function App() {
       if (cancelled) return
       setMarkdown(draft.content)
       const savedTheme = draft.metadata.theme
-      if (typeof savedTheme === 'string' && THEMES.includes(savedTheme as ThemeName)) setTheme(savedTheme as ThemeName)
+      if (isThemeName(savedTheme)) setTheme(savedTheme)
       setHydrated(true)
       persistence.start()
     }).catch(() => {
@@ -145,7 +141,19 @@ export default function App() {
     savePreference('split', split)
     savePreference('outline-collapsed', outlineCollapsed)
     savePreference('sync-enabled', syncEnabled)
-  }, [outlineCollapsed, split, syncEnabled, theme])
+    savePreference('export-style', exportStyle)
+  }, [exportStyle, outlineCollapsed, split, syncEnabled, theme])
+
+  useEffect(() => {
+    if (!themeOpen && !exportOpen) return
+    const closeOutside = (event: PointerEvent) => {
+      const target = event.target as Node
+      if (themeOpen && !themeMenuRef.current?.contains(target)) setThemeOpen(false)
+      if (exportOpen && !exportMenuRef.current?.contains(target)) setExportOpen(false)
+    }
+    document.addEventListener('pointerdown', closeOutside)
+    return () => document.removeEventListener('pointerdown', closeOutside)
+  }, [exportOpen, themeOpen])
 
   const showNotice = useCallback((message: string) => {
     setNotice(message)
@@ -173,9 +181,9 @@ export default function App() {
   }, [markdown, showNotice])
 
   const downloadHtml = useCallback(() => {
-    downloadBlob(portableHtml(markdown, theme), 'text/html;charset=utf-8', `${documentTitle(markdown)}.html`)
+    downloadBlob(portableHtml(markdown, theme, exportStyle, previewRef.current?.getRenderedHtml()), 'text/html;charset=utf-8', `${documentTitle(markdown)}.html`)
     showNotice('可攜 HTML 已下載')
-  }, [markdown, showNotice, theme])
+  }, [exportStyle, markdown, showNotice, theme])
 
   const handleEditorScroll = useCallback((line: number, atEnd: boolean) => {
     setActiveLine(line)
@@ -219,14 +227,14 @@ export default function App() {
     setExporting(format)
     setNotice('')
     try {
-      await exportDocument(format, markdown, theme)
+      await exportDocument(format, markdown, theme, exportStyle)
       showNotice(`${format.toUpperCase()} 已開始下載`)
     } catch (error) {
       showNotice(error instanceof Error ? error.message : '匯出失敗，請稍後再試')
     } finally {
       setExporting(null)
     }
-  }, [exporting, markdown, showNotice, theme])
+  }, [exportStyle, exporting, markdown, showNotice, theme])
 
   const createManualSnapshot = useCallback(async () => {
     try {
@@ -278,6 +286,9 @@ export default function App() {
         setHelpOpen(true)
       } else if (event.key === 'Escape' && focusMode && !commandOpen && !helpOpen) {
         setFocusMode(false)
+      } else if (event.key === 'Escape') {
+        setThemeOpen(false)
+        setExportOpen(false)
       }
     }
     window.addEventListener('keydown', onKeyDown)
@@ -299,19 +310,22 @@ export default function App() {
         <div className="brand"><div className="brand__mark" aria-hidden="true">M↓</div><span>文字工具箱</span></div>
         <nav className="header-actions" aria-label="文件工具">
           <button className="toolbar-button" type="button" onClick={() => fileInputRef.current?.click()} title="開啟 Markdown"><FolderOpen size={17} /><span>開啟</span></button>
-          <button className="toolbar-button" type="button" onClick={downloadMarkdown} title="下載 Markdown"><FileDown size={17} /><span>Markdown</span></button>
-          <button className="toolbar-button" type="button" onClick={downloadHtml} title="下載可攜 HTML"><Code2 size={17} /><span>HTML</span></button>
-          <button className={`toolbar-button ${statsOpen ? 'is-active' : ''}`} type="button" onClick={() => setStatsOpen((open) => !open)}><BarChart3 size={17} /><span>字數統計</span></button>
-          <div className="menu-wrap">
-            <button className="toolbar-button" type="button" onClick={() => setThemeOpen((open) => !open)}><Palette size={17} /><span>{THEME_LABELS[theme]}</span><ChevronDown size={15} /></button>
-            {themeOpen ? <div className="theme-menu" role="menu">{THEMES.map((name) => <button key={name} type="button" className={name === theme ? 'is-selected' : ''} onClick={() => { setTheme(name); setThemeOpen(false) }} role="menuitem"><span className={`theme-swatch theme-swatch--${name.toLowerCase()}`} />{THEME_LABELS[name]}{name === theme ? <CheckCircle2 size={15} /> : null}</button>)}</div> : null}
+          <button className={`toolbar-button ${statsOpen ? 'is-active' : ''}`} type="button" aria-label="字數統計" onClick={() => setStatsOpen((open) => !open)}><BarChart3 size={17} /><span>字數統計</span></button>
+          <div className="menu-wrap" ref={themeMenuRef}>
+            <button className={`toolbar-button ${themeOpen ? 'is-active' : ''}`} type="button" aria-label={`預覽主題：${THEME_META[theme].label}`} aria-haspopup="menu" aria-expanded={themeOpen} onClick={() => { setThemeOpen((open) => !open); setExportOpen(false) }}><Palette size={17} /><span>{THEME_META[theme].label}</span><ChevronDown size={15} /></button>
+            {themeOpen ? <div className="theme-menu" role="menu" aria-label="預覽主題"><div className="menu-heading"><strong>預覽主題</strong><span>同時套用到匯出文件</span></div><div className="theme-menu__grid">{THEMES.map((name) => {
+              const meta = THEME_META[name]
+              return <button key={name} type="button" className={name === theme ? 'is-selected' : ''} onClick={() => { setTheme(name); setThemeOpen(false) }} role="menuitemradio" aria-checked={name === theme}><span className="theme-palette" aria-hidden="true" style={{ '--swatch-bg': meta.background, '--swatch-code': meta.code, '--swatch-accent': meta.accent } as CSSProperties} /><span className="theme-option-copy"><strong>{meta.label}</strong><small>{meta.description}</small></span>{name === theme ? <CheckCircle2 size={15} /> : null}</button>
+            })}</div></div> : null}
           </div>
           <button className={`toolbar-button sync-toggle ${syncEnabled ? 'is-active' : ''}`} type="button" aria-pressed={syncEnabled} onClick={() => setSyncEnabled((enabled) => !enabled)} title="切換同步捲動"><span>{syncEnabled ? '同步開' : '同步關'}</span></button>
           <button className="toolbar-button utility-command" type="button" onClick={() => setCommandOpen(true)} title="命令選單 (Cmd/Ctrl+K)"><Menu size={17} /><span>命令</span><kbd>⌘K</kbd></button>
           <button className="toolbar-button utility-help" type="button" onClick={() => setHelpOpen(true)} title="快捷鍵"><HelpCircle size={17} /></button>
           <span className="header-divider" />
-          <button className="toolbar-button" type="button" disabled={!markdown.trim() || Boolean(exporting)} onClick={() => void handleExport('pdf')}><Download size={17} /><span>{exporting === 'pdf' ? '匯出中…' : 'PDF'}</span></button>
-          <button className="toolbar-button" type="button" disabled={!markdown.trim() || Boolean(exporting)} onClick={() => void handleExport('docx')}><FileText size={17} /><span>{exporting === 'docx' ? '匯出中…' : 'Word'}</span></button>
+          <div className="menu-wrap" ref={exportMenuRef}>
+            <button className={`toolbar-button export-trigger ${exportOpen ? 'is-active' : ''}`} type="button" disabled={!markdown.trim()} aria-label={exporting ? `${exporting === 'pdf' ? 'PDF' : 'Word'} 匯出中` : '匯出'} aria-haspopup="menu" aria-expanded={exportOpen} onClick={() => { setExportOpen((open) => !open); setThemeOpen(false) }}><Download size={17} /><span>{exporting ? `${exporting === 'pdf' ? 'PDF' : 'Word'} 匯出中…` : '匯出'}</span><ChevronDown size={15} /></button>
+            {exportOpen ? <div className="export-menu" role="menu" aria-label="下載與匯出"><div className="menu-heading"><strong>下載與匯出</strong><span>選擇版型，再輸出需要的格式</span></div><div className="export-style-picker"><span>成品版型</span><div>{(Object.keys(EXPORT_STYLES) as ExportStyleName[]).map((styleName) => <button key={styleName} type="button" className={styleName === exportStyle ? 'is-selected' : ''} aria-pressed={styleName === exportStyle} onClick={() => setExportStyle(styleName)}><strong>{EXPORT_STYLES[styleName].label}</strong><small>{EXPORT_STYLES[styleName].description}</small></button>)}</div></div><div className="export-menu__section"><span>原始與網頁</span><button type="button" role="menuitem" onClick={() => { downloadMarkdown(); setExportOpen(false) }}><FileDown size={17} /><span><strong>Markdown</strong><small>保留可繼續編輯的原始碼</small></span></button><button type="button" role="menuitem" onClick={() => { downloadHtml(); setExportOpen(false) }}><Code2 size={17} /><span><strong>可攜 HTML</strong><small>套用「{EXPORT_STYLES[exportStyle].label}」版型與目前主題</small></span></button></div><div className="export-menu__section"><span>文件格式</span><button type="button" role="menuitem" disabled={Boolean(exporting)} onClick={() => { setExportOpen(false); void handleExport('pdf') }}><Download size={17} /><span><strong>PDF</strong><small>套用「{EXPORT_STYLES[exportStyle].label}」列印版型</small></span></button><button type="button" role="menuitem" disabled={Boolean(exporting)} onClick={() => { setExportOpen(false); void handleExport('docx') }}><FileText size={17} /><span><strong>Word</strong><small>套用配色，可繼續編輯排版</small></span></button></div></div> : null}
+          </div>
           <button className="toolbar-button revision-hook" type="button" onClick={() => void createManualSnapshot()}><FileDown size={17} /><span>建立版本</span></button>
           <button className="toolbar-button revision-hook" type="button" onClick={() => setRevisionsOpen(true)}><ListTree size={17} /><span>版本記錄</span></button>
         </nav>
@@ -344,7 +358,7 @@ export default function App() {
         <button className="splitter" type="button" onPointerDown={beginResize} aria-label="調整編輯器與預覽寬度"><span className="sync-rail" aria-hidden="true"><i style={{ top: `${Math.min(96, Math.max(2, (activeLine / totalLines) * 100))}%` }} /></span><span className="splitter-grip">↔</span></button>
 
         <section className="pane pane--preview" style={{ width: `${100 - split}%` }}>
-          <header className="pane-header"><div><Eye size={15} />即時預覽</div><span>{THEME_LABELS[theme]}主題</span></header>
+          <header className="pane-header"><div><Eye size={15} />即時預覽</div><span>{THEME_META[theme].label}主題</span></header>
           <PreviewPane ref={previewRef} markdown={deferredMarkdown} theme={theme} onScrollLine={handlePreviewScroll} onLayout={handlePreviewLayout} onSourceLine={jumpToLine} />
         </section>
 
@@ -375,7 +389,7 @@ export default function App() {
             onRestore={(content, metadata) => {
               setMarkdown(content)
               const restoredTheme = metadata.theme
-              if (typeof restoredTheme === 'string' && THEMES.includes(restoredTheme as ThemeName)) setTheme(restoredTheme as ThemeName)
+              if (isThemeName(restoredTheme)) setTheme(restoredTheme)
             }}
           />
         </div>

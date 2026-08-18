@@ -1,4 +1,4 @@
-import type { TextStats, ThemeName } from './types'
+import type { ExportStyleName, TextStats, ThemeName } from './types'
 
 async function parseError(response: Response) {
   try {
@@ -20,11 +20,11 @@ export async function analyzeText(text: string, signal?: AbortSignal): Promise<T
   return response.json()
 }
 
-export async function exportDocument(format: 'pdf' | 'docx', markdown: string, theme: ThemeName) {
+export async function exportDocument(format: 'pdf' | 'docx', markdown: string, theme: ThemeName, style: ExportStyleName) {
   const response = await fetch(`/api/export/${format}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ markdown, theme }),
+    body: JSON.stringify({ markdown, theme, style }),
   })
   if (!response.ok) throw new Error(await parseError(response))
   const blob = await response.blob()

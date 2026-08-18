@@ -27,6 +27,7 @@ from markdown_it import MarkdownIt
 from weasyprint import HTML
 
 from themes import THEMES, Theme
+from export_styles import EXPORT_STYLES
 
 EXPORT_DIR = os.path.abspath(
     os.getenv(
@@ -175,19 +176,25 @@ def _get_export_filename(md_text: str, ext: str = 'pdf') -> str:
     return f'export_{text_hash}.{ext}'
 
 
-def _fetch_mermaid_png(code: str, mermaid_theme: str = 'default') -> bytes | None:
+def _fetch_mermaid_png(code: str, theme: Theme) -> bytes | None:
     '''
     Fetch rendered PNG bytes for a Mermaid diagram from mermaid.ink API.
 
     Args:
         code: Mermaid diagram source string.
-        mermaid_theme: Mermaid theme identifier ('default' or 'dark').
+        theme: Markword theme including Mermaid color variables.
 
     Returns:
         PNG image bytes, or None if fetching fails.
     '''
     try:
-        payload = json.dumps({'code': code, 'mermaid': {'theme': mermaid_theme}})
+        payload = json.dumps({
+            'code': code,
+            'mermaid': {
+                'theme': 'base',
+                'themeVariables': theme.mermaid_variables,
+            },
+        })
         b64_str = base64.urlsafe_b64encode(payload.encode('utf-8')).decode('utf-8')
         url = f'https://mermaid.ink/img/{b64_str}'
         req = urllib.request.Request(
@@ -461,7 +468,7 @@ def render_preview(md_text: str, theme_name: str = 'Light') -> str:
 # Export: PDF
 # ---------------------------------------------------------------------------
 
-def _render_md_to_html_for_export(md_text: str, theme: Theme) -> str:
+def _render_md_to_html_for_export(md_text: str, theme: Theme, export_style: str = 'Classic') -> str:
     '''
     Convert markdown to a print-ready HTML document with rendered Mermaid diagrams.
 
@@ -474,7 +481,7 @@ def _render_md_to_html_for_export(md_text: str, theme: Theme) -> str:
     '''
     def _mermaid_replacer(match: re.Match) -> str:
         code = match.group(1).strip()
-        png_data = _fetch_mermaid_png(code, theme.mermaid_theme)
+        png_data = _fetch_mermaid_png(code, theme)
         if png_data:
             b64_img = base64.b64encode(png_data).decode('utf-8')
             return f'<div class="mermaid-img"><img src="data:image/png;base64,{b64_img}" alt="Mermaid Diagram" /></div>'
@@ -483,10 +490,12 @@ def _render_md_to_html_for_export(md_text: str, theme: Theme) -> str:
     processed = _MERMAID_BLOCK_RE.sub(_mermaid_replacer, md_text)
     body_html = md.markdown(processed, extensions=_MD_EXTENSIONS)
     body_html = _sanitize_emojis_for_export(body_html)
-    return _build_html_page(body_html, theme, has_mermaid=False)
+    page = _build_html_page(body_html, theme, has_mermaid=False)
+    style_css = EXPORT_STYLES.get(export_style, EXPORT_STYLES['Classic'])
+    return page.replace('</head>', f'<style>{style_css}</style></head>')
 
 
-def export_pdf(md_text: str, theme_name: str = 'Light') -> str | None:
+def export_pdf(md_text: str, theme_name: str = 'Light', export_style: str = 'Classic') -> str | None:
     '''
     Export markdown text to a PDF file styled with the selected theme.
 
@@ -503,7 +512,7 @@ def export_pdf(md_text: str, theme_name: str = 'Light') -> str | None:
     _cleanup_old_exports()
     filename = _get_export_filename(md_text, ext='pdf')
     theme = THEMES.get(theme_name, THEMES['Light'])
-    html_str = _render_md_to_html_for_export(md_text, theme)
+    html_str = _render_md_to_html_for_export(md_text, theme, export_style)
 
     tmp_dir = tempfile.mkdtemp(dir=EXPORT_DIR, prefix='pdf_')
     out_path = os.path.join(tmp_dir, filename)
@@ -615,7 +624,7 @@ def _append_node_to_paragraph(
         )
 
 
-def export_word(md_text: str, theme_name: str = 'Light') -> str | None:
+def export_word(md_text: str, theme_name: str = 'Light', export_style: str = 'Classic') -> str | None:
     '''
     Export markdown text to a Word (.docx) file styled with the selected theme.
 
@@ -655,7 +664,7 @@ def export_word(md_text: str, theme_name: str = 'Light') -> str | None:
 
     def _mermaid_word_replacer(match: re.Match) -> str:
         code = match.group(1).strip()
-        png_data = _fetch_mermaid_png(code, theme.mermaid_theme)
+        png_data = _fetch_mermaid_png(code, theme)
         placeholder_id = f'MERMAID_IMG_PLACEHOLDER_{len(mermaid_images)}'
         if png_data:
             tmp_img = tempfile.NamedTemporaryFile(suffix='.png', delete=False, prefix='mermaid_')

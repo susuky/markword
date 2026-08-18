@@ -52,6 +52,10 @@ async def test_themes(client):
         "Dark",
         "Nord",
         "Dracula",
+        "Paper",
+        "Sage",
+        "Ocean",
+        "Midnight",
     }
 
 
@@ -74,13 +78,28 @@ async def test_export_rejects_unknown_theme(client):
 
 
 @pytest.mark.anyio
+async def test_export_rejects_unknown_style(client):
+    response = await client.post(
+        "/api/export/pdf",
+        json={"markdown": "# Test", "theme": "Light", "style": "Missing"},
+    )
+    assert response.status_code == 422
+
+
+@pytest.mark.anyio
 async def test_pdf_export_download_and_cleanup(client, monkeypatch, tmp_path):
     export_dir = tmp_path / "pdf_request"
     export_dir.mkdir()
     export_path = export_dir / "測試文件.pdf"
     export_path.write_bytes(b"%PDF-test")
 
-    monkeypatch.setattr(main, "export_pdf", lambda markdown, theme: str(export_path))
+    seen = {}
+
+    def fake_export(markdown, theme, style):
+        seen.update(markdown=markdown, theme=theme, style=style)
+        return str(export_path)
+
+    monkeypatch.setattr(main, "export_pdf", fake_export)
     response = await client.post(
         "/api/export/pdf",
         json={"markdown": "# 測試文件", "theme": "Light"},
@@ -90,6 +109,7 @@ async def test_pdf_export_download_and_cleanup(client, monkeypatch, tmp_path):
     assert response.content == b"%PDF-test"
     assert response.headers["content-type"] == "application/pdf"
     assert "filename*=utf-8''" in response.headers["content-disposition"].lower()
+    assert seen == {"markdown": "# 測試文件", "theme": "Light", "style": "Classic"}
     assert not export_dir.exists()
 
 

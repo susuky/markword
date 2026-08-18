@@ -9,9 +9,11 @@ import {
 } from '../markdown'
 import '../markdownFeatures.css'
 import type { ThemeName } from '../types'
+import { mermaidThemeVariables, THEME_META } from '../themeConfig'
 
 export interface PreviewHandle {
   scrollToLine: (line: number, atEnd?: boolean) => void
+  getRenderedHtml: () => string | null
 }
 
 interface PreviewPaneProps {
@@ -64,6 +66,9 @@ const PreviewPaneComponent = forwardRef<PreviewHandle, PreviewPaneProps>(functio
       scroll.scrollTop = atEnd ? maxScroll : lineToPreviewOffset(line, readAnchors(), maxScroll)
       window.setTimeout(() => { suppressScrollRef.current = false }, 100)
     },
+    getRenderedHtml() {
+      return contentRef.current?.innerHTML ?? null
+    },
   }), [readAnchors])
 
   useEffect(() => {
@@ -80,7 +85,8 @@ const PreviewPaneComponent = forwardRef<PreviewHandle, PreviewPaneProps>(functio
       mermaid.initialize({
         startOnLoad: false,
         securityLevel: 'strict',
-        theme: theme === 'Light' ? 'default' : 'dark',
+        theme: 'base',
+        themeVariables: mermaidThemeVariables(theme),
         fontFamily: 'Noto Sans TC, sans-serif',
       })
       for (const [index, block] of blocks.entries()) {
@@ -190,7 +196,7 @@ const PreviewPaneComponent = forwardRef<PreviewHandle, PreviewPaneProps>(functio
   }
 
   return (
-    <div className="preview-scroll" ref={scrollRef} onScroll={handleScroll}>
+      <div className="preview-scroll" ref={scrollRef} onScroll={handleScroll} style={{ background: THEME_META[theme].background }}>
       {markdown.trim() ? (
         <article
           ref={contentRef}
