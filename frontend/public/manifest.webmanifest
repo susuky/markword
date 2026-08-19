@@ -3,14 +3,14 @@
   "short_name": "Markword",
   "description": "可離線開啟的 Markdown 編輯、預覽與文字統計工具",
   "lang": "zh-TW",
-  "start_url": "/",
-  "scope": "/",
+  "start_url": ".",
+  "scope": ".",
   "display": "standalone",
   "background_color": "#f6f8fb",
   "theme_color": "#5b54ee",
   "icons": [
     {
-      "src": "/markword-icon.svg",
+      "src": "markword-icon.svg",
       "sizes": "any",
       "type": "image/svg+xml",
       "purpose": "any maskable"

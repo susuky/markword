@@ -14,17 +14,18 @@ const METRICS: Array<[keyof TextStats, string]> = [
 interface StatsPopoverProps {
   stats: TextStats
   available: boolean
+  staticDeployment?: boolean
   onClose: () => void
   onClear: () => void
 }
 
-export function StatsPopover({ stats, available, onClose, onClear }: StatsPopoverProps) {
+export function StatsPopover({ stats, available, staticDeployment = false, onClose, onClear }: StatsPopoverProps) {
   return (
     <aside className="stats-popover" aria-label="字數統計">
       <header className="stats-popover__header">
         <div>
           <h2>字數統計</h2>
-          <p>{available ? '依目前文件即時計算' : '正在等待後端服務'}</p>
+          <p>{staticDeployment ? '由瀏覽器本機即時計算' : available ? '依目前文件即時計算' : '正在等待後端服務'}</p>
         </div>
         <button className="icon-button" type="button" onClick={onClose} aria-label="關閉字數統計">
           <X size={18} />
