@@ -26,12 +26,14 @@ RUN apt-get update \
 WORKDIR /app
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
-COPY . .
-COPY --from=frontend-build /build/frontend/dist ./frontend/dist
 
 RUN groupadd --system markword \
-    && useradd --system --gid markword --create-home --home-dir /home/markword --shell /usr/sbin/nologin markword \
-    && mkdir -p /app/exports \
+    && useradd --system --gid markword --create-home --home-dir /home/markword --shell /usr/sbin/nologin markword
+
+COPY --chown=markword:markword . .
+COPY --chown=markword:markword --from=frontend-build /build/frontend/dist ./frontend/dist
+
+RUN mkdir -p /app/exports \
     && chown -R markword:markword /app/exports
 
 USER markword

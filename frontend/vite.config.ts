@@ -12,6 +12,6 @@ export default defineConfig(({ mode }) => ({
     },
   },
   build: {
-    outDir: 'dist',
+    outDir: mode === 'pages' ? 'dist-pages' : 'dist',
   },
 }))

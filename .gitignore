@@ -35,6 +35,7 @@ result/
 build/
 develop-eggs/
 dist/
+frontend/dist-pages/
 downloads/
 eggs/
 .eggs/
