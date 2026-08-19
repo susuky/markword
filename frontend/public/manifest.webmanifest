@@ -1,8 +1,8 @@
 {
   "name": "Markword Markdown Editor",
   "short_name": "Markword",
-  "description": "可離線開啟的 Markdown 編輯、預覽與文字統計工具",
-  "lang": "zh-TW",
+  "description": "An installable Markdown editor with live preview and document statistics",
+  "lang": "en",
   "start_url": ".",
   "scope": ".",
   "display": "standalone",

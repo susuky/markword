@@ -1,14 +1,15 @@
 import { Eraser, X } from 'lucide-react'
+import { useI18n } from '../i18n'
 import type { TextStats } from '../types'
 
 const METRICS: Array<[keyof TextStats, string]> = [
-  ['total_chars', '總字數（含空白）'],
-  ['chars_no_spaces', '總字數（不含空白）'],
-  ['cjk_count', '中文字數'],
-  ['cjk_punct_count', '全形標點'],
-  ['english_words', '英文單字'],
-  ['digit_count', '數字'],
-  ['line_count', '行數'],
+  ['total_chars', 'Total characters (with spaces)'],
+  ['chars_no_spaces', 'Total characters (without spaces)'],
+  ['cjk_count', 'Chinese characters'],
+  ['cjk_punct_count', 'Full-width punctuation'],
+  ['english_words', 'English words'],
+  ['digit_count', 'Digits'],
+  ['line_count', 'Lines'],
 ]
 
 interface StatsPopoverProps {
@@ -20,28 +21,29 @@ interface StatsPopoverProps {
 }
 
 export function StatsPopover({ stats, available, staticDeployment = false, onClose, onClear }: StatsPopoverProps) {
+  const { locale, t } = useI18n()
   return (
-    <aside className="stats-popover" aria-label="字數統計">
+    <aside className="stats-popover" aria-label={t('Word count')}>
       <header className="stats-popover__header">
         <div>
-          <h2>字數統計</h2>
-          <p>{staticDeployment ? '由瀏覽器本機即時計算' : available ? '依目前文件即時計算' : '正在等待後端服務'}</p>
+          <h2>{t('Word count')}</h2>
+          <p>{staticDeployment ? t('Calculated locally in your browser') : available ? t('Calculated live from this document') : t('Waiting for the backend service')}</p>
         </div>
-        <button className="icon-button" type="button" onClick={onClose} aria-label="關閉字數統計">
+        <button className="icon-button" type="button" onClick={onClose} aria-label={t('Close word count')}>
           <X size={18} />
         </button>
       </header>
       <dl className="stats-grid">
         {METRICS.map(([key, label]) => (
           <div key={key}>
-            <dt>{label}</dt>
-            <dd>{stats[key].toLocaleString()}</dd>
+            <dt>{t(label)}</dt>
+            <dd>{stats[key].toLocaleString(locale)}</dd>
           </div>
         ))}
       </dl>
       <button className="clear-button" type="button" onClick={onClear}>
         <Eraser size={16} />
-        清除文件
+        {t('Clear document')}
       </button>
     </aside>
   )

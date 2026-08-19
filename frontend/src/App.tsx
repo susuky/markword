@@ -10,6 +10,7 @@ import {
   FileText,
   FolderOpen,
   HelpCircle,
+  Languages,
   ListTree,
   Maximize2,
   Menu,
@@ -27,6 +28,7 @@ import { ShortcutHelp } from './components/ShortcutHelp'
 import { StatsPopover } from './components/StatsPopover'
 import { IS_STATIC_DEPLOYMENT } from './deployment'
 import { useDebouncedStats } from './hooks/useDebouncedStats'
+import { useI18n, type Locale } from './i18n'
 import { renderMarkdown } from './markdown'
 import './productivity.css'
 import { SAMPLE_MARKDOWN } from './sample'
@@ -69,18 +71,20 @@ function collectHeadings(markdown: string): OutlineHeading[] {
   return headings
 }
 
-function portableHtml(markdown: string, theme: ThemeName, exportStyle: ExportStyleName, renderedHtml?: string | null) {
+function portableHtml(markdown: string, theme: ThemeName, exportStyle: ExportStyleName, locale: Locale, renderedHtml?: string | null) {
   const colors = THEME_META[theme]
   const title = documentTitle(markdown).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
   return `<!doctype html>
-<html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<html lang="${locale === 'zh-TW' ? 'zh-Hant' : 'en'}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${title}</title><style>
 :root{color-scheme:${colors.dark ? 'dark' : 'light'}}*{box-sizing:border-box}body{margin:0;background:${colors.background};color:${colors.text};font-family:"Noto Sans TC","Microsoft JhengHei",system-ui,sans-serif;line-height:1.78}.document{width:min(100% - 40px,880px);margin:auto;padding:48px 0 80px}h1,h2{border-bottom:1px solid ${colors.border};padding-bottom:.3em}h1{font-size:2.25rem}h2{font-size:1.55rem;margin-top:1.5em}h3{font-size:1.2rem;margin-top:1.4em}a{color:${colors.accent}}code{background:${colors.code};padding:.14em .35em;border-radius:4px}pre{overflow:auto;background:${colors.code};border:1px solid ${colors.border};border-radius:8px;padding:16px}pre code{padding:0}.copy-code,.mermaid-loading{display:none}.mermaid-fallback{display:block}.mermaid-block{border:1px solid ${colors.border};border-radius:8px;padding:16px}blockquote{margin:1.2em 0;padding:.6em 1em;border-left:3px solid ${colors.accent};color:${colors.muted};background:${colors.code}}table{width:100%;border-collapse:collapse}th,td{border:1px solid ${colors.border};padding:8px 11px;text-align:left}th{background:${colors.code}}img,svg{max-width:100%;height:auto}@media print{.document{width:auto;padding:0}}
 </style><style>${EXPORT_STYLES[exportStyle].css}</style></head><body><main class="document">${renderedHtml || renderMarkdown(markdown)}</main></body></html>`
 }
 
 export default function App() {
-  const [markdown, setMarkdown] = useState(SAMPLE_MARKDOWN)
+  const { locale, setLocale, t } = useI18n()
+  const initialSampleRef = useRef(SAMPLE_MARKDOWN[locale])
+  const [markdown, setMarkdown] = useState(initialSampleRef.current)
   const deferredMarkdown = useDeferredValue(markdown)
   const [theme, setTheme] = useState<ThemeName>(() => loadPreference('theme', 'Light'))
   const [split, setSplit] = useState(() => loadPreference('split', 49))
@@ -117,7 +121,7 @@ export default function App() {
 
   useEffect(() => {
     let cancelled = false
-    void persistence.initialize(SAMPLE_MARKDOWN, { theme: 'Light' }).then((draft) => {
+    void persistence.initialize(initialSampleRef.current, { theme: 'Light' }).then((draft) => {
       if (cancelled) return
       setMarkdown(draft.content)
       const savedTheme = draft.metadata.theme
@@ -163,28 +167,28 @@ export default function App() {
 
   const loadFile = useCallback(async (file: File) => {
     if (!/\.(md|markdown)$/i.test(file.name)) {
-      showNotice('請選擇 .md 或 .markdown 檔案')
+      showNotice(t('Please choose a .md or .markdown file'))
       return
     }
     if (file.size > MAX_LOCAL_FILE_BYTES) {
-      showNotice('檔案超過 5 MB，請先縮小後再開啟')
+      showNotice(t('This file is larger than 5 MB. Please choose a smaller file.'))
       return
     }
     setMarkdown(await file.text())
     setActiveLine(1)
     editorRef.current?.jumpToLine(1)
-    showNotice(`已開啟 ${file.name}`)
-  }, [showNotice])
+    showNotice(t('Opened {file}', { file: file.name }))
+  }, [showNotice, t])
 
   const downloadMarkdown = useCallback(() => {
     downloadBlob(markdown, 'text/markdown;charset=utf-8', `${documentTitle(markdown)}.md`)
-    showNotice('Markdown 已下載')
-  }, [markdown, showNotice])
+    showNotice(t('Markdown downloaded'))
+  }, [markdown, showNotice, t])
 
   const downloadHtml = useCallback(() => {
-    downloadBlob(portableHtml(markdown, theme, exportStyle, previewRef.current?.getRenderedHtml()), 'text/html;charset=utf-8', `${documentTitle(markdown)}.html`)
-    showNotice('可攜 HTML 已下載')
-  }, [exportStyle, markdown, showNotice, theme])
+    downloadBlob(portableHtml(markdown, theme, exportStyle, locale, previewRef.current?.getRenderedHtml()), 'text/html;charset=utf-8', `${documentTitle(markdown)}.html`)
+    showNotice(t('Portable HTML downloaded'))
+  }, [exportStyle, locale, markdown, showNotice, t, theme])
 
   const handleEditorScroll = useCallback((line: number, atEnd: boolean) => {
     setActiveLine(line)
@@ -229,41 +233,41 @@ export default function App() {
     setNotice('')
     try {
       await exportDocument(format, markdown, theme, exportStyle)
-      showNotice(`${format.toUpperCase()} 已開始下載`)
+      showNotice(t('{format} download started', { format: format.toUpperCase() }))
     } catch (error) {
-      showNotice(error instanceof Error ? error.message : '匯出失敗，請稍後再試')
+      showNotice(error instanceof Error ? error.message : t('Export failed. Please try again.'))
     } finally {
       setExporting(null)
     }
-  }, [exportStyle, exporting, markdown, showNotice, theme])
+  }, [exportStyle, exporting, markdown, showNotice, t, theme])
 
   const createManualSnapshot = useCallback(async () => {
     try {
       await persistence.snapshot('manual')
-      showNotice('已建立目前版本')
+      showNotice(t('Current revision created'))
     } catch (error) {
-      showNotice(error instanceof Error ? error.message : '建立版本失敗')
+      showNotice(error instanceof Error ? error.message : t('Could not create revision'))
     }
-  }, [persistence, showNotice])
+  }, [persistence, showNotice, t])
 
   const commandActions = useMemo<CommandAction[]>(() => [
-    { id: 'open', label: '開啟 Markdown', description: '從本機開啟 .md 檔', shortcut: 'Ctrl O', keywords: '檔案 upload', run: () => fileInputRef.current?.click() },
-    { id: 'save-md', label: '下載 Markdown', description: '保留原始內容', shortcut: 'Ctrl S', keywords: '匯出 save', run: downloadMarkdown },
-    { id: 'save-html', label: '下載可攜 HTML', description: '內嵌樣式，可離線閱讀', keywords: '匯出 self contained', run: downloadHtml },
-    { id: 'search', label: '搜尋文件', shortcut: 'Ctrl F', run: () => editorRef.current?.search() },
-    { id: 'insert-heading', label: '插入：二級標題', description: '## 標題', keywords: '/ heading', run: () => editorRef.current?.insert('\n## 標題\n', 4) },
-    { id: 'insert-table', label: '插入：表格', description: '三欄 Markdown 表格', keywords: '/ table', run: () => editorRef.current?.insert('\n| 欄位一 | 欄位二 | 欄位三 |\n| --- | --- | --- |\n| 內容 | 內容 | 內容 |\n') },
-    { id: 'insert-code', label: '插入：程式碼區塊', description: 'fenced code block', keywords: '/ code', run: () => editorRef.current?.insert('\n```text\n\n```\n', 9) },
-    { id: 'insert-mermaid', label: '插入：Mermaid 圖表', description: '基本流程圖', keywords: '/ diagram', run: () => editorRef.current?.insert('\n```mermaid\ngraph TD\n  A[開始] --> B[完成]\n```\n') },
-    { id: 'focus', label: focusMode ? '離開專注模式' : '進入專注模式', shortcut: 'Ctrl ⇧ F', run: () => setFocusMode((enabled) => !enabled) },
-    { id: 'typewriter', label: typewriterMode ? '關閉打字機模式' : '開啟打字機模式', shortcut: 'Ctrl Alt T', run: () => setTypewriterMode((enabled) => !enabled) },
-    { id: 'sync', label: syncEnabled ? '關閉同步捲動' : '開啟同步捲動', run: () => setSyncEnabled((enabled) => !enabled) },
-    { id: 'fold', label: '收合所有區塊', run: () => editorRef.current?.foldAll() },
-    { id: 'unfold', label: '展開所有區塊', run: () => editorRef.current?.unfoldAll() },
-    { id: 'snapshot', label: '建立目前版本', description: '保存到本機版本歷史', run: () => void createManualSnapshot() },
-    { id: 'revisions', label: '開啟版本歷史', description: '預覽、下載或還原舊版本', run: () => setRevisionsOpen(true) },
-    { id: 'shortcuts', label: '顯示快捷鍵', shortcut: '?', run: () => setHelpOpen(true) },
-  ], [createManualSnapshot, downloadHtml, downloadMarkdown, focusMode, syncEnabled, typewriterMode])
+    { id: 'open', label: t('Open Markdown'), description: t('Open a local .md file'), shortcut: 'Ctrl O', keywords: 'file upload 檔案', run: () => fileInputRef.current?.click() },
+    { id: 'save-md', label: t('Download Markdown'), description: t('Keep the editable source'), shortcut: 'Ctrl S', keywords: 'export save 匯出', run: downloadMarkdown },
+    { id: 'save-html', label: t('Download portable HTML'), description: t('Embedded styles for offline reading'), keywords: 'export self contained 匯出', run: downloadHtml },
+    { id: 'search', label: t('Search document'), shortcut: 'Ctrl F', run: () => editorRef.current?.search() },
+    { id: 'insert-heading', label: t('Insert: Heading 2'), description: t('## Heading'), keywords: '/ heading 標題', run: () => editorRef.current?.insert(`\n${t('## Heading')}\n`, 4) },
+    { id: 'insert-table', label: t('Insert: Table'), description: t('Three-column Markdown table'), keywords: '/ table 表格', run: () => editorRef.current?.insert(locale === 'zh-TW' ? '\n| 欄位一 | 欄位二 | 欄位三 |\n| --- | --- | --- |\n| 內容 | 內容 | 內容 |\n' : '\n| Column 1 | Column 2 | Column 3 |\n| --- | --- | --- |\n| Content | Content | Content |\n') },
+    { id: 'insert-code', label: t('Insert: Code block'), description: t('Fenced code block'), keywords: '/ code 程式碼', run: () => editorRef.current?.insert('\n```text\n\n```\n', 9) },
+    { id: 'insert-mermaid', label: t('Insert: Mermaid diagram'), description: t('Basic flowchart'), keywords: '/ diagram 圖表', run: () => editorRef.current?.insert(`\n\`\`\`mermaid\ngraph TD\n  A[${t('Start')}] --> B[${t('Done')}]\n\`\`\`\n`) },
+    { id: 'focus', label: t(focusMode ? 'Exit focus mode' : 'Enter focus mode'), shortcut: 'Ctrl ⇧ F', run: () => setFocusMode((enabled) => !enabled) },
+    { id: 'typewriter', label: t(typewriterMode ? 'Disable typewriter mode' : 'Enable typewriter mode'), shortcut: 'Ctrl Alt T', run: () => setTypewriterMode((enabled) => !enabled) },
+    { id: 'sync', label: t(syncEnabled ? 'Disable synchronized scrolling' : 'Enable synchronized scrolling'), run: () => setSyncEnabled((enabled) => !enabled) },
+    { id: 'fold', label: t('Fold all sections'), run: () => editorRef.current?.foldAll() },
+    { id: 'unfold', label: t('Unfold all sections'), run: () => editorRef.current?.unfoldAll() },
+    { id: 'snapshot', label: t('Create current revision'), description: t('Save to local revision history'), run: () => void createManualSnapshot() },
+    { id: 'revisions', label: t('Open revision history'), description: t('Preview, download, or restore an older revision'), run: () => setRevisionsOpen(true) },
+    { id: 'shortcuts', label: t('Show keyboard shortcuts'), shortcut: '?', run: () => setHelpOpen(true) },
+  ], [createManualSnapshot, downloadHtml, downloadMarkdown, focusMode, locale, syncEnabled, t, typewriterMode])
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -297,7 +301,7 @@ export default function App() {
   }, [commandOpen, downloadMarkdown, focusMode, helpOpen])
 
   if (!hydrated) {
-    return <main className="app-shell productivity-shell"><div className="app-loading">正在載入本機草稿…</div></main>
+    return <main className="app-shell productivity-shell"><div className="app-loading">{t('Loading local draft…')}</div></main>
   }
 
   return (
@@ -308,33 +312,57 @@ export default function App() {
         event.currentTarget.value = ''
       }} />
       <header className="app-header">
-        <div className="brand"><div className="brand__mark" aria-hidden="true">M↓</div><span>文字工具箱</span></div>
-        <nav className="header-actions" aria-label="文件工具">
-          <button className="toolbar-button" type="button" onClick={() => fileInputRef.current?.click()} title="開啟 Markdown"><FolderOpen size={17} /><span>開啟</span></button>
-          <button className={`toolbar-button ${statsOpen ? 'is-active' : ''}`} type="button" aria-label="字數統計" onClick={() => setStatsOpen((open) => !open)}><BarChart3 size={17} /><span>字數統計</span></button>
+        <div className="brand"><div className="brand__mark" aria-hidden="true">M↓</div><span>{t('Markword')}</span></div>
+        <nav className="header-actions" aria-label={t('Document tools')}>
+          <button className="toolbar-button" type="button" onClick={() => fileInputRef.current?.click()} title={t('Open Markdown')}><FolderOpen size={17} /><span>{t('Open')}</span></button>
+          <button className={`toolbar-button ${statsOpen ? 'is-active' : ''}`} type="button" aria-label={t('Word count')} onClick={() => setStatsOpen((open) => !open)}><BarChart3 size={17} /><span>{t('Word count')}</span></button>
           <div className="menu-wrap" ref={themeMenuRef}>
-            <button className={`toolbar-button ${themeOpen ? 'is-active' : ''}`} type="button" aria-label={`預覽主題：${THEME_META[theme].label}`} aria-haspopup="menu" aria-expanded={themeOpen} onClick={() => { setThemeOpen((open) => !open); setExportOpen(false) }}><Palette size={17} /><span>{THEME_META[theme].label}</span><ChevronDown size={15} /></button>
-            {themeOpen ? <div className="theme-menu" role="menu" aria-label="預覽主題"><div className="menu-heading"><strong>預覽主題</strong><span>同時套用到匯出文件</span></div><div className="theme-menu__grid">{THEMES.map((name) => {
+            <button className={`toolbar-button ${themeOpen ? 'is-active' : ''}`} type="button" aria-label={t('Preview theme: {theme}', { theme: t(THEME_META[theme].label) })} aria-haspopup="menu" aria-expanded={themeOpen} onClick={() => { setThemeOpen((open) => !open); setExportOpen(false) }}><Palette size={17} /><span>{t(THEME_META[theme].label)}</span><ChevronDown size={15} /></button>
+            {themeOpen ? <div className="theme-menu" role="menu" aria-label={t('Preview theme')}><div className="menu-heading"><strong>{t('Preview theme')}</strong><span>{t('Also applied to exported documents')}</span></div><div className="theme-menu__grid">{THEMES.map((name) => {
               const meta = THEME_META[name]
-              return <button key={name} type="button" className={name === theme ? 'is-selected' : ''} onClick={() => { setTheme(name); setThemeOpen(false) }} role="menuitemradio" aria-checked={name === theme}><span className="theme-palette" aria-hidden="true" style={{ '--swatch-bg': meta.background, '--swatch-code': meta.code, '--swatch-accent': meta.accent } as CSSProperties} /><span className="theme-option-copy"><strong>{meta.label}</strong><small>{meta.description}</small></span>{name === theme ? <CheckCircle2 size={15} /> : null}</button>
+              return <button key={name} type="button" className={name === theme ? 'is-selected' : ''} onClick={() => { setTheme(name); setThemeOpen(false) }} role="menuitemradio" aria-checked={name === theme}><span className="theme-palette" aria-hidden="true" style={{ '--swatch-bg': meta.background, '--swatch-code': meta.code, '--swatch-accent': meta.accent } as CSSProperties} /><span className="theme-option-copy"><strong>{t(meta.label)}</strong><small>{t(meta.description)}</small></span>{name === theme ? <CheckCircle2 size={15} /> : null}</button>
             })}</div></div> : null}
           </div>
-          <button className={`toolbar-button sync-toggle ${syncEnabled ? 'is-active' : ''}`} type="button" aria-pressed={syncEnabled} onClick={() => setSyncEnabled((enabled) => !enabled)} title="切換同步捲動"><span>{syncEnabled ? '同步開' : '同步關'}</span></button>
-          <button className="toolbar-button utility-command" type="button" onClick={() => setCommandOpen(true)} title="命令選單 (Cmd/Ctrl+K)"><Menu size={17} /><span>命令</span><kbd>⌘K</kbd></button>
-          <button className="toolbar-button utility-help" type="button" onClick={() => setHelpOpen(true)} title="快捷鍵"><HelpCircle size={17} /></button>
+          <button className={`toolbar-button sync-toggle ${syncEnabled ? 'is-active' : ''}`} type="button" aria-pressed={syncEnabled} onClick={() => setSyncEnabled((enabled) => !enabled)} title={t('Toggle synchronized scrolling')}><span>{t(syncEnabled ? 'Synchronized scrolling on' : 'Synchronized scrolling off')}</span></button>
+          <button className="toolbar-button utility-command" type="button" onClick={() => setCommandOpen(true)} title={`${t('Command palette')} (Cmd/Ctrl+K)`}><Menu size={17} /><span>{t('Commands')}</span><kbd>⌘K</kbd></button>
+          <button className="toolbar-button utility-help" type="button" onClick={() => setHelpOpen(true)} title={t('Keyboard shortcuts')}><HelpCircle size={17} /></button>
+          <button className="toolbar-button language-toggle" type="button" onClick={() => setLocale(locale === 'en' ? 'zh-TW' : 'en')} title={t(locale === 'en' ? 'Switch to Traditional Chinese' : 'Switch to English')} aria-label={t(locale === 'en' ? 'Switch to Traditional Chinese' : 'Switch to English')}><Languages size={17} /><span>{locale === 'en' ? t('Traditional Chinese') : 'EN'}</span></button>
           <span className="header-divider" />
           <div className="menu-wrap" ref={exportMenuRef}>
-            <button className={`toolbar-button export-trigger ${exportOpen ? 'is-active' : ''}`} type="button" disabled={!markdown.trim()} aria-label={exporting ? `${exporting === 'pdf' ? 'PDF' : 'Word'} 匯出中` : '匯出'} aria-haspopup="menu" aria-expanded={exportOpen} onClick={() => { setExportOpen((open) => !open); setThemeOpen(false) }}><Download size={17} /><span>{exporting ? `${exporting === 'pdf' ? 'PDF' : 'Word'} 匯出中…` : '匯出'}</span><ChevronDown size={15} /></button>
-            {exportOpen ? <div className="export-menu" role="menu" aria-label="下載與匯出"><div className="menu-heading"><strong>下載與匯出</strong><span>選擇版型，再輸出需要的格式</span></div><div className="export-style-picker"><span>成品版型</span><div>{(Object.keys(EXPORT_STYLES) as ExportStyleName[]).map((styleName) => <button key={styleName} type="button" className={styleName === exportStyle ? 'is-selected' : ''} aria-pressed={styleName === exportStyle} onClick={() => setExportStyle(styleName)}><strong>{EXPORT_STYLES[styleName].label}</strong><small>{EXPORT_STYLES[styleName].description}</small></button>)}</div></div><div className="export-menu__section"><span>原始與網頁</span><button type="button" role="menuitem" onClick={() => { downloadMarkdown(); setExportOpen(false) }}><FileDown size={17} /><span><strong>Markdown</strong><small>保留可繼續編輯的原始碼</small></span></button><button type="button" role="menuitem" onClick={() => { downloadHtml(); setExportOpen(false) }}><Code2 size={17} /><span><strong>可攜 HTML</strong><small>套用「{EXPORT_STYLES[exportStyle].label}」版型與目前主題</small></span></button></div><div className="export-menu__section"><span>文件格式</span><button type="button" role="menuitem" disabled={IS_STATIC_DEPLOYMENT || Boolean(exporting)} onClick={() => { setExportOpen(false); void handleExport('pdf') }}><Download size={17} /><span><strong>PDF</strong><small>{IS_STATIC_DEPLOYMENT ? 'GitHub Pages 版不提供，請使用完整伺服器版' : `套用「${EXPORT_STYLES[exportStyle].label}」列印版型`}</small></span></button><button type="button" role="menuitem" disabled={IS_STATIC_DEPLOYMENT || Boolean(exporting)} onClick={() => { setExportOpen(false); void handleExport('docx') }}><FileText size={17} /><span><strong>Word</strong><small>{IS_STATIC_DEPLOYMENT ? 'GitHub Pages 版不提供，請使用完整伺服器版' : '套用配色，可繼續編輯排版'}</small></span></button></div></div> : null}
+            <button className={`toolbar-button export-trigger ${exportOpen ? 'is-active' : ''}`} type="button" disabled={!markdown.trim()} aria-label={exporting ? t('{format} export in progress', { format: exporting === 'pdf' ? 'PDF' : 'Word' }) : t('Export')} aria-haspopup="menu" aria-expanded={exportOpen} onClick={() => { setExportOpen((open) => !open); setThemeOpen(false) }}><Download size={17} /><span>{exporting ? t('{format} export in progress…', { format: exporting === 'pdf' ? 'PDF' : 'Word' }) : t('Export')}</span><ChevronDown size={15} /></button>
+            {exportOpen ? (
+              <div className="export-menu" role="menu" aria-label={t('Download and export')}>
+                <div className="menu-heading"><strong>{t('Download and export')}</strong><span>{t('Choose a layout, then select an output format')}</span></div>
+                <div className="export-style-picker">
+                  <span>{t('Document layout')}</span>
+                  <div>{(Object.keys(EXPORT_STYLES) as ExportStyleName[]).map((styleName) => (
+                    <button key={styleName} type="button" className={styleName === exportStyle ? 'is-selected' : ''} aria-pressed={styleName === exportStyle} onClick={() => setExportStyle(styleName)}>
+                      <strong>{t(EXPORT_STYLES[styleName].label)}</strong>
+                      <small>{t(EXPORT_STYLES[styleName].description)}</small>
+                    </button>
+                  ))}</div>
+                </div>
+                <div className="export-menu__section">
+                  <span>{t('Source and web')}</span>
+                  <button type="button" role="menuitem" onClick={() => { downloadMarkdown(); setExportOpen(false) }}><FileDown size={17} /><span><strong>Markdown</strong><small>{t('Keep the editable source')}</small></span></button>
+                  <button type="button" role="menuitem" onClick={() => { downloadHtml(); setExportOpen(false) }}><Code2 size={17} /><span><strong>{t('Portable HTML')}</strong><small>{t('Uses the {style} layout and current theme', { style: t(EXPORT_STYLES[exportStyle].label) })}</small></span></button>
+                </div>
+                <div className="export-menu__section">
+                  <span>{t('Document formats')}</span>
+                  <button type="button" role="menuitem" disabled={IS_STATIC_DEPLOYMENT || Boolean(exporting)} onClick={() => { setExportOpen(false); void handleExport('pdf') }}><Download size={17} /><span><strong>PDF</strong><small>{IS_STATIC_DEPLOYMENT ? t('Unavailable on GitHub Pages; use the full server edition') : t('Uses the {style} print layout', { style: t(EXPORT_STYLES[exportStyle].label) })}</small></span></button>
+                  <button type="button" role="menuitem" disabled={IS_STATIC_DEPLOYMENT || Boolean(exporting)} onClick={() => { setExportOpen(false); void handleExport('docx') }}><FileText size={17} /><span><strong>Word</strong><small>{IS_STATIC_DEPLOYMENT ? t('Unavailable on GitHub Pages; use the full server edition') : t('Uses the current palette and remains editable')}</small></span></button>
+                </div>
+              </div>
+            ) : null}
           </div>
-          <button className="toolbar-button revision-hook" type="button" onClick={() => void createManualSnapshot()}><FileDown size={17} /><span>建立版本</span></button>
-          <button className="toolbar-button revision-hook" type="button" onClick={() => setRevisionsOpen(true)}><ListTree size={17} /><span>版本記錄</span></button>
+          <button className="toolbar-button revision-hook" type="button" onClick={() => void createManualSnapshot()}><FileDown size={17} /><span>{t('Create current revision')}</span></button>
+          <button className="toolbar-button revision-hook" type="button" onClick={() => setRevisionsOpen(true)}><ListTree size={17} /><span>{t('Revision history')}</span></button>
         </nav>
       </header>
 
-      <div className="mobile-view-tabs" role="tablist" aria-label="編輯與預覽">
-        <button type="button" role="tab" aria-selected={mobileView === 'editor'} className={mobileView === 'editor' ? 'is-active' : ''} onClick={() => setMobileView('editor')}><FileText size={15} />編輯</button>
-        <button type="button" role="tab" aria-selected={mobileView === 'preview'} className={mobileView === 'preview' ? 'is-active' : ''} onClick={() => setMobileView('preview')}><Eye size={15} />預覽</button>
+      <div className="mobile-view-tabs" role="tablist" aria-label={t('Editor and preview')}>
+        <button type="button" role="tab" aria-selected={mobileView === 'editor'} className={mobileView === 'editor' ? 'is-active' : ''} onClick={() => setMobileView('editor')}><FileText size={15} />{t('Editor')}</button>
+        <button type="button" role="tab" aria-selected={mobileView === 'preview'} className={mobileView === 'preview' ? 'is-active' : ''} onClick={() => setMobileView('preview')}><Eye size={15} />{t('Preview')}</button>
       </div>
 
       <section
@@ -352,30 +380,30 @@ export default function App() {
       >
         <OutlinePanel headings={headings} collapsed={outlineCollapsed} activeLine={activeLine} onCollapsedChange={setOutlineCollapsed} onJump={jumpToLine} />
         <section className="pane pane--editor" style={{ width: `${split}%` }}>
-          <header className="pane-header"><div><span className="pane-dot" />Markdown 原始碼</div><div className="pane-tools"><button type="button" onClick={() => editorRef.current?.search()} title="搜尋"><Search size={14} /></button><button type="button" className={typewriterMode ? 'is-active' : ''} onClick={() => setTypewriterMode((enabled) => !enabled)} title="打字機模式"><AlignCenter size={14} /></button><span>自動儲存</span></div></header>
+          <header className="pane-header"><div><span className="pane-dot" />{t('Markdown source')}</div><div className="pane-tools"><button type="button" onClick={() => editorRef.current?.search()} title={t('Search')}><Search size={14} /></button><button type="button" className={typewriterMode ? 'is-active' : ''} onClick={() => setTypewriterMode((enabled) => !enabled)} title={t('Typewriter mode')}><AlignCenter size={14} /></button><span>{t('Autosave')}</span></div></header>
           <EditorPane ref={editorRef} value={markdown} onChange={setMarkdown} onScrollLine={handleEditorScroll} typewriter={typewriterMode} onSlashCommand={() => setCommandOpen(true)} />
         </section>
 
-        <button className="splitter" type="button" onPointerDown={beginResize} aria-label="調整編輯器與預覽寬度"><span className="sync-rail" aria-hidden="true"><i style={{ top: `${Math.min(96, Math.max(2, (activeLine / totalLines) * 100))}%` }} /></span><span className="splitter-grip">↔</span></button>
+        <button className="splitter" type="button" onPointerDown={beginResize} aria-label={t('Resize editor and preview')}><span className="sync-rail" aria-hidden="true"><i style={{ top: `${Math.min(96, Math.max(2, (activeLine / totalLines) * 100))}%` }} /></span><span className="splitter-grip">↔</span></button>
 
         <section className="pane pane--preview" style={{ width: `${100 - split}%` }}>
-          <header className="pane-header"><div><Eye size={15} />即時預覽</div><span>{THEME_META[theme].label}主題</span></header>
+          <header className="pane-header"><div><Eye size={15} />{t('Live preview')}</div><span>{t('{theme} theme', { theme: t(THEME_META[theme].label) })}</span></header>
           <PreviewPane ref={previewRef} markdown={deferredMarkdown} theme={theme} onScrollLine={handlePreviewScroll} onLayout={handlePreviewLayout} onSourceLine={jumpToLine} />
         </section>
 
-        {dragActive ? <div className="drop-target" aria-hidden="true"><FolderOpen size={34} /><strong>放開以開啟 Markdown</strong><span>支援 .md 與 .markdown，最大 5 MB</span></div> : null}
+        {dragActive ? <div className="drop-target" aria-hidden="true"><FolderOpen size={34} /><strong>{t('Drop to open Markdown')}</strong><span>{t('Supports .md and .markdown, up to 5 MB')}</span></div> : null}
         {statsOpen ? <StatsPopover stats={stats} available={available} staticDeployment={IS_STATIC_DEPLOYMENT} onClose={() => setStatsOpen(false)} onClear={() => setMarkdown('')} /> : null}
       </section>
 
       <footer className="status-bar">
-        <span><FileText size={14} />字數 {stats.chars_no_spaces.toLocaleString()}</span><span>行數 {stats.line_count.toLocaleString()}</span>
-        <button className="status-action" type="button" onClick={() => setOutlineCollapsed((collapsed) => !collapsed)}><ListTree size={14} />大綱</button>
-        <button className={`status-action ${focusMode ? 'is-active' : ''}`} type="button" onClick={() => setFocusMode((enabled) => !enabled)}><Maximize2 size={14} />專注</button>
-        <span className={persistenceStatus === 'error' ? 'status-warn' : 'status-ok'}><CheckCircle2 size={14} />{persistenceStatus === 'saving' ? '儲存中' : persistenceStatus === 'error' ? '草稿未儲存' : '草稿已儲存'}</span>
-        {!available ? <span className="status-warn">{IS_STATIC_DEPLOYMENT ? 'GitHub Pages・本機統計' : '本機統計'}</span> : null}
-        <span className="status-line">第 {Math.round(activeLine)} 行 / {totalLines}</span>
+        <span><FileText size={14} />{t('Characters {count}', { count: stats.chars_no_spaces.toLocaleString(locale) })}</span><span>{t('Lines {count}', { count: stats.line_count.toLocaleString(locale) })}</span>
+        <button className="status-action" type="button" onClick={() => setOutlineCollapsed((collapsed) => !collapsed)}><ListTree size={14} />{t('Outline')}</button>
+        <button className={`status-action ${focusMode ? 'is-active' : ''}`} type="button" onClick={() => setFocusMode((enabled) => !enabled)}><Maximize2 size={14} />{t('Focus')}</button>
+        <span className={persistenceStatus === 'error' ? 'status-warn' : 'status-ok'}><CheckCircle2 size={14} />{t(persistenceStatus === 'saving' ? 'Saving' : persistenceStatus === 'error' ? 'Draft not saved' : 'Draft saved')}</span>
+        {!available ? <span className="status-warn">{t(IS_STATIC_DEPLOYMENT ? 'GitHub Pages · local statistics' : 'Local statistics')}</span> : null}
+        <span className="status-line">{t('Line {line} / {total}', { line: Math.round(activeLine), total: totalLines })}</span>
       </footer>
-      {focusMode ? <button className="focus-exit" type="button" onClick={() => setFocusMode(false)}>Esc 離開專注</button> : null}
+      {focusMode ? <button className="focus-exit" type="button" onClick={() => setFocusMode(false)}>{t('Esc to exit focus')}</button> : null}
       <CommandPalette open={commandOpen} actions={commandActions} onClose={() => setCommandOpen(false)} />
       <ShortcutHelp open={helpOpen} onClose={() => setHelpOpen(false)} />
       {revisionsOpen ? (

@@ -8,6 +8,7 @@ import {
   type SourceAnchor,
 } from '../markdown'
 import '../markdownFeatures.css'
+import { useI18n } from '../i18n'
 import type { ThemeName } from '../types'
 import { mermaidThemeVariables, THEME_META } from '../themeConfig'
 
@@ -28,13 +29,17 @@ const PreviewPaneComponent = forwardRef<PreviewHandle, PreviewPaneProps>(functio
   { markdown, theme, onScrollLine, onLayout, onSourceLine },
   ref,
 ) {
+  const { locale, t } = useI18n()
   const scrollRef = useRef<HTMLDivElement>(null)
   const contentRef = useRef<HTMLElement>(null)
   const suppressScrollRef = useRef(false)
   const anchorsRef = useRef<SourceAnchor[]>([])
   const geometryDirtyRef = useRef(true)
   const layoutFrameRef = useRef<number | null>(null)
-  const html = useMemo(() => renderMarkdown(markdown), [markdown])
+  const html = useMemo(() => {
+    void locale
+    return renderMarkdown(markdown)
+  }, [locale, markdown])
 
   const invalidateGeometry = useCallback(() => {
     geometryDirtyRef.current = true
@@ -185,8 +190,8 @@ const PreviewPaneComponent = forwardRef<PreviewHandle, PreviewPaneProps>(functio
     if (!button) return
     const code = button.parentElement?.querySelector('code')?.textContent || ''
     await navigator.clipboard.writeText(code)
-    button.textContent = '已複製'
-    window.setTimeout(() => { button.textContent = '複製' }, 1200)
+    button.textContent = t('Copied')
+    window.setTimeout(() => { button.textContent = t('Copy') }, 1200)
   }
 
   const handleDoubleClick = (event: React.MouseEvent<HTMLElement>) => {
@@ -208,8 +213,8 @@ const PreviewPaneComponent = forwardRef<PreviewHandle, PreviewPaneProps>(functio
       ) : (
         <div className="empty-preview">
           <div className="empty-preview__mark">M↓</div>
-          <h2>開始撰寫 Markdown</h2>
-          <p>左側輸入的內容會即時顯示在這裡。</p>
+          <h2>{t('Start writing Markdown')}</h2>
+          <p>{t('Content entered on the left appears here instantly.')}</p>
         </div>
       )}
     </div>

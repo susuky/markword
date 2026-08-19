@@ -1,4 +1,6 @@
-export const SAMPLE_MARKDOWN = `# 文字工具箱使用指南
+import type { Locale } from './i18n'
+
+const SAMPLE_MARKDOWN_ZH_TW = `# 文字工具箱使用指南
 
 歡迎使用 **文字工具箱**，這是一個專為 Markdown 寫作而生的線上工具。
 它能即時預覽、統計字數，並支援程式碼、清單與圖表。
@@ -32,3 +34,43 @@ graph LR
 
 > 專注寫作，即時預覽，讓想法更清晰！
 `
+
+const SAMPLE_MARKDOWN_EN = `# Markword Guide
+
+Welcome to **Markword**, an online workspace made for Markdown writing.
+It provides live preview, document statistics, code highlighting, lists, and diagrams.
+
+## Key features
+
+- Live Markdown preview
+- Character, word, and line statistics
+- Mermaid diagram support
+- PDF and Word export in the full server edition
+
+## Code example
+
+\`\`\`javascript
+function greet(name) {
+  return \`Hello, \${name}!\`;
+}
+
+console.log(greet('Markword'));
+\`\`\`
+
+## Mermaid example
+
+\`\`\`mermaid
+graph LR
+  A[Start] --> B[Write Markdown]
+  B --> C{Preview content}
+  C -->|Looks good| D[Export document]
+  C -->|Revise| B
+\`\`\`
+
+> Focus on writing, preview instantly, and make every idea clearer.
+`
+
+export const SAMPLE_MARKDOWN: Record<Locale, string> = {
+  en: SAMPLE_MARKDOWN_EN,
+  'zh-TW': SAMPLE_MARKDOWN_ZH_TW,
+}
