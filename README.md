@@ -2,6 +2,8 @@
 
 **English** | [繁體中文](README.zh-TW.md)
 
+[![GitHub Release](https://img.shields.io/github/v/release/susuky/markword)](https://github.com/susuky/markword/releases/latest)
+
 Markword is a Markdown editor and document statistics workspace built with FastAPI and React/Vite. The editor and live preview share one frontend, with synchronized scrolling, Mermaid, syntax highlighting, themes, and PDF/Word export.
 
 [Open the GitHub Pages edition](https://susuky.github.io/markword/)
@@ -136,6 +138,17 @@ docker compose down
 ```
 
 Use `docker compose down -v` only when generated exports no longer need to be retained.
+
+## Container image
+
+Each GitHub Release publishes a container image to GitHub Packages. Pull and run the current release with:
+
+```bash
+docker pull ghcr.io/susuky/markword:0.2.0
+docker run --rm -p 27860:27860 ghcr.io/susuky/markword:0.2.0
+```
+
+The same image is also tagged `latest` and `0.2`.
 
 ## GitHub Pages edition
 
