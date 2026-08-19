@@ -25,6 +25,7 @@ import { PreviewPane, type PreviewHandle } from './components/PreviewPane'
 import { RevisionPanel } from './components/RevisionPanel'
 import { ShortcutHelp } from './components/ShortcutHelp'
 import { StatsPopover } from './components/StatsPopover'
+import { IS_STATIC_DEPLOYMENT } from './deployment'
 import { useDebouncedStats } from './hooks/useDebouncedStats'
 import { renderMarkdown } from './markdown'
 import './productivity.css'
@@ -223,7 +224,7 @@ export default function App() {
   }
 
   const handleExport = useCallback(async (format: 'pdf' | 'docx') => {
-    if (!markdown.trim() || exporting) return
+    if (IS_STATIC_DEPLOYMENT || !markdown.trim() || exporting) return
     setExporting(format)
     setNotice('')
     try {
@@ -324,7 +325,7 @@ export default function App() {
           <span className="header-divider" />
           <div className="menu-wrap" ref={exportMenuRef}>
             <button className={`toolbar-button export-trigger ${exportOpen ? 'is-active' : ''}`} type="button" disabled={!markdown.trim()} aria-label={exporting ? `${exporting === 'pdf' ? 'PDF' : 'Word'} 匯出中` : '匯出'} aria-haspopup="menu" aria-expanded={exportOpen} onClick={() => { setExportOpen((open) => !open); setThemeOpen(false) }}><Download size={17} /><span>{exporting ? `${exporting === 'pdf' ? 'PDF' : 'Word'} 匯出中…` : '匯出'}</span><ChevronDown size={15} /></button>
-            {exportOpen ? <div className="export-menu" role="menu" aria-label="下載與匯出"><div className="menu-heading"><strong>下載與匯出</strong><span>選擇版型，再輸出需要的格式</span></div><div className="export-style-picker"><span>成品版型</span><div>{(Object.keys(EXPORT_STYLES) as ExportStyleName[]).map((styleName) => <button key={styleName} type="button" className={styleName === exportStyle ? 'is-selected' : ''} aria-pressed={styleName === exportStyle} onClick={() => setExportStyle(styleName)}><strong>{EXPORT_STYLES[styleName].label}</strong><small>{EXPORT_STYLES[styleName].description}</small></button>)}</div></div><div className="export-menu__section"><span>原始與網頁</span><button type="button" role="menuitem" onClick={() => { downloadMarkdown(); setExportOpen(false) }}><FileDown size={17} /><span><strong>Markdown</strong><small>保留可繼續編輯的原始碼</small></span></button><button type="button" role="menuitem" onClick={() => { downloadHtml(); setExportOpen(false) }}><Code2 size={17} /><span><strong>可攜 HTML</strong><small>套用「{EXPORT_STYLES[exportStyle].label}」版型與目前主題</small></span></button></div><div className="export-menu__section"><span>文件格式</span><button type="button" role="menuitem" disabled={Boolean(exporting)} onClick={() => { setExportOpen(false); void handleExport('pdf') }}><Download size={17} /><span><strong>PDF</strong><small>套用「{EXPORT_STYLES[exportStyle].label}」列印版型</small></span></button><button type="button" role="menuitem" disabled={Boolean(exporting)} onClick={() => { setExportOpen(false); void handleExport('docx') }}><FileText size={17} /><span><strong>Word</strong><small>套用配色，可繼續編輯排版</small></span></button></div></div> : null}
+            {exportOpen ? <div className="export-menu" role="menu" aria-label="下載與匯出"><div className="menu-heading"><strong>下載與匯出</strong><span>選擇版型，再輸出需要的格式</span></div><div className="export-style-picker"><span>成品版型</span><div>{(Object.keys(EXPORT_STYLES) as ExportStyleName[]).map((styleName) => <button key={styleName} type="button" className={styleName === exportStyle ? 'is-selected' : ''} aria-pressed={styleName === exportStyle} onClick={() => setExportStyle(styleName)}><strong>{EXPORT_STYLES[styleName].label}</strong><small>{EXPORT_STYLES[styleName].description}</small></button>)}</div></div><div className="export-menu__section"><span>原始與網頁</span><button type="button" role="menuitem" onClick={() => { downloadMarkdown(); setExportOpen(false) }}><FileDown size={17} /><span><strong>Markdown</strong><small>保留可繼續編輯的原始碼</small></span></button><button type="button" role="menuitem" onClick={() => { downloadHtml(); setExportOpen(false) }}><Code2 size={17} /><span><strong>可攜 HTML</strong><small>套用「{EXPORT_STYLES[exportStyle].label}」版型與目前主題</small></span></button></div><div className="export-menu__section"><span>文件格式</span><button type="button" role="menuitem" disabled={IS_STATIC_DEPLOYMENT || Boolean(exporting)} onClick={() => { setExportOpen(false); void handleExport('pdf') }}><Download size={17} /><span><strong>PDF</strong><small>{IS_STATIC_DEPLOYMENT ? 'GitHub Pages 版不提供，請使用完整伺服器版' : `套用「${EXPORT_STYLES[exportStyle].label}」列印版型`}</small></span></button><button type="button" role="menuitem" disabled={IS_STATIC_DEPLOYMENT || Boolean(exporting)} onClick={() => { setExportOpen(false); void handleExport('docx') }}><FileText size={17} /><span><strong>Word</strong><small>{IS_STATIC_DEPLOYMENT ? 'GitHub Pages 版不提供，請使用完整伺服器版' : '套用配色，可繼續編輯排版'}</small></span></button></div></div> : null}
           </div>
           <button className="toolbar-button revision-hook" type="button" onClick={() => void createManualSnapshot()}><FileDown size={17} /><span>建立版本</span></button>
           <button className="toolbar-button revision-hook" type="button" onClick={() => setRevisionsOpen(true)}><ListTree size={17} /><span>版本記錄</span></button>
@@ -363,7 +364,7 @@ export default function App() {
         </section>
 
         {dragActive ? <div className="drop-target" aria-hidden="true"><FolderOpen size={34} /><strong>放開以開啟 Markdown</strong><span>支援 .md 與 .markdown，最大 5 MB</span></div> : null}
-        {statsOpen ? <StatsPopover stats={stats} available={available} onClose={() => setStatsOpen(false)} onClear={() => setMarkdown('')} /> : null}
+        {statsOpen ? <StatsPopover stats={stats} available={available} staticDeployment={IS_STATIC_DEPLOYMENT} onClose={() => setStatsOpen(false)} onClear={() => setMarkdown('')} /> : null}
       </section>
 
       <footer className="status-bar">
@@ -371,7 +372,7 @@ export default function App() {
         <button className="status-action" type="button" onClick={() => setOutlineCollapsed((collapsed) => !collapsed)}><ListTree size={14} />大綱</button>
         <button className={`status-action ${focusMode ? 'is-active' : ''}`} type="button" onClick={() => setFocusMode((enabled) => !enabled)}><Maximize2 size={14} />專注</button>
         <span className={persistenceStatus === 'error' ? 'status-warn' : 'status-ok'}><CheckCircle2 size={14} />{persistenceStatus === 'saving' ? '儲存中' : persistenceStatus === 'error' ? '草稿未儲存' : '草稿已儲存'}</span>
-        {!available ? <span className="status-warn">本機統計</span> : null}
+        {!available ? <span className="status-warn">{IS_STATIC_DEPLOYMENT ? 'GitHub Pages・本機統計' : '本機統計'}</span> : null}
         <span className="status-line">第 {Math.round(activeLine)} 行 / {totalLines}</span>
       </footer>
       {focusMode ? <button className="focus-exit" type="button" onClick={() => setFocusMode(false)}>Esc 離開專注</button> : null}

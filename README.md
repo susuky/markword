@@ -131,6 +131,24 @@ docker compose down
 
 若確定不再需要匯出檔，才使用 `docker compose down -v` 一併刪除 volume。
 
+## GitHub Pages 靜態版
+
+推送到 `main` 後，`.github/workflows/deploy-pages.yml` 會建置並發布
+`https://susuky.github.io/markword/`。Repository 的 **Settings → Pages → Build and deployment**
+需將來源設為 **GitHub Actions**。
+
+Pages 使用獨立的 `pages` build mode；一般的 `npm run build` 與 FastAPI 部署不受影響。
+靜態版會直接在瀏覽器計算字數，保留編輯、預覽、草稿版本、PWA、Markdown 與可攜 HTML
+下載；需要伺服器處理的 PDF／Word 匯出則會顯示為不可用。
+
+本機可用以下指令驗證 Pages 產物：
+
+```bash
+cd frontend
+npm ci
+npm run build:pages
+```
+
 ## systemd 部署
 
 systemd 範例假設專案已部署到 `/opt/markword`，執行帳號為 `markword`。Debian / Ubuntu 主機先安裝 Node.js、Python、`uv`，以及 WeasyPrint 所需的系統字型與函式庫，接著建立服務帳號和可寫的匯出目錄：
