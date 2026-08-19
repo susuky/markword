@@ -1,4 +1,5 @@
 import { ChevronLeft, ChevronRight, ListTree } from 'lucide-react'
+import { useI18n } from '../i18n'
 
 export interface OutlineHeading {
   id: string
@@ -15,18 +16,19 @@ interface OutlinePanelProps {
 }
 
 export function OutlinePanel({ headings, collapsed, activeLine, onCollapsedChange, onJump }: OutlinePanelProps) {
+  const { t } = useI18n()
   const activeHeading = headings.reduce<OutlineHeading | null>((match, heading) => (
     heading.line <= activeLine ? heading : match
   ), null)
 
   return (
-    <aside className={`outline-panel ${collapsed ? 'is-collapsed' : ''}`} aria-label="文件大綱">
+    <aside className={`outline-panel ${collapsed ? 'is-collapsed' : ''}`} aria-label={t('Document outline')}>
       <header>
-        <span><ListTree size={15} />{collapsed ? null : '文件大綱'}</span>
+        <span><ListTree size={15} />{collapsed ? null : t('Document outline')}</span>
         <button
           type="button"
           onClick={() => onCollapsedChange(!collapsed)}
-          aria-label={collapsed ? '展開文件大綱' : '收合文件大綱'}
+          aria-label={collapsed ? t('Expand document outline') : t('Collapse document outline')}
         >
           {collapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
         </button>
@@ -40,11 +42,11 @@ export function OutlinePanel({ headings, collapsed, activeLine, onCollapsedChang
               className={activeHeading?.id === heading.id ? 'is-active' : ''}
               style={{ paddingInlineStart: `${12 + (heading.level - 1) * 10}px` }}
               onClick={() => onJump(heading.line)}
-              title={`第 ${heading.line} 行：${heading.text}`}
+              title={t('Line {line}: {heading}', { line: heading.line, heading: heading.text })}
             >
               {heading.text}
             </button>
-          )) : <p>加入標題後會顯示在這裡。</p>}
+          )) : <p>{t('Add headings to see them here.')}</p>}
         </nav>
       )}
     </aside>

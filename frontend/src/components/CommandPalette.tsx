@@ -1,5 +1,6 @@
 import { Search, X } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { useI18n } from '../i18n'
 
 export interface CommandAction {
   id: string
@@ -16,6 +17,7 @@ interface CommandPaletteProps {
 }
 
 export function CommandPalette({ open, actions, onClose }: CommandPaletteProps) {
+  const { t } = useI18n()
   const [query, setQuery] = useState('')
   const [activeIndex, setActiveIndex] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -52,7 +54,7 @@ export function CommandPalette({ open, actions, onClose }: CommandPaletteProps) 
     <div className="productivity-overlay" role="presentation" onMouseDown={(event) => {
       if (event.target === event.currentTarget) onClose()
     }}>
-      <section className="command-palette" role="dialog" aria-modal="true" aria-label="命令選單">
+      <section className="command-palette" role="dialog" aria-modal="true" aria-label={t('Command palette')}>
         <div className="command-palette__search">
           <Search size={18} aria-hidden="true" />
           <input
@@ -74,10 +76,10 @@ export function CommandPalette({ open, actions, onClose }: CommandPaletteProps) 
                 invoke(filtered[activeIndex])
               }
             }}
-            placeholder="搜尋命令或輸入「插入」…"
-            aria-label="搜尋命令"
+            placeholder={t('Search commands or type “insert”…')}
+            aria-label={t('Search commands')}
           />
-          <button type="button" onClick={onClose} aria-label="關閉命令選單"><X size={17} /></button>
+          <button type="button" onClick={onClose} aria-label={t('Close command palette')}><X size={17} /></button>
         </div>
         <div className="command-palette__list" role="listbox">
           {filtered.length ? filtered.map((action, index) => (
@@ -93,9 +95,9 @@ export function CommandPalette({ open, actions, onClose }: CommandPaletteProps) 
               <span><strong>{action.label}</strong>{action.description ? <small>{action.description}</small> : null}</span>
               {action.shortcut ? <kbd>{action.shortcut}</kbd> : null}
             </button>
-          )) : <p className="command-palette__empty">找不到符合的命令</p>}
+          )) : <p className="command-palette__empty">{t('No matching commands')}</p>}
         </div>
-        <footer><span><kbd>↑↓</kbd> 選擇</span><span><kbd>Enter</kbd> 執行</span><span><kbd>Esc</kbd> 關閉</span></footer>
+        <footer><span><kbd>↑↓</kbd> {t('Select')}</span><span><kbd>Enter</kbd> {t('Run')}</span><span><kbd>Esc</kbd> {t('Close')}</span></footer>
       </section>
     </div>
   )

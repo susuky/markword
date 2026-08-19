@@ -64,7 +64,7 @@ function openDatabase(): Promise<IDBDatabase> {
 
   databasePromise = new Promise((resolve, reject) => {
     if (!('indexedDB' in window)) {
-      reject(new Error('此瀏覽器不支援 IndexedDB'))
+      reject(new Error(translate('This browser does not support IndexedDB')))
       return
     }
 
@@ -89,9 +89,9 @@ function openDatabase(): Promise<IDBDatabase> {
     }
     request.onerror = () => {
       databasePromise = null
-      reject(request.error ?? new Error('無法開啟 IndexedDB'))
+      reject(request.error ?? new Error(translate('Could not open local storage')))
     }
-    request.onblocked = () => reject(new Error('請關閉其他 Markword 分頁後重試資料庫升級'))
+    request.onblocked = () => reject(new Error(translate('Close other Markword tabs before upgrading local storage')))
   })
 
   return databasePromise
@@ -214,7 +214,7 @@ export async function restoreRevision(
   currentMetadata: DraftMetadata = {},
 ): Promise<RestoredRevision> {
   const revision = await getRevision(revisionId)
-  if (!revision) throw new Error('找不到指定版本')
+  if (!revision) throw new Error(translate('Revision not found'))
 
   await createSnapshot(currentContent, currentMetadata, 'pre-restore')
   const draft = await saveCurrentDraft(revision.content, revision.metadata)
@@ -269,7 +269,7 @@ export class DraftPersistenceSession {
     this.snapshotTimer = window.setInterval(() => {
       if (this.content !== this.lastSnapshottedContent) {
         void this.snapshot('auto').catch((error) => {
-          const normalized = error instanceof Error ? error : new Error('自動建立版本失敗')
+          const normalized = error instanceof Error ? error : new Error(translate('Automatic revision failed'))
           this.options.onStatusChange?.('error', normalized)
         })
       }
@@ -299,7 +299,7 @@ export class DraftPersistenceSession {
       this.options.onStatusChange?.('saved')
       return draft
     } catch (error) {
-      const normalized = error instanceof Error ? error : new Error('儲存失敗')
+      const normalized = error instanceof Error ? error : new Error(translate('Save failed'))
       this.options.onStatusChange?.('error', normalized)
       throw normalized
     } finally {
@@ -334,3 +334,4 @@ export class DraftPersistenceSession {
     if (hasPendingSave) void this.flush().catch(() => undefined)
   }
 }
+import { translate } from './i18n'

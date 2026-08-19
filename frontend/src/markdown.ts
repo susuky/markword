@@ -1,6 +1,7 @@
 import DOMPurify from 'dompurify'
 import hljs from 'highlight.js/lib/common'
 import MarkdownIt from 'markdown-it'
+import { translate } from './i18n'
 import type StateBlock from 'markdown-it/lib/rules_block/state_block.mjs'
 import type StateInline from 'markdown-it/lib/rules_inline/state_inline.mjs'
 import type Token from 'markdown-it/lib/token.mjs'
@@ -81,7 +82,7 @@ md.core.ruler.push('markword_task_lists', (state) => {
 
 md.renderer.rules.task_checkbox = (tokens, index) => {
   const checked = Boolean(tokens[index].meta?.checked)
-  return `<input class="task-list-checkbox" type="checkbox" disabled${checked ? ' checked' : ''} aria-label="${checked ? '已完成' : '未完成'}">`
+  return `<input class="task-list-checkbox" type="checkbox" disabled${checked ? ' checked' : ''} aria-label="${checked ? translate('Completed') : translate('Not completed')}">`
 }
 
 function footnoteReferenceRule(state: StateInline, silent: boolean) {
@@ -214,11 +215,11 @@ md.renderer.rules.fence = (tokens, index, options, env, self) => {
 
   if (language.toLowerCase() === 'mermaid') {
     const source = md.utils.escapeHtml(token.content)
-    return `<div class="mermaid-block dynamic-source-block" data-mermaid-source="${encodeURIComponent(token.content)}" data-source-start="${startLine}" data-source-end="${endLine}"><div class="mermaid-loading">正在繪製圖表…</div><pre class="mermaid-fallback"><code>${source}</code></pre></div>`
+    return `<div class="mermaid-block dynamic-source-block" data-mermaid-source="${encodeURIComponent(token.content)}" data-source-start="${startLine}" data-source-end="${endLine}"><div class="mermaid-loading">${translate('Drawing diagram…')}</div><pre class="mermaid-fallback"><code>${source}</code></pre></div>`
   }
 
   const rendered = defaultFence(tokens, index, options, env, self)
-  return rendered.replace('<pre>', `<pre data-source-start="${startLine}" data-source-end="${endLine}"><button class="copy-code" type="button" aria-label="複製程式碼">複製</button>`)
+  return rendered.replace('<pre>', `<pre data-source-start="${startLine}" data-source-end="${endLine}"><button class="copy-code" type="button" aria-label="${translate('Copy code')}">${translate('Copy')}</button>`)
 }
 
 function renderFootnotes(env: MarkdownEnvironment) {
@@ -228,7 +229,7 @@ function renderFootnotes(env: MarkdownEnvironment) {
     const safeId = md.utils.escapeHtml(id)
     const references = env.footnoteReferenceCounts.get(id) ?? 1
     const backlinks = Array.from({ length: references }, (_, index) =>
-      `<a class="footnote-backref" href="#fnref-${safeId}-${index + 1}" aria-label="回到註腳引用">↩</a>`,
+      `<a class="footnote-backref" href="#fnref-${safeId}-${index + 1}" aria-label="${translate('Back to footnote reference')}">↩</a>`,
     ).join(' ')
     return `<li id="fn-${safeId}" data-source-start="${definition.startLine}" data-source-end="${definition.endLine}">${md.renderInline(definition.content, env)} ${backlinks}</li>`
   }).join('')

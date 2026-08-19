@@ -1,11 +1,12 @@
 import type { ExportStyleName, TextStats, ThemeName } from './types'
+import { translate } from './i18n'
 
 async function parseError(response: Response) {
   try {
     const body = await response.json()
-    return body.detail || '伺服器暫時無法處理要求'
+    return body.detail || translate('The server could not process the request')
   } catch {
-    return '伺服器暫時無法處理要求'
+    return translate('The server could not process the request')
   }
 }
 

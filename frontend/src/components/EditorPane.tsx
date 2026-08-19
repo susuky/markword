@@ -5,6 +5,7 @@ import { EditorSelection, EditorState } from '@codemirror/state'
 import { EditorView } from '@codemirror/view'
 import { basicSetup } from 'codemirror'
 import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react'
+import { useI18n } from '../i18n'
 
 export interface EditorHandle {
   scrollToLine: (line: number) => void
@@ -28,6 +29,7 @@ export const EditorPane = forwardRef<EditorHandle, EditorPaneProps>(function Edi
   { value, onChange, onScrollLine, typewriter = false, onSlashCommand },
   ref,
 ) {
+  const { t } = useI18n()
   const hostRef = useRef<HTMLDivElement>(null)
   const viewRef = useRef<EditorView | null>(null)
   const externalValueRef = useRef(value)
@@ -162,5 +164,5 @@ export const EditorPane = forwardRef<EditorHandle, EditorPaneProps>(function Edi
     view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: value } })
   }, [value])
 
-  return <div className="editor-host" ref={hostRef} aria-label="Markdown 原始碼編輯器" />
+  return <div className="editor-host" ref={hostRef} aria-label={t('Markdown source editor')} />
 })
