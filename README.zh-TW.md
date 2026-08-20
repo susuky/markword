@@ -144,8 +144,8 @@ docker compose down
 每次發布 GitHub Release 時都會同步建立 GitHub Packages 容器映像。可用以下指令下載並執行目前版本：
 
 ```bash
-docker pull ghcr.io/susuky/markword:0.2.1
-docker run --rm -p 27860:27860 ghcr.io/susuky/markword:0.2.1
+docker pull ghcr.io/susuky/markword:0.2.2
+docker run --rm -p 27860:27860 ghcr.io/susuky/markword:0.2.2
 ```
 
 同一映像也會標記為 `latest` 與 `0.2`。

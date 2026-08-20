@@ -144,8 +144,8 @@ Use `docker compose down -v` only when generated exports no longer need to be re
 Each GitHub Release publishes a container image to GitHub Packages. Pull and run the current release with:
 
 ```bash
-docker pull ghcr.io/susuky/markword:0.2.1
-docker run --rm -p 27860:27860 ghcr.io/susuky/markword:0.2.1
+docker pull ghcr.io/susuky/markword:0.2.2
+docker run --rm -p 27860:27860 ghcr.io/susuky/markword:0.2.2
 ```
 
 The same image is also tagged `latest` and `0.2`.
