@@ -1,4 +1,4 @@
-import { forwardRef, memo, useCallback, useEffect, useImperativeHandle, useMemo, useRef } from 'react'
+import { forwardRef, memo, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef } from 'react'
 import {
   collectSourceAnchors,
   elementOffsetToSourceLine,
@@ -25,6 +25,15 @@ interface PreviewPaneProps {
   onSourceLine?: (line: number) => void
 }
 
+const MERMAID_SVG_CACHE_LIMIT = 40
+const MERMAID_RENDER_DEBOUNCE_MS = 300
+let mermaidRenderSequence = 0
+
+function nextMermaidRenderId(index: number) {
+  mermaidRenderSequence += 1
+  return `mermaid-${Date.now().toString(36)}-${mermaidRenderSequence.toString(36)}-${index}`
+}
+
 const PreviewPaneComponent = forwardRef<PreviewHandle, PreviewPaneProps>(function PreviewPane(
   { markdown, theme, onScrollLine, onLayout, onSourceLine },
   ref,
@@ -36,6 +45,7 @@ const PreviewPaneComponent = forwardRef<PreviewHandle, PreviewPaneProps>(functio
   const anchorsRef = useRef<SourceAnchor[]>([])
   const geometryDirtyRef = useRef(true)
   const layoutFrameRef = useRef<number | null>(null)
+  const mermaidSvgCacheRef = useRef(new Map<string, string>())
   const html = useMemo(() => {
     void locale
     return renderMarkdown(markdown)
@@ -76,7 +86,7 @@ const PreviewPaneComponent = forwardRef<PreviewHandle, PreviewPaneProps>(functio
     },
   }), [readAnchors])
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     let cancelled = false
     const blocks = Array.from(contentRef.current?.querySelectorAll<HTMLElement>('.mermaid-block') || [])
     if (!blocks.length) {
@@ -84,38 +94,66 @@ const PreviewPaneComponent = forwardRef<PreviewHandle, PreviewPaneProps>(functio
       return
     }
 
-    void (async () => {
-      const { default: mermaid } = await import('mermaid')
-      if (cancelled) return
-      mermaid.initialize({
-        startOnLoad: false,
-        securityLevel: 'strict',
-        theme: 'base',
-        themeVariables: mermaidThemeVariables(theme),
-        fontFamily: 'Noto Sans TC, sans-serif',
-      })
-      for (const [index, block] of blocks.entries()) {
-        if (cancelled) return
-        const source = decodeURIComponent(block.dataset.mermaidSource || '')
-        try {
-          const { svg } = await mermaid.render(`mermaid-${crypto.randomUUID()}-${index}`, source)
-          if (cancelled) return
-          block.innerHTML = svg
-          block.classList.add('is-rendered')
-        } catch (error) {
-          block.classList.add('has-error')
-          const code = document.createElement('code')
-          code.textContent = source
-          const pre = document.createElement('pre')
-          pre.className = 'mermaid-fallback'
-          pre.append(code)
-          block.replaceChildren(pre)
-          console.warn('Mermaid render failed', error)
-        }
-        invalidateGeometry()
+    const cache = mermaidSvgCacheRef.current
+    const pending: Array<{ block: HTMLElement; cacheKey: string; index: number; source: string }> = []
+    for (const [index, block] of blocks.entries()) {
+      const source = decodeURIComponent(block.dataset.mermaidSource || '')
+      const cacheKey = `${theme}\u0000${index}\u0000${source}`
+      const cachedSvg = cache.get(cacheKey)
+      if (cachedSvg) {
+        block.innerHTML = cachedSvg
+        block.classList.add('is-rendered')
+      } else {
+        pending.push({ block, cacheKey, index, source })
       }
-    })()
-    return () => { cancelled = true }
+    }
+    if (!pending.length) {
+      invalidateGeometry()
+      return
+    }
+
+    const renderTimer = window.setTimeout(() => {
+      void (async () => {
+        const { default: mermaid } = await import('mermaid')
+        if (cancelled) return
+        mermaid.initialize({
+          startOnLoad: false,
+          securityLevel: 'strict',
+          theme: 'base',
+          themeVariables: mermaidThemeVariables(theme),
+          fontFamily: 'Noto Sans TC, sans-serif',
+        })
+        for (const { block, cacheKey, index, source } of pending) {
+          if (cancelled) return
+          try {
+            const { svg } = await mermaid.render(nextMermaidRenderId(index), source)
+            if (cancelled) return
+            cache.set(cacheKey, svg)
+            if (cache.size > MERMAID_SVG_CACHE_LIMIT) {
+              const oldestKey = cache.keys().next().value
+              if (oldestKey) cache.delete(oldestKey)
+            }
+            block.innerHTML = svg
+            block.classList.add('is-rendered')
+          } catch (error) {
+            if (cancelled) return
+            block.classList.add('has-error')
+            const code = document.createElement('code')
+            code.textContent = source
+            const pre = document.createElement('pre')
+            pre.className = 'mermaid-fallback'
+            pre.append(code)
+            block.replaceChildren(pre)
+            console.warn('Mermaid render failed', error)
+          }
+          invalidateGeometry()
+        }
+      })()
+    }, MERMAID_RENDER_DEBOUNCE_MS)
+    return () => {
+      cancelled = true
+      window.clearTimeout(renderTimer)
+    }
   }, [html, invalidateGeometry, theme])
 
   useEffect(() => {

@@ -111,11 +111,13 @@ export const EditorPane = forwardRef<EditorHandle, EditorPaneProps>(function Edi
           },
           '.cm-content': { padding: '12px 0 28px' },
           '.cm-line': { padding: '0 18px 0 12px' },
-          '.cm-activeLine': { backgroundColor: '#f0efff' },
+          '.cm-activeLine': { backgroundColor: 'rgb(79 70 229 / 6%)' },
           '.cm-activeLineGutter': { backgroundColor: '#eeedff', color: '#4f46e5' },
           '.cm-gutters': { backgroundColor: '#fbfcfe', color: '#94a3b8', borderRight: '1px solid #e7eaf0', paddingTop: '12px' },
           '&.cm-focused': { outline: 'none' },
-          '.cm-selectionBackground, ::selection': { backgroundColor: '#dddafe !important' },
+          '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection': {
+            backgroundColor: '#b8c2ff !important',
+          },
         }),
         EditorView.updateListener.of((update) => {
           if (update.docChanged) {
