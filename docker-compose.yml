@@ -1,0 +1,26 @@
+services:
+  markword:
+    build:
+      context: .
+    image: markword:local
+    restart: unless-stopped
+    ports:
+      - "27860:27860"
+    environment:
+      MARKWORD_FRONTEND_DIR: /app/frontend/dist
+      MARKWORD_EXPORT_DIR: /app/exports
+    volumes:
+      - markword-exports:/app/exports
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:27860/api/health', timeout=2)"
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  markword-exports:

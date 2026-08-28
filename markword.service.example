@@ -1,0 +1,24 @@
+[Unit]
+Description=Markword FastAPI Service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=markword
+Group=markword
+WorkingDirectory=/opt/markword
+Environment=PYTHONUNBUFFERED=1
+Environment=MARKWORD_FRONTEND_DIR=/opt/markword/frontend/dist
+Environment=MARKWORD_EXPORT_DIR=/opt/markword/exports
+ExecStart=/opt/markword/.venv/bin/uvicorn backend.main:app --host 127.0.0.1 --port 27860
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ReadWritePaths=/opt/markword/exports
+
+[Install]
+WantedBy=multi-user.target

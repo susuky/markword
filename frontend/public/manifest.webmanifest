@@ -1,0 +1,19 @@
+{
+  "name": "Markword Markdown Editor",
+  "short_name": "Markword",
+  "description": "An installable Markdown editor with live preview and document statistics",
+  "lang": "en",
+  "start_url": ".",
+  "scope": ".",
+  "display": "standalone",
+  "background_color": "#f5f8f6",
+  "theme_color": "#167469",
+  "icons": [
+    {
+      "src": "markword-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

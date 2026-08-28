@@ -1,0 +1,1 @@
+"""Markword FastAPI backend package."""
