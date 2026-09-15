@@ -8,7 +8,7 @@ interface ShortcutHelpProps {
 }
 const SHORTCUTS = [
   ['Cmd / Ctrl + K', 'Open command palette'],
-  ['Cmd / Ctrl + O', 'Open Markdown or project'],
+  ['Cmd / Ctrl + O', 'Open Markdown, Word, or project'],
   ['Cmd / Ctrl + F', 'Search document'],
   ['Cmd / Ctrl + S', 'Download Markdown'],
   ['Cmd / Ctrl + Shift + F', 'Toggle focus mode'],

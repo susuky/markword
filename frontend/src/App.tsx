@@ -46,7 +46,7 @@ import {
 } from './typography'
 import type { ExportStyleName, ThemeName } from './types'
 
-const MAX_LOCAL_FILE_BYTES = 5_000_000
+const MAX_LOCAL_FILE_BYTES = 15 * 1024 * 1024
 
 function documentTitle(markdown: string) {
   const title = markdown.match(/^#\s+(.+)$/m)?.[1]?.replace(/[*_`~]/g, '').trim() || 'markword-document'
@@ -121,6 +121,8 @@ export default function App() {
   const [assets, setAssets] = useState<StoredAsset[]>([])
   const [assetVersion, setAssetVersion] = useState(0)
   const [assetBusy, setAssetBusy] = useState(false)
+  const [importingWord, setImportingWord] = useState(false)
+  const wordImportBusyRef = useRef(false)
   const [clientExporting, setClientExporting] = useState<'html' | 'project' | null>(null)
   const [hydrated, setHydrated] = useState(false)
   const [persistenceStatus, setPersistenceStatus] = useState<PersistenceStatus>('idle')
@@ -209,7 +211,7 @@ export default function App() {
   }, [])
 
   const handleAssetFiles = useCallback(async (files: readonly File[], insert = true) => {
-    if (!files.length || assetBusy) return
+    if (!files.length || assetBusy || wordImportBusyRef.current) return
     setAssetBusy(true)
     try {
       const importedAssets = await importLocalAssets(files)
@@ -225,6 +227,7 @@ export default function App() {
   }, [assetBusy, insertAssets, refreshAssets, showNotice, t])
 
   const loadFile = useCallback(async (file: File) => {
+    if (wordImportBusyRef.current) return
     if (/\.zip$/i.test(file.name)) {
       if (assetBusy) return
       setAssetBusy(true)
@@ -242,12 +245,40 @@ export default function App() {
       }
       return
     }
-    if (!/\.(md|markdown)$/i.test(file.name)) {
-      showNotice(t('Please choose a Markdown or project ZIP file'))
+    if (/\.doc$/i.test(file.name)) {
+      showNotice(t('Save this Word file as .docx, then try again.'))
+      return
+    }
+    if (!/\.(md|markdown|docx)$/i.test(file.name)) {
+      showNotice(t('Please choose a Markdown, Word (.docx), or project ZIP file'))
       return
     }
     if (file.size > MAX_LOCAL_FILE_BYTES) {
-      showNotice(t('This file is larger than 5 MB. Please choose a smaller file.'))
+      showNotice(t('This file is larger than 15 MiB. Please choose a smaller file.'))
+      return
+    }
+    if (/\.docx$/i.test(file.name)) {
+      if (assetBusy) return
+      wordImportBusyRef.current = true
+      setImportingWord(true)
+      setNotice('')
+      try {
+        const { importWordDocument } = await import('./wordImport')
+        const converted = await importWordDocument(file)
+        await refreshAssets()
+        setMarkdown(converted.markdown)
+        setActiveLine(1)
+        setMobileView('editor')
+        editorRef.current?.jumpToLine(1)
+        showNotice(t(converted.hasWarnings
+          ? 'Word converted. Some content or formatting could not be preserved; please review the result.'
+          : 'Converted {file} to Markdown', { file: file.name }))
+      } catch {
+        showNotice(t('Could not convert this Word file. Try saving it as .docx again; your current document is unchanged.'))
+      } finally {
+        wordImportBusyRef.current = false
+        setImportingWord(false)
+      }
       return
     }
     try {
@@ -261,7 +292,7 @@ export default function App() {
   }, [assetBusy, refreshAssets, showNotice, t])
 
   const handleDroppedFiles = useCallback(async (files: readonly File[]) => {
-    const documentFile = files.find((file) => /\.(?:md|markdown|zip)$/i.test(file.name))
+    const documentFile = files.find((file) => /\.(?:md|markdown|docx|doc|zip)$/i.test(file.name))
     const assetFiles = files.filter((file) => file !== documentFile)
     if (documentFile) await loadFile(documentFile)
     if (assetFiles.length) await handleAssetFiles(assetFiles, !documentFile)
@@ -389,7 +420,7 @@ export default function App() {
   }, [persistence, showNotice, t])
 
   const commandActions = useMemo<CommandAction[]>(() => [
-    { id: 'open', label: t('Open Markdown or project'), description: t('Open a local .md or Markword ZIP file'), shortcut: 'Ctrl O', keywords: 'file upload project 檔案 專案', run: () => fileInputRef.current?.click() },
+    { id: 'open', label: t('Open Markdown, Word, or project'), description: t('Open .md, convert .docx, or restore a Markword ZIP'), shortcut: 'Ctrl O', keywords: 'file upload import word docx project 匯入 轉換 檔案 專案', run: () => fileInputRef.current?.click() },
     { id: 'assets', label: t('Manage local assets'), description: t('Images, video, audio, and attachments'), keywords: 'asset media image video attachment 圖片 影片 附件', run: () => setAssetsOpen(true) },
     { id: 'insert-asset', label: t('Insert: Local asset'), description: t('Import files from this device'), keywords: '/ asset media image video attachment 圖片 影片 附件', run: () => assetInputRef.current?.click() },
     { id: 'save-md', label: t('Download Markdown'), description: t('Keep the editable source'), shortcut: 'Ctrl S', keywords: 'export save 匯出', run: downloadMarkdown },
@@ -452,7 +483,7 @@ export default function App() {
 
   return (
     <main className={`app-shell productivity-shell ${focusMode ? 'is-focus-mode' : ''} ${typewriterMode ? 'is-typewriter-mode' : ''}`}>
-      <input ref={fileInputRef} className="visually-hidden-file" type="file" accept=".md,.markdown,.zip,text/markdown,application/zip" onChange={(event) => {
+      <input ref={fileInputRef} className="visually-hidden-file" type="file" disabled={importingWord} accept=".md,.markdown,.docx,.zip,text/markdown,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/zip" onChange={(event) => {
         const file = event.target.files?.[0]
         if (file) void loadFile(file)
         event.currentTarget.value = ''
@@ -466,7 +497,7 @@ export default function App() {
         <div className="brand"><img src={`${import.meta.env.BASE_URL}markword-icon.svg`} width="36" height="36" alt="" /><span>Markword<span className="brand-caption">{t('A space for your words')}</span></span></div>
         <div className="document-heading"><FileText size={18} aria-hidden="true" /><span title={title}>{title}</span><span className="document-extension">.md</span></div>
         <nav className="header-actions" aria-label={t('Document tools')}>
-          <button className="toolbar-button open-trigger" type="button" onClick={() => fileInputRef.current?.click()} aria-label={t('Open Markdown or project')} title={t('Open Markdown or project')}><FolderOpen size={17} aria-hidden="true" /><span>{t('Open')}</span></button>
+          <button className="toolbar-button open-trigger" type="button" disabled={importingWord} onClick={() => fileInputRef.current?.click()} aria-label={t(importingWord ? 'Converting Word…' : 'Open Markdown, Word, or project')} title={t('Open Markdown, Word, or project')}><FolderOpen size={17} aria-hidden="true" /><span>{t(importingWord ? 'Converting Word…' : 'Open')}</span></button>
           <button className="toolbar-button language-toggle" type="button" onClick={() => setLocale(locale === 'en' ? 'zh-TW' : 'en')} title={t(locale === 'en' ? 'Switch to Traditional Chinese' : 'Switch to English')} aria-label={t(locale === 'en' ? 'Switch to Traditional Chinese' : 'Switch to English')}><Languages size={17} aria-hidden="true" /><span>{locale === 'en' ? t('Traditional Chinese') : 'EN'}</span></button>
           <ExportMenu disabled={!markdown.trim()} exporting={exporting} clientExporting={clientExporting} exportStyle={exportStyle} onStyleChange={setExportStyle} hasAssets={referencedAssets.size > 0} onMarkdown={downloadMarkdown} onProject={() => void downloadProject()} onHtml={() => void downloadHtml()} onExport={(format) => void handleExport(format)} />
         </nav>
@@ -526,7 +557,7 @@ export default function App() {
           <PreviewPane ref={previewRef} markdown={deferredMarkdown} theme={theme} markdownFontSize={previewTypography.markdownFontSize} mermaidFontSize={previewTypography.mermaidFontSize} assetVersion={assetVersion} onScrollLine={handlePreviewScroll} onLayout={handlePreviewLayout} onSourceLine={jumpToLine} />
         </section>
 
-        {dragActive ? <div className="drop-target" aria-hidden="true"><Paperclip size={34} /><strong>{t('Drop to open or insert files')}</strong><span>{t('Markdown, project ZIP, images, video, audio, and attachments')}</span></div> : null}
+        {dragActive ? <div className="drop-target" aria-hidden="true"><Paperclip size={34} /><strong>{t('Drop to open or insert files')}</strong><span>{t('Markdown, Word (.docx), project ZIP, images, video, audio, and attachments')}</span></div> : null}
         {statsOpen ? <StatsPopover stats={stats} available={available} staticDeployment={IS_STATIC_DEPLOYMENT} onClose={() => setStatsOpen(false)} onClear={() => { if (window.confirm(t('Clear this document? Download a copy first if you want to keep it.'))) setMarkdown('') }} /> : null}
       </section>
 
@@ -543,7 +574,7 @@ export default function App() {
       <AssetPanel
         open={assetsOpen}
         assets={assets}
-        busy={assetBusy || Boolean(clientExporting)}
+        busy={assetBusy || importingWord || Boolean(clientExporting)}
         onAdd={() => assetInputRef.current?.click()}
         onClose={() => setAssetsOpen(false)}
         onDelete={(asset) => void removeLocalAsset(asset)}

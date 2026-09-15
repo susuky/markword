@@ -37,7 +37,7 @@ docker compose down
 - 可點擊文件大綱、預覽雙擊回到原始碼、同步捲動開關
 - Light、Paper、Sage、Dark、Ocean、Nord、Dracula、Midnight 八種主題
 - 程式碼語法高亮、Mermaid、KaTeX、task list 與 footnote
-- 開啟／拖放 `.md` 或 Markword 專案 ZIP、下載 Markdown 與可攜 HTML
+- 開啟／拖放 `.md`、Word（`.docx`）或 Markword 專案 ZIP；Word 轉成 Markdown 後可繼續編輯與下載
 - IndexedDB 本機資產庫：匯入、貼上或拖放圖片、影片、音訊與附件
 - CodeMirror 搜尋、摺疊、命令選單、快捷插入、專注與打字機模式
 - IndexedDB 草稿復原、每五分鐘自動版本、手動版本與非破壞還原
@@ -55,7 +55,9 @@ docker compose down
 - `Ctrl/Cmd+F`：搜尋／取代；`Ctrl/Cmd+S`：下載目前 Markdown。
 - `?`：顯示快捷鍵；`Ctrl/Cmd+Shift+F`：專注模式。
 - 左側大綱可跳至標題；雙擊右側預覽區塊可回到對應原始碼。
-- 工具列可開啟或拖放本機 Markdown／Markword 專案 ZIP；圖片、影片、音訊與其他檔案可從「資產」匯入，也可直接貼上或拖入編輯區。
+- 工具列可開啟或拖放本機 Markdown、Word（`.docx`）或 Markword 專案 ZIP；圖片、影片、音訊與其他檔案可從「資產」匯入，也可直接貼上或拖入編輯區。
+- Word 匯入在瀏覽器內轉換，支援標題、段落、粗體、斜體、刪除線、清單、連結、基本表格與內嵌圖片。表格第一列會成為 Markdown 表頭；頁首頁尾、分頁、合併儲存格及精確版面不保證保留，請檢查轉換結果。Markdown／Word 單檔上限為 15 MiB（15,728,640 位元組），Word 解壓後內容上限為 50 MB；舊版 `.doc` 請先另存為 `.docx`。
+- Word 圖片會存入本機資產庫；如需連同圖片備份，請匯出專案 ZIP 或可攜 HTML。只下載 Markdown 不會包含圖片檔。GitHub Pages 版本也能匯入 Word，無須上傳文件。
 - 「匯出」選單集中 Markdown、專案 ZIP、HTML、PDF、Word；HTML／PDF 可先選擇經典、編輯排版、報告或精簡版型。
 - 主題同時控制預覽、HTML、PDF、Word 與 Mermaid 配色；可攜 HTML 會嵌入已渲染的 Mermaid SVG 與本機資產。
 - 草稿存在瀏覽器 IndexedDB；內容變更後每五分鐘建立一個本機版本，最多保留 120 個。還原版本前會先備份目前內容。
@@ -75,7 +77,7 @@ docker compose down
 
 Markword 目前採用「單一工作草稿」模型，適合在自己的電腦一次處理一份文件：
 
-- 以「開啟」或拖放載入另一個 `.md`／`.markdown` 時，工作區會切換成新內容；瀏覽器不會把原始 Markdown 加入 Git，也不會上傳到外部服務。
+- 以「開啟」或拖放載入另一個 `.md`／`.markdown`／`.docx` 時，工作區會切換成新內容；Word 轉換失敗時保留目前文件。瀏覽器不會把原始文件加入 Git，也不會上傳到外部服務。
 - 目前內容會在編輯後約 350 ms 自動寫入瀏覽器 IndexedDB。內容持續變更時，每五分鐘建立一個本機版本，最多保留 120 個；還原前會先保存當下內容。
 - Markdown 改變時會重新產生帶有來源起訖行的預覽區塊。表格、程式碼、圖片、Mermaid 與 KaTeX 完成排版後，預覽會重新量測高度，因此同步捲動不依賴某一份固定文件或固定行高。
 - 磁碟上的原始檔若被其他程式修改，瀏覽器不會在背景持續監看；請重新開啟或拖放該檔案。若要把工作區內容寫回磁碟，使用 Markdown 下載按鈕。
