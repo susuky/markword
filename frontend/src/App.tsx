@@ -31,6 +31,7 @@ import { useI18n, type Locale } from './i18n'
 import { renderMarkdown } from './markdown'
 import './productivity.css'
 import { SAMPLE_MARKDOWN } from './sample'
+import { DEFAULT_SHORTCUTS, formatShortcut, normalizeShortcuts, shortcutFromEvent, type ShortcutMap } from './shortcuts'
 import {
   deleteAsset,
   DraftPersistenceSession,
@@ -113,6 +114,10 @@ export default function App() {
   const [outlineCollapsed, setOutlineCollapsed] = useState(() => loadPreference('outline-collapsed', false))
   const [commandOpen, setCommandOpen] = useState(false)
   const [helpOpen, setHelpOpen] = useState(false)
+  const [shortcuts, setShortcuts] = useState(() => {
+    try { return normalizeShortcuts(loadPreference('shortcuts', {})) }
+    catch { return { ...DEFAULT_SHORTCUTS } }
+  })
   const [focusMode, setFocusMode] = useState(false)
   const [typewriterMode, setTypewriterMode] = useState(false)
   const [syncEnabled, setSyncEnabled] = useState(() => loadPreference('sync-enabled', true))
@@ -425,63 +430,66 @@ export default function App() {
     }
   }, [persistence, showNotice, t])
 
+  const updateShortcuts = useCallback((next: ShortcutMap) => {
+    try {
+      savePreference('shortcuts', next)
+      setShortcuts(next)
+      return true
+    } catch {
+      return false
+    }
+  }, [])
+
   const commandActions = useMemo<CommandAction[]>(() => [
-    { id: 'open', label: t('Open document or project'), description: t('Open Markdown, text, Mermaid, Word, or a Markword ZIP'), shortcut: 'Ctrl O', keywords: 'file upload import word docx project 匯入 轉換 檔案 專案', run: () => fileInputRef.current?.click() },
+    { id: 'commands', label: t('Open command palette'), run: () => setCommandOpen(true) },
+    { id: 'open', label: t('Open document or project'), description: t('Open Markdown, text, Mermaid, Word, or a Markword ZIP'), keywords: 'file upload import word docx project 匯入 轉換 檔案 專案', run: () => fileInputRef.current?.click() },
     { id: 'assets', label: t('Manage local assets'), description: t('Images, video, audio, and attachments'), keywords: 'asset media image video attachment 圖片 影片 附件', run: () => setAssetsOpen(true) },
     { id: 'insert-asset', label: t('Insert: Local asset'), description: t('Import files from this device'), keywords: '/ asset media image video attachment 圖片 影片 附件', run: () => assetInputRef.current?.click() },
-    { id: 'save-md', label: t('Download {format}', { format: t(DOCUMENT_MODES[mode].label) }), description: t('Keep the editable source'), shortcut: 'Ctrl S', keywords: 'export save 匯出', run: downloadSource },
+    { id: 'save-md', label: t('Download {format}', { format: t(DOCUMENT_MODES[mode].label) }), description: t('Keep the editable source'), keywords: 'export save 匯出', run: downloadSource },
     { id: 'save-project', label: t('Download project ZIP'), description: t('Document and all local assets'), keywords: 'export zip backup 匯出 備份', run: () => void downloadProject() },
     { id: 'save-html', label: t('Download portable HTML'), description: t('Embedded styles and local assets for offline reading'), keywords: 'export self contained 匯出', run: () => void downloadHtml() },
-    { id: 'search', label: t('Search document'), shortcut: 'Ctrl F', run: () => editorRef.current?.search() },
+    { id: 'search', label: t('Search document'), run: () => editorRef.current?.search() },
     { id: 'insert-heading', label: t('Insert: Heading 2'), description: t('## Heading'), keywords: '/ heading 標題', run: () => editorRef.current?.insert(`\n${t('## Heading')}\n`, 4) },
     { id: 'insert-table', label: t('Insert: Table'), description: t('Three-column Markdown table'), keywords: '/ table 表格', run: () => editorRef.current?.insert(locale === 'zh-TW' ? '\n| 欄位一 | 欄位二 | 欄位三 |\n| --- | --- | --- |\n| 內容 | 內容 | 內容 |\n' : '\n| Column 1 | Column 2 | Column 3 |\n| --- | --- | --- |\n| Content | Content | Content |\n') },
     { id: 'insert-code', label: t('Insert: Code block'), description: t('Fenced code block'), keywords: '/ code 程式碼', run: () => editorRef.current?.insert('\n```text\n\n```\n', 9) },
     { id: 'insert-mermaid', label: t('Insert: Mermaid diagram'), description: t('Basic flowchart'), keywords: '/ diagram 圖表', run: () => editorRef.current?.insert(mode === 'mermaid' ? `flowchart TD\n  A[${t('Start')}] --> B[${t('Done')}]\n` : `\n\`\`\`mermaid\ngraph TD\n  A[${t('Start')}] --> B[${t('Done')}]\n\`\`\`\n`) },
-    { id: 'focus', label: t(focusMode ? 'Exit focus mode' : 'Enter focus mode'), shortcut: 'Ctrl ⇧ F', run: () => setFocusMode((enabled) => !enabled) },
-    { id: 'typewriter', label: t(typewriterMode ? 'Disable typewriter mode' : 'Enable typewriter mode'), shortcut: 'Ctrl Alt T', run: () => setTypewriterMode((enabled) => !enabled) },
+    { id: 'focus', label: t(focusMode ? 'Exit focus mode' : 'Enter focus mode'), run: () => setFocusMode((enabled) => !enabled) },
+    { id: 'typewriter', label: t(typewriterMode ? 'Disable typewriter mode' : 'Enable typewriter mode'), run: () => setTypewriterMode((enabled) => !enabled) },
     { id: 'sync', label: t(syncEnabled ? 'Disable synchronized scrolling' : 'Enable synchronized scrolling'), run: () => setSyncEnabled((enabled) => !enabled) },
     { id: 'fold', label: t('Fold all sections'), run: () => editorRef.current?.foldAll() },
     { id: 'unfold', label: t('Unfold all sections'), run: () => editorRef.current?.unfoldAll() },
     { id: 'snapshot', label: t('Create current revision'), description: t('Save to local revision history'), run: () => void createManualSnapshot() },
     { id: 'revisions', label: t('Open revision history'), description: t('Preview, download, or restore an older revision'), run: () => setRevisionsOpen(true) },
-    { id: 'shortcuts', label: t('Show keyboard shortcuts'), shortcut: '?', run: () => setHelpOpen(true) },
-  ], [createManualSnapshot, downloadHtml, downloadSource, downloadProject, focusMode, locale, mode, syncEnabled, t, typewriterMode])
+    { id: 'shortcuts', label: t('Show keyboard shortcuts'), run: () => setHelpOpen(true) },
+  ].map((action) => ({ ...action, shortcut: formatShortcut(shortcuts[action.id]) })), [createManualSnapshot, downloadHtml, downloadSource, downloadProject, focusMode, locale, mode, shortcuts, syncEnabled, t, typewriterMode])
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      const mod = event.metaKey || event.ctrlKey
+      if (event.defaultPrevented || event.isComposing || event.keyCode === 229 || event.repeat) return
       const target = event.target as HTMLElement | null
-      if (event.key === 'Escape' && target?.closest('dialog[open]')) return
-      const isTyping = Boolean(target?.closest('input, textarea, [contenteditable="true"], .cm-editor'))
-      if (mod && event.key.toLocaleLowerCase() === 'k') {
+      if (target?.closest('dialog[open], [role="dialog"]')) return
+      const shortcut = shortcutFromEvent(event)
+      const isTyping = Boolean(target?.closest('input, select, textarea, [contenteditable="true"], .cm-editor'))
+      if (shortcut === '?' && isTyping) return
+      const action = shortcut && commandActions.find((command) => shortcuts[command.id] === shortcut)
+      if (action) {
         event.preventDefault()
-        setCommandOpen(true)
-      } else if (mod && event.key.toLocaleLowerCase() === 'o') {
+        event.stopPropagation()
+        action.run()
+      } else if (shortcut && Object.values(DEFAULT_SHORTCUTS).includes(shortcut)) {
+        // Do not let a removed app binding trigger a competing editor or browser command.
         event.preventDefault()
-        fileInputRef.current?.click()
-      } else if (mod && event.key.toLocaleLowerCase() === 's') {
-        event.preventDefault()
-        downloadSource()
-      } else if (mod && event.shiftKey && event.key.toLocaleLowerCase() === 'f') {
-        event.preventDefault()
-        setFocusMode((enabled) => !enabled)
-      } else if (mod && event.altKey && event.key.toLocaleLowerCase() === 't') {
-        event.preventDefault()
-        setTypewriterMode((enabled) => !enabled)
-      } else if (event.key === '?' && !isTyping) {
-        event.preventDefault()
-        setHelpOpen(true)
-      } else if (event.key === 'Escape' && focusMode && !commandOpen && !helpOpen) {
+        event.stopPropagation()
+      } else if (event.key === 'Escape' && focusMode) {
         setFocusMode(false)
       } else if (event.key === 'Escape') {
         setMobileOutlineOpen(false)
-        setHelpOpen(false)
         setStatsOpen(false)
       }
     }
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [commandOpen, downloadSource, focusMode, helpOpen])
+    window.addEventListener('keydown', onKeyDown, true)
+    return () => window.removeEventListener('keydown', onKeyDown, true)
+  }, [commandActions, focusMode, shortcuts])
 
   if (!hydrated) {
     return <main className="app-shell productivity-shell"><div className="app-loading">{t('Loading local draft…')}</div></main>
@@ -519,7 +527,7 @@ export default function App() {
           <button className="toolbar-button revision-trigger" type="button" onClick={() => setRevisionsOpen(true)} aria-label={t('Revision history')}><History size={17} aria-hidden="true" /><span>{t('Revision history')}</span></button>
         </div>
         <div className="workspace-toolbar__group">
-          <button className="toolbar-button utility-command" type="button" onClick={() => setCommandOpen(true)} aria-label={t('Command palette')}><Command size={16} aria-hidden="true" /><span>{t('Find a command')}</span><kbd>Ctrl K</kbd></button>
+          <button className="toolbar-button utility-command" type="button" onClick={() => setCommandOpen(true)} aria-label={t('Command palette')}><Command size={16} aria-hidden="true" /><span>{t('Find a command')}</span>{shortcuts.commands && <kbd>{formatShortcut(shortcuts.commands)}</kbd>}</button>
           <button className={`toolbar-button focus-trigger ${focusMode ? 'is-active' : ''}`} type="button" onClick={() => { setMobileView('editor'); setFocusMode((enabled) => !enabled) }} aria-pressed={focusMode} aria-label={t('Toggle focus mode')}><Maximize2 size={16} aria-hidden="true" /><span>{t('Focus')}</span></button>
         </div>
       </nav>
@@ -575,8 +583,8 @@ export default function App() {
         <button className="status-action help-trigger" type="button" onClick={() => setHelpOpen(true)} aria-label={t('Keyboard shortcuts')} title={t('Keyboard shortcuts')}><HelpCircle size={16} aria-hidden="true" /></button>
       </footer>
       {focusMode ? <button className="focus-exit" type="button" onClick={() => setFocusMode(false)}>{t('Esc to exit focus')}</button> : null}
-      <CommandPalette open={commandOpen} actions={commandActions} onClose={() => setCommandOpen(false)} />
-      <ShortcutHelp open={helpOpen} onClose={() => setHelpOpen(false)} />
+      <CommandPalette open={commandOpen} actions={commandActions.filter((action) => action.id !== 'commands')} onClose={() => setCommandOpen(false)} />
+      {helpOpen && <ShortcutHelp open onClose={() => setHelpOpen(false)} actions={commandActions} shortcuts={shortcuts} onChange={updateShortcuts} onReset={() => updateShortcuts({ ...DEFAULT_SHORTCUTS })} />}
       <AssetPanel
         open={assetsOpen}
         assets={assets}

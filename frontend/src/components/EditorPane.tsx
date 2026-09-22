@@ -7,12 +7,13 @@ import { EditorView, keymap } from '@codemirror/view'
 import { basicSetup } from 'codemirror'
 import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react'
 import { useI18n } from '../i18n'
-import { continueMarkdownLine, removeMarkdownMarker } from '../editorCommands'
+import { continueMarkdownLine, removeMarkdownMarker, renumberAfterDeletion } from '../editorCommands'
 import type { DocumentMode } from '../types'
 
 function modeExtensions(mode: DocumentMode) {
   return mode === 'markdown' ? [
     markdown({ addKeymap: false }),
+    renumberAfterDeletion,
     indentUnit.of('    '),
     Prec.high(keymap.of([
       { key: 'Enter', run: continueMarkdownLine },
