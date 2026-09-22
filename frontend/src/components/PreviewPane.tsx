@@ -11,7 +11,7 @@ import { normalizeAssetPath } from '../assets'
 import '../markdownFeatures.css'
 import { useI18n } from '../i18n'
 import { getAssetsByPaths } from '../storage'
-import type { ThemeName } from '../types'
+import type { DocumentMode, ThemeName } from '../types'
 import { mermaidThemeVariables, THEME_META } from '../themeConfig'
 import { ImageLightbox, type LightboxMedia } from './ImageLightbox'
 
@@ -21,6 +21,7 @@ export interface PreviewHandle {
 }
 
 interface PreviewPaneProps {
+  mode: DocumentMode
   markdown: string
   theme: ThemeName
   markdownFontSize?: number
@@ -168,7 +169,7 @@ function mermaidMedia(svg: SVGSVGElement, block: HTMLElement, theme: ThemeName, 
 }
 
 const PreviewPaneComponent = forwardRef<PreviewHandle, PreviewPaneProps>(function PreviewPane(
-  { markdown, theme, markdownFontSize = 16, mermaidFontSize = 14, assetVersion = 0, onScrollLine, onLayout, onSourceLine },
+  { markdown, mode, theme, markdownFontSize = 16, mermaidFontSize = 14, assetVersion = 0, onScrollLine, onLayout, onSourceLine },
   ref,
 ) {
   const { locale, t } = useI18n()
@@ -182,8 +183,8 @@ const PreviewPaneComponent = forwardRef<PreviewHandle, PreviewPaneProps>(functio
   const [lightboxMedia, setLightboxMedia] = useState<LightboxMedia | null>(null)
   const html = useMemo(() => {
     void locale
-    return renderMarkdown(markdown)
-  }, [locale, markdown])
+    return renderMarkdown(markdown, mode)
+  }, [locale, markdown, mode])
   const renderedHtml = useMemo(() => ({ __html: html }), [html])
 
   const invalidateGeometry = useCallback(() => {
@@ -266,6 +267,7 @@ const PreviewPaneComponent = forwardRef<PreviewHandle, PreviewPaneProps>(functio
         mermaid.initialize({
           startOnLoad: false,
           securityLevel: 'strict',
+          suppressErrorRendering: true,
           theme: 'base',
           themeVariables: mermaidThemeVariables(theme, mermaidFontSize),
           fontFamily: 'Noto Sans TC, sans-serif',
@@ -301,7 +303,10 @@ const PreviewPaneComponent = forwardRef<PreviewHandle, PreviewPaneProps>(functio
             const pre = document.createElement('pre')
             pre.className = 'mermaid-fallback'
             pre.append(code)
-            block.replaceChildren(pre)
+            const message = document.createElement('p')
+            message.className = 'mermaid-error'
+            message.textContent = t('Could not draw this diagram. Check the Mermaid syntax.')
+            block.replaceChildren(message, pre)
             console.warn('Mermaid render failed', error)
           }
           invalidateGeometry()
@@ -312,7 +317,7 @@ const PreviewPaneComponent = forwardRef<PreviewHandle, PreviewPaneProps>(functio
       cancelled = true
       window.clearTimeout(renderTimer)
     }
-  }, [html, invalidateGeometry, mermaidFontSize, theme])
+  }, [html, invalidateGeometry, mermaidFontSize, theme, t])
 
   useEffect(() => {
     let cancelled = false
@@ -529,7 +534,7 @@ const PreviewPaneComponent = forwardRef<PreviewHandle, PreviewPaneProps>(functio
         ) : (
           <div className="empty-preview">
             <div className="empty-preview__mark">M↓</div>
-            <h2>{t('Start writing Markdown')}</h2>
+            <h2>{t(mode === 'mermaid' ? 'Start a Mermaid diagram' : mode === 'text' ? 'Start writing' : 'Start writing Markdown')}</h2>
             <p>{t('Content entered on the left appears here instantly.')}</p>
           </div>
         )}

@@ -51,6 +51,11 @@ docker compose down
 
 ### 編輯器操作
 
+- 編輯區標題旁可切換 Markdown、純文字與 Mermaid 模式；切換不會改寫內容或清除復原歷史，右側依模式即時預覽。模式會隨草稿、版本及專案 ZIP 保存。
+- Markdown 的 `Enter` 每次只換一行並延續清單；空白清單項目按 `Enter` 或 `Backspace` 可退出，`Ctrl/Cmd+Z` 可撤回換行與自動編號。`Shift+Enter` 只換行、不延續序號。
+- Markdown 與 Mermaid 可用 `Tab`／`Shift+Tab` 縮排及取消縮排；先按 `Esc` 再按 `Tab` 可將鍵盤焦點移出編輯器。
+- 純文字原樣顯示，不套用 Markdown 格式或自動序號；Mermaid 模式直接輸入圖表語法，不需程式碼圍欄。可開啟及下載 `.txt`、`.mmd`／`.mermaid`，下載時依目前模式產生 `.md`、`.txt` 或 `.mmd`。
+
 - `Ctrl/Cmd+K`：開啟命令選單；也可在空白行輸入 `/` 快速開啟插入命令。
 - `Ctrl/Cmd+F`：搜尋／取代；`Ctrl/Cmd+S`：下載目前 Markdown。
 - `?`：顯示快捷鍵；`Ctrl/Cmd+Shift+F`：專注模式。

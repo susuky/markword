@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useI18n } from '../i18n'
+import { DOCUMENT_MODES, normalizeDocumentMode } from '../documentMode'
 import {
   createSnapshot,
   deleteRevision,
@@ -34,11 +35,11 @@ function formatDate(timestamp: number, locale: string): string {
 
 function revisionFileName(revision: Revision): string {
   const date = new Date(revision.createdAt).toISOString().replaceAll(':', '-').replace('T', '_').slice(0, 19)
-  return `markword-${date}.md`
+  return `markword-${date}.${DOCUMENT_MODES[normalizeDocumentMode(revision.metadata.mode)].extension}`
 }
 
 function downloadRevision(revision: Revision): void {
-  const url = URL.createObjectURL(new Blob([revision.content], { type: 'text/markdown;charset=utf-8' }))
+  const url = URL.createObjectURL(new Blob([revision.content], { type: `${DOCUMENT_MODES[normalizeDocumentMode(revision.metadata.mode)].mime};charset=utf-8` }))
   const anchor = document.createElement('a')
   anchor.href = url
   anchor.download = revisionFileName(revision)
@@ -164,7 +165,7 @@ export function RevisionPanel({
                   <strong>{formatDate(selected.createdAt, locale)}</strong>
                   <span>{t(REASON_LABELS[selected.reason])}</span>
                 </div>
-                <button type="button" onClick={() => downloadRevision(selected)}>{t('Download Markdown')}</button>
+                <button type="button" onClick={() => downloadRevision(selected)}>{t('Download {format}', { format: t(DOCUMENT_MODES[normalizeDocumentMode(selected.metadata.mode)].label) })}</button>
               </div>
               <pre>{selected.content || t('(Empty document)')}</pre>
               <div className="revision-preview__actions">

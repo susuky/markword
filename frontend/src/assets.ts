@@ -1,4 +1,6 @@
 import { translate } from './i18n'
+import { DOCUMENT_MODES, normalizeDocumentMode } from './documentMode'
+import type { DocumentMode } from './types'
 import {
   getAssetsByPaths,
   listAssets,
@@ -19,6 +21,7 @@ const VIDEO_EXTENSIONS = new Set(['m4v', 'mov', 'mp4', 'ogv', 'webm'])
 const AUDIO_EXTENSIONS = new Set(['aac', 'flac', 'm4a', 'mp3', 'oga', 'ogg', 'wav', 'webm'])
 
 interface ProjectManifest {
+  mode?: DocumentMode
   version: 1
   document: string
   createdAt: string
@@ -31,6 +34,7 @@ interface ProjectManifest {
 }
 
 export interface ProjectArchive {
+  mode: DocumentMode
   markdown: string
   documentName: string
   assets: StoredAsset[]
@@ -219,15 +223,16 @@ export async function inlineAssetsInHtml(html: string): Promise<string> {
   return document.body.innerHTML
 }
 
-export async function createProjectArchive(markdown: string, title: string, assets: readonly StoredAsset[]): Promise<Blob> {
+export async function createProjectArchive(markdown: string, title: string, assets: readonly StoredAsset[], mode: DocumentMode = 'markdown'): Promise<Blob> {
   const projectBytes = new Blob([markdown]).size + assets.reduce((total, asset) => total + asset.size, 0)
   if (projectBytes > MAX_PROJECT_UNPACKED_BYTES) throw new Error(translate('Project contents exceed 500 MB'))
   const [fflate, assetEntries] = await Promise.all([
     import('fflate'),
     Promise.all(assets.map(async (asset) => [asset.path, new Uint8Array(await asset.blob.arrayBuffer())] as const)),
   ])
-  const documentName = `${safeFilename(title).replace(/\.(?:md|markdown)$/i, '') || 'markword-document'}.md`
+  const documentName = `${safeFilename(title).replace(/\.(?:md|markdown|txt|mmd|mermaid)$/i, '') || 'markword-document'}.${DOCUMENT_MODES[mode].extension}`
   const manifest: ProjectManifest = {
+    mode,
     version: 1,
     document: documentName,
     createdAt: new Date().toISOString(),
@@ -307,7 +312,7 @@ export async function importProjectArchive(file: File): Promise<ProjectArchive> 
     }]
   })
   await putAssets(importedAssets)
-  return { markdown: fflate.strFromU8(entries[documentName]), documentName, assets: importedAssets }
+  return { markdown: fflate.strFromU8(entries[documentName]), mode: normalizeDocumentMode(manifest?.mode), documentName, assets: importedAssets }
 }
 
 export async function requestPersistentStorage(): Promise<boolean> {

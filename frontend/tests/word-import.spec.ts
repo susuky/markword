@@ -32,7 +32,7 @@ test('Word import preserves editable content, tables, images, and downloads', as
   await page.goto('./')
   await expect(page).toHaveTitle('Markword')
   const chooserPromise = page.waitForEvent('filechooser')
-  await page.getByRole('button', { name: 'Open Markdown, Word, or project', exact: true }).click()
+  await page.getByRole('button', { name: 'Open document or project', exact: true }).click()
   await (await chooserPromise).setFiles(formattedWord)
   await expect(page.locator('.markdown-body h1')).toHaveText('Word meeting notes')
   await expect(page.locator('.markdown-body strong')).toHaveText('重要事項')
@@ -110,7 +110,7 @@ test('dropping Word converts it, and invalid imports preserve the current draft'
     await input.setInputFiles(invalid)
     await expect(page.locator('.toast')).toContainText(invalid.name === 'Large.docx' ? 'larger than 15 MiB'
       : invalid.name === 'Legacy.doc' ? 'Save this Word file as .docx'
-      : invalid.name === 'Wrong.pdf' ? 'Please choose a Markdown, Word (.docx)'
+      : invalid.name === 'Wrong.pdf' ? 'Please choose a Markdown, text, Mermaid, Word (.docx)'
       : 'Could not convert this Word file')
     await expect(page.locator('.cm-content')).toHaveText('Drop conversion works')
   }
@@ -122,7 +122,7 @@ test('Word import and review notices work on mobile in Traditional Chinese', asy
   await page.setViewportSize({ width: 375, height: 812 })
   await page.goto('./')
   await page.getByRole('button', { name: 'Switch to Traditional Chinese', exact: true }).click()
-  await expect(page.getByRole('button', { name: '開啟 Markdown、Word 或專案', exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: '開啟文件或專案', exact: true })).toBeVisible()
   await page.locator('input[type="file"]').first().setInputFiles(wordFile('<w:p><w:pPr><w:pStyle w:val="Custom"/></w:pPr><w:r><w:t>待檢查的 Word 內容</w:t></w:r></w:p>'))
   await expect(page.locator('.toast')).toContainText('部分內容或格式無法保留')
   await expect(page.locator('.cm-content')).toHaveText('待檢查的 Word 內容')

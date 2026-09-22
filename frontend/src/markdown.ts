@@ -3,6 +3,7 @@ import hljs from 'highlight.js/lib/common'
 import MarkdownIt from 'markdown-it'
 import { normalizeAssetPath } from './assets'
 import { translate } from './i18n'
+import type { DocumentMode } from './types'
 import type StateBlock from 'markdown-it/lib/rules_block/state_block.mjs'
 import type StateInline from 'markdown-it/lib/rules_inline/state_inline.mjs'
 import type Token from 'markdown-it/lib/token.mjs'
@@ -237,6 +238,10 @@ function annotateSourceRanges(tokens: Token[]) {
 }
 
 const defaultFence = md.renderer.rules.fence!.bind(md.renderer.rules)
+function renderMermaid(source: string, startLine: number, endLine: number) {
+  return `<div class="mermaid-block dynamic-source-block" data-mermaid-source="${encodeURIComponent(source)}" data-source-start="${startLine}" data-source-end="${endLine}"><div class="mermaid-loading">${translate('Drawing diagram…')}</div><pre class="mermaid-fallback"><code>${md.utils.escapeHtml(source)}</code></pre></div>`
+}
+
 md.renderer.rules.fence = (tokens, index, options, env, self) => {
   const token = tokens[index]
   const language = token.info.trim().split(/\s+/)[0]
@@ -244,8 +249,7 @@ md.renderer.rules.fence = (tokens, index, options, env, self) => {
   const endLine = token.map ? Math.max(startLine, token.map[1]) : startLine
 
   if (language.toLowerCase() === 'mermaid') {
-    const source = md.utils.escapeHtml(token.content)
-    return `<div class="mermaid-block dynamic-source-block" data-mermaid-source="${encodeURIComponent(token.content)}" data-source-start="${startLine}" data-source-end="${endLine}"><div class="mermaid-loading">${translate('Drawing diagram…')}</div><pre class="mermaid-fallback"><code>${source}</code></pre></div>`
+    return renderMermaid(token.content, startLine, endLine)
   }
 
   const rendered = defaultFence(tokens, index, options, env, self)
@@ -295,7 +299,11 @@ function renderFootnotes(env: MarkdownEnvironment) {
   return `<section class="footnotes"><hr><ol>${items}</ol></section>`
 }
 
-export function renderMarkdown(source: string) {
+export function renderMarkdown(source: string, mode: DocumentMode = 'markdown') {
+  if (mode === 'mermaid') return renderMermaid(source, 1, source.split('\n').length)
+  if (mode === 'text') return source.split('\n').map((line, index) =>
+    `<div data-source-start="${index + 1}" data-source-end="${index + 1}" style="white-space:pre-wrap;min-height:1.78em">${md.utils.escapeHtml(line)}</div>`,
+  ).join('')
   const extracted = extractFootnotes(source)
   const env: MarkdownEnvironment = {
     footnotes: extracted.definitions,

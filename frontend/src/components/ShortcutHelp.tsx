@@ -8,9 +8,12 @@ interface ShortcutHelpProps {
 }
 const SHORTCUTS = [
   ['Cmd / Ctrl + K', 'Open command palette'],
-  ['Cmd / Ctrl + O', 'Open Markdown, Word, or project'],
+  ['Cmd / Ctrl + O', 'Open document or project'],
   ['Cmd / Ctrl + F', 'Search document'],
-  ['Cmd / Ctrl + S', 'Download Markdown'],
+  ['Cmd / Ctrl + S', 'Download source'],
+  ['Shift + Enter', 'New line without a list marker'],
+  ['Tab / Shift + Tab', 'Indent / unindent in Markdown or Mermaid'],
+  ['Esc, Tab', 'Move focus out of the editor'],
   ['Cmd / Ctrl + Shift + F', 'Toggle focus mode'],
   ['Cmd / Ctrl + Alt + T', 'Toggle typewriter mode'],
   ['Cmd / Ctrl + Shift + [', 'Fold current section'],

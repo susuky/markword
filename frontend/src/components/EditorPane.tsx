@@ -1,11 +1,32 @@
 import { markdown } from '@codemirror/lang-markdown'
-import { foldAll, unfoldAll } from '@codemirror/language'
+import { indentWithTab, insertNewline, insertNewlineKeepIndent } from '@codemirror/commands'
+import { foldAll, indentUnit, unfoldAll } from '@codemirror/language'
 import { openSearchPanel } from '@codemirror/search'
-import { EditorSelection, EditorState } from '@codemirror/state'
-import { EditorView } from '@codemirror/view'
+import { Compartment, EditorSelection, EditorState, Prec } from '@codemirror/state'
+import { EditorView, keymap } from '@codemirror/view'
 import { basicSetup } from 'codemirror'
 import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react'
 import { useI18n } from '../i18n'
+import { continueMarkdownLine, removeMarkdownMarker } from '../editorCommands'
+import type { DocumentMode } from '../types'
+
+function modeExtensions(mode: DocumentMode) {
+  return mode === 'markdown' ? [
+    markdown({ addKeymap: false }),
+    indentUnit.of('    '),
+    Prec.high(keymap.of([
+      { key: 'Enter', run: continueMarkdownLine },
+      { key: 'Enter', run: insertNewlineKeepIndent },
+      { key: 'Shift-Enter', run: insertNewline },
+      { key: 'Backspace', run: removeMarkdownMarker },
+      indentWithTab,
+    ])),
+  ] : Prec.high(keymap.of([
+    { key: 'Enter', run: mode === 'text' ? insertNewline : insertNewlineKeepIndent },
+    { key: 'Shift-Enter', run: insertNewline },
+    ...(mode === 'mermaid' ? [indentWithTab] : []),
+  ]))
+}
 
 export interface EditorHandle {
   scrollToLine: (line: number) => void
@@ -18,6 +39,7 @@ export interface EditorHandle {
 }
 
 interface EditorPaneProps {
+  mode: DocumentMode
   value: string
   onChange: (value: string) => void
   onScrollLine: (line: number, atEnd: boolean) => void
@@ -27,12 +49,15 @@ interface EditorPaneProps {
 }
 
 export const EditorPane = forwardRef<EditorHandle, EditorPaneProps>(function EditorPane(
-  { value, onChange, onScrollLine, typewriter = false, onSlashCommand, onPasteFiles },
+  { value, mode, onChange, onScrollLine, typewriter = false, onSlashCommand, onPasteFiles },
   ref,
 ) {
   const { t } = useI18n()
   const hostRef = useRef<HTMLDivElement>(null)
   const viewRef = useRef<EditorView | null>(null)
+  const languageRef = useRef(new Compartment())
+  const modeRef = useRef(mode)
+  modeRef.current = mode
   const externalValueRef = useRef(value)
   const suppressScrollRef = useRef(false)
   const onChangeRef = useRef(onChange)
@@ -104,7 +129,7 @@ export const EditorPane = forwardRef<EditorHandle, EditorPaneProps>(function Edi
       doc: externalValueRef.current,
       extensions: [
         basicSetup,
-        markdown(),
+        languageRef.current.of(modeExtensions(modeRef.current)),
         EditorView.lineWrapping,
         EditorView.theme({
           '&': { height: '100%', fontSize: '15px' },
@@ -116,7 +141,7 @@ export const EditorPane = forwardRef<EditorHandle, EditorPaneProps>(function Edi
           '.cm-line': { padding: '0 18px 0 12px' },
           '.cm-activeLine': { backgroundColor: 'rgb(22 116 105 / 5%)' },
           '.cm-activeLineGutter': { backgroundColor: 'var(--accent-soft)', color: 'var(--accent)' },
-          '.cm-gutters': { backgroundColor: 'var(--surface)', color: '#76877e', borderRight: 'none', paddingTop: '28px' },
+          '.cm-gutters': { backgroundColor: 'var(--surface)', color: '#76877e', borderRight: 'none' },
           '&.cm-focused': { outline: 'none' },
           '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection': {
             backgroundColor: '#c2e3d7 !important',
@@ -142,6 +167,7 @@ export const EditorPane = forwardRef<EditorHandle, EditorPaneProps>(function Edi
             return true
           },
           keydown: (event, view) => {
+            if (modeRef.current !== 'markdown' || event.isComposing) return false
             if (event.key !== '/' || event.metaKey || event.ctrlKey || event.altKey) return false
             const selection = view.state.selection.main
             const line = view.state.doc.lineAt(selection.head)
@@ -170,11 +196,19 @@ export const EditorPane = forwardRef<EditorHandle, EditorPaneProps>(function Edi
   }, [])
 
   useEffect(() => {
+    viewRef.current?.dispatch({ effects: languageRef.current.reconfigure(modeExtensions(mode)) })
+  }, [mode])
+
+  useEffect(() => {
+    viewRef.current?.contentDOM.setAttribute('aria-label', t('Source editor'))
+  }, [t])
+
+  useEffect(() => {
     const view = viewRef.current
     if (!view || value === externalValueRef.current) return
     externalValueRef.current = value
     view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: value } })
   }, [value])
 
-  return <div className="editor-host" ref={hostRef} aria-label={t('Markdown source editor')} />
+  return <div className="editor-host" ref={hostRef} aria-label={t('Source editor')} />
 })

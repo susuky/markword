@@ -23,7 +23,7 @@ button, select, input { font: inherit; }
 button { color: inherit; cursor: pointer; }
 button svg { flex-shrink: 0; }
 button:disabled { cursor: not-allowed; opacity: .55; }
-button:focus-visible, a:focus-visible, input:focus-visible, [tabindex]:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
 
 .app-shell { display: grid; grid-template-rows: var(--header-height) 56px minmax(0, 1fr) var(--status-height); width: 100%; height: 100dvh; background: var(--surface); }
 .app-header { display: flex; align-items: center; gap: 24px; padding: 0 24px; border-bottom: 1px solid var(--border); }
@@ -109,6 +109,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, [tabindex]:focus-vis
 .pane-header { display: flex; flex: 0 0 56px; align-items: center; justify-content: space-between; gap: 8px; padding: 0 20px; border-bottom: 1px solid var(--border); background: var(--surface); }
 .pane-title { display: flex; align-items: center; gap: 8px; white-space: nowrap; font-size: 13px; font-weight: 650; }
 .pane-title > span { margin-left: 8px; color: var(--muted); font: 12px ui-monospace, monospace; font-weight: 400; }
+.document-mode { min-height: 32px; max-width: 130px; padding: 3px 6px; border: 1px solid var(--border); border-radius: 5px; color: inherit; background: var(--surface); font: inherit; }
 .pane-tools { display: flex; align-items: center; gap: 4px; }
 .preview-tools { gap: 2px; }
 .preview-tools .toolbar-button { gap: 6px; min-height: 36px; padding: 0 8px; font-size: 12px; }

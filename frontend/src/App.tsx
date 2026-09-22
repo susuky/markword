@@ -25,6 +25,7 @@ import { RevisionPanel } from './components/RevisionPanel'
 import { ShortcutHelp } from './components/ShortcutHelp'
 import { StatsPopover } from './components/StatsPopover'
 import { IS_STATIC_DEPLOYMENT } from './deployment'
+import { DOCUMENT_MODES, documentAsMarkdown, normalizeDocumentMode } from './documentMode'
 import { useDebouncedStats } from './hooks/useDebouncedStats'
 import { useI18n, type Locale } from './i18n'
 import { renderMarkdown } from './markdown'
@@ -44,7 +45,7 @@ import {
   DEFAULT_PREVIEW_TYPOGRAPHY,
   normalizePreviewTypography,
 } from './typography'
-import type { ExportStyleName, ThemeName } from './types'
+import type { DocumentMode, ExportStyleName, ThemeName } from './types'
 
 const MAX_LOCAL_FILE_BYTES = 15 * 1024 * 1024
 
@@ -95,6 +96,7 @@ function portableHtml(markdown: string, theme: ThemeName, exportStyle: ExportSty
 export default function App() {
   const { locale, setLocale, t } = useI18n()
   const initialSampleRef = useRef(SAMPLE_MARKDOWN[locale])
+  const [mode, setMode] = useState<DocumentMode>('markdown')
   const [markdown, setMarkdown] = useState(initialSampleRef.current)
   const deferredMarkdown = useDeferredValue(markdown)
   const [theme, setTheme] = useState<ThemeName>(() => loadPreference('theme', 'Light'))
@@ -136,9 +138,9 @@ export default function App() {
   const { stats, available } = useDebouncedStats(markdown)
   const saveLabel = t(persistenceStatus === 'saved' ? 'Saved in this browser' : persistenceStatus === 'error' ? 'Draft not saved. Download a backup.' : persistenceStatus === 'saving' ? 'Saving…' : 'Draft not saved')
   const totalLines = Math.max(1, markdown.split('\n').length)
-  const headings = useMemo(() => collectHeadings(markdown), [markdown])
+  const headings = useMemo(() => mode === 'markdown' ? collectHeadings(markdown) : [], [markdown, mode])
   const title = headings.find((heading) => heading.level === 1)?.text || t('Untitled document')
-  const referencedAssets = useMemo(() => referencedAssetPaths(markdown), [markdown])
+  const referencedAssets = useMemo(() => mode === 'markdown' ? referencedAssetPaths(markdown) : new Set<string>(), [markdown, mode])
   activeLineRef.current = activeLine
 
   useEffect(() => {
@@ -149,6 +151,7 @@ export default function App() {
     ]).then(([draft, storedAssets]) => {
       if (cancelled) return
       setMarkdown(draft.content)
+      setMode(normalizeDocumentMode(draft.metadata.mode))
       setAssets(storedAssets)
       const savedTheme = draft.metadata.theme
       if (isThemeName(savedTheme)) setTheme(savedTheme)
@@ -167,8 +170,8 @@ export default function App() {
   }, [persistence])
 
   useEffect(() => {
-    if (hydrated) persistence.update(markdown, { theme })
-  }, [hydrated, markdown, persistence, theme])
+    if (hydrated) persistence.update(markdown, { theme, mode })
+  }, [hydrated, markdown, mode, persistence, theme])
 
   useEffect(() => {
     savePreference('theme', theme)
@@ -234,6 +237,7 @@ export default function App() {
       try {
         const project = await importProjectArchive(file)
         setMarkdown(project.markdown)
+        setMode(project.mode)
         setActiveLine(1)
         await refreshAssets()
         editorRef.current?.jumpToLine(1)
@@ -249,8 +253,8 @@ export default function App() {
       showNotice(t('Save this Word file as .docx, then try again.'))
       return
     }
-    if (!/\.(md|markdown|docx)$/i.test(file.name)) {
-      showNotice(t('Please choose a Markdown, Word (.docx), or project ZIP file'))
+    if (!/\.(md|markdown|txt|mmd|mermaid|docx)$/i.test(file.name)) {
+      showNotice(t('Please choose a Markdown, text, Mermaid, Word (.docx), or project ZIP file'))
       return
     }
     if (file.size > MAX_LOCAL_FILE_BYTES) {
@@ -267,6 +271,7 @@ export default function App() {
         const converted = await importWordDocument(file)
         await refreshAssets()
         setMarkdown(converted.markdown)
+        setMode('markdown')
         setActiveLine(1)
         setMobileView('editor')
         editorRef.current?.jumpToLine(1)
@@ -283,6 +288,7 @@ export default function App() {
     }
     try {
       setMarkdown(await file.text())
+      setMode(/\.(mmd|mermaid)$/i.test(file.name) ? 'mermaid' : /\.txt$/i.test(file.name) ? 'text' : 'markdown')
       setActiveLine(1)
       editorRef.current?.jumpToLine(1)
       showNotice(t('Opened {file}', { file: file.name }))
@@ -292,22 +298,22 @@ export default function App() {
   }, [assetBusy, refreshAssets, showNotice, t])
 
   const handleDroppedFiles = useCallback(async (files: readonly File[]) => {
-    const documentFile = files.find((file) => /\.(?:md|markdown|docx|doc|zip)$/i.test(file.name))
+    const documentFile = files.find((file) => /\.(?:md|markdown|txt|mmd|mermaid|docx|doc|zip)$/i.test(file.name))
     const assetFiles = files.filter((file) => file !== documentFile)
     if (documentFile) await loadFile(documentFile)
     if (assetFiles.length) await handleAssetFiles(assetFiles, !documentFile)
   }, [handleAssetFiles, loadFile])
 
-  const downloadMarkdown = useCallback(() => {
-    downloadBlob(markdown, 'text/markdown;charset=utf-8', `${documentTitle(markdown)}.md`)
-    showNotice(t('Markdown downloaded'))
-  }, [markdown, showNotice, t])
+  const downloadSource = useCallback(() => {
+    downloadBlob(markdown, `${DOCUMENT_MODES[mode].mime};charset=utf-8`, `${documentTitle(markdown)}.${DOCUMENT_MODES[mode].extension}`)
+    showNotice(t('{format} downloaded', { format: t(DOCUMENT_MODES[mode].label) }))
+  }, [markdown, mode, showNotice, t])
 
   const downloadHtml = useCallback(async () => {
     if (clientExporting) return
     setClientExporting('html')
     try {
-      const renderedHtml = previewRef.current?.getRenderedHtml() ?? renderMarkdown(markdown)
+      const renderedHtml = previewRef.current?.getRenderedHtml() ?? renderMarkdown(markdown, mode)
       const embeddedHtml = await inlineAssetsInHtml(renderedHtml)
       downloadBlob(portableHtml(markdown, theme, exportStyle, locale, embeddedHtml), 'text/html;charset=utf-8', `${documentTitle(markdown)}.html`)
       showNotice(t('Portable HTML downloaded'))
@@ -316,14 +322,14 @@ export default function App() {
     } finally {
       setClientExporting(null)
     }
-  }, [clientExporting, exportStyle, locale, markdown, showNotice, t, theme])
+  }, [clientExporting, exportStyle, locale, markdown, mode, showNotice, t, theme])
 
   const downloadProject = useCallback(async () => {
     if (clientExporting) return
     setClientExporting('project')
     try {
       const title = documentTitle(markdown)
-      const archive = await createProjectArchive(markdown, title, assets)
+      const archive = await createProjectArchive(markdown, title, assets, mode)
       downloadBlob(archive, 'application/zip', `${title}.markword.zip`)
       showNotice(t('Project ZIP downloaded'))
     } catch (error) {
@@ -331,7 +337,7 @@ export default function App() {
     } finally {
       setClientExporting(null)
     }
-  }, [assets, clientExporting, markdown, showNotice, t])
+  }, [assets, clientExporting, markdown, mode, showNotice, t])
 
   const downloadLocalAsset = useCallback((asset: StoredAsset) => {
     downloadBlob(asset.blob, asset.type || 'application/octet-stream', asset.name)
@@ -401,14 +407,14 @@ export default function App() {
     setExporting(format)
     setNotice('')
     try {
-      await exportDocument(format, markdown, theme, exportStyle)
+      await exportDocument(format, documentAsMarkdown(markdown, mode), theme, exportStyle)
       showNotice(t('{format} download started', { format: format.toUpperCase() }))
     } catch (error) {
       showNotice(error instanceof Error ? error.message : t('Export failed. Please try again.'))
     } finally {
       setExporting(null)
     }
-  }, [exportStyle, exporting, markdown, showNotice, t, theme])
+  }, [exportStyle, exporting, markdown, mode, showNotice, t, theme])
 
   const createManualSnapshot = useCallback(async () => {
     try {
@@ -420,17 +426,17 @@ export default function App() {
   }, [persistence, showNotice, t])
 
   const commandActions = useMemo<CommandAction[]>(() => [
-    { id: 'open', label: t('Open Markdown, Word, or project'), description: t('Open .md, convert .docx, or restore a Markword ZIP'), shortcut: 'Ctrl O', keywords: 'file upload import word docx project 匯入 轉換 檔案 專案', run: () => fileInputRef.current?.click() },
+    { id: 'open', label: t('Open document or project'), description: t('Open Markdown, text, Mermaid, Word, or a Markword ZIP'), shortcut: 'Ctrl O', keywords: 'file upload import word docx project 匯入 轉換 檔案 專案', run: () => fileInputRef.current?.click() },
     { id: 'assets', label: t('Manage local assets'), description: t('Images, video, audio, and attachments'), keywords: 'asset media image video attachment 圖片 影片 附件', run: () => setAssetsOpen(true) },
     { id: 'insert-asset', label: t('Insert: Local asset'), description: t('Import files from this device'), keywords: '/ asset media image video attachment 圖片 影片 附件', run: () => assetInputRef.current?.click() },
-    { id: 'save-md', label: t('Download Markdown'), description: t('Keep the editable source'), shortcut: 'Ctrl S', keywords: 'export save 匯出', run: downloadMarkdown },
-    { id: 'save-project', label: t('Download project ZIP'), description: t('Markdown and all local assets'), keywords: 'export zip backup 匯出 備份', run: () => void downloadProject() },
+    { id: 'save-md', label: t('Download {format}', { format: t(DOCUMENT_MODES[mode].label) }), description: t('Keep the editable source'), shortcut: 'Ctrl S', keywords: 'export save 匯出', run: downloadSource },
+    { id: 'save-project', label: t('Download project ZIP'), description: t('Document and all local assets'), keywords: 'export zip backup 匯出 備份', run: () => void downloadProject() },
     { id: 'save-html', label: t('Download portable HTML'), description: t('Embedded styles and local assets for offline reading'), keywords: 'export self contained 匯出', run: () => void downloadHtml() },
     { id: 'search', label: t('Search document'), shortcut: 'Ctrl F', run: () => editorRef.current?.search() },
     { id: 'insert-heading', label: t('Insert: Heading 2'), description: t('## Heading'), keywords: '/ heading 標題', run: () => editorRef.current?.insert(`\n${t('## Heading')}\n`, 4) },
     { id: 'insert-table', label: t('Insert: Table'), description: t('Three-column Markdown table'), keywords: '/ table 表格', run: () => editorRef.current?.insert(locale === 'zh-TW' ? '\n| 欄位一 | 欄位二 | 欄位三 |\n| --- | --- | --- |\n| 內容 | 內容 | 內容 |\n' : '\n| Column 1 | Column 2 | Column 3 |\n| --- | --- | --- |\n| Content | Content | Content |\n') },
     { id: 'insert-code', label: t('Insert: Code block'), description: t('Fenced code block'), keywords: '/ code 程式碼', run: () => editorRef.current?.insert('\n```text\n\n```\n', 9) },
-    { id: 'insert-mermaid', label: t('Insert: Mermaid diagram'), description: t('Basic flowchart'), keywords: '/ diagram 圖表', run: () => editorRef.current?.insert(`\n\`\`\`mermaid\ngraph TD\n  A[${t('Start')}] --> B[${t('Done')}]\n\`\`\`\n`) },
+    { id: 'insert-mermaid', label: t('Insert: Mermaid diagram'), description: t('Basic flowchart'), keywords: '/ diagram 圖表', run: () => editorRef.current?.insert(mode === 'mermaid' ? `flowchart TD\n  A[${t('Start')}] --> B[${t('Done')}]\n` : `\n\`\`\`mermaid\ngraph TD\n  A[${t('Start')}] --> B[${t('Done')}]\n\`\`\`\n`) },
     { id: 'focus', label: t(focusMode ? 'Exit focus mode' : 'Enter focus mode'), shortcut: 'Ctrl ⇧ F', run: () => setFocusMode((enabled) => !enabled) },
     { id: 'typewriter', label: t(typewriterMode ? 'Disable typewriter mode' : 'Enable typewriter mode'), shortcut: 'Ctrl Alt T', run: () => setTypewriterMode((enabled) => !enabled) },
     { id: 'sync', label: t(syncEnabled ? 'Disable synchronized scrolling' : 'Enable synchronized scrolling'), run: () => setSyncEnabled((enabled) => !enabled) },
@@ -439,7 +445,7 @@ export default function App() {
     { id: 'snapshot', label: t('Create current revision'), description: t('Save to local revision history'), run: () => void createManualSnapshot() },
     { id: 'revisions', label: t('Open revision history'), description: t('Preview, download, or restore an older revision'), run: () => setRevisionsOpen(true) },
     { id: 'shortcuts', label: t('Show keyboard shortcuts'), shortcut: '?', run: () => setHelpOpen(true) },
-  ], [createManualSnapshot, downloadHtml, downloadMarkdown, downloadProject, focusMode, locale, syncEnabled, t, typewriterMode])
+  ], [createManualSnapshot, downloadHtml, downloadSource, downloadProject, focusMode, locale, mode, syncEnabled, t, typewriterMode])
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -455,7 +461,7 @@ export default function App() {
         fileInputRef.current?.click()
       } else if (mod && event.key.toLocaleLowerCase() === 's') {
         event.preventDefault()
-        downloadMarkdown()
+        downloadSource()
       } else if (mod && event.shiftKey && event.key.toLocaleLowerCase() === 'f') {
         event.preventDefault()
         setFocusMode((enabled) => !enabled)
@@ -475,7 +481,7 @@ export default function App() {
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [commandOpen, downloadMarkdown, focusMode, helpOpen])
+  }, [commandOpen, downloadSource, focusMode, helpOpen])
 
   if (!hydrated) {
     return <main className="app-shell productivity-shell"><div className="app-loading">{t('Loading local draft…')}</div></main>
@@ -483,7 +489,7 @@ export default function App() {
 
   return (
     <main className={`app-shell productivity-shell ${focusMode ? 'is-focus-mode' : ''} ${typewriterMode ? 'is-typewriter-mode' : ''}`}>
-      <input ref={fileInputRef} className="visually-hidden-file" type="file" disabled={importingWord} accept=".md,.markdown,.docx,.zip,text/markdown,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/zip" onChange={(event) => {
+      <input ref={fileInputRef} className="visually-hidden-file" type="file" disabled={importingWord} accept=".md,.markdown,.txt,.mmd,.mermaid,.docx,.zip,text/plain,text/markdown,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/zip" onChange={(event) => {
         const file = event.target.files?.[0]
         if (file) void loadFile(file)
         event.currentTarget.value = ''
@@ -495,20 +501,20 @@ export default function App() {
       }} />
       <header className="app-header">
         <div className="brand"><img src={`${import.meta.env.BASE_URL}markword-icon.svg`} width="36" height="36" alt="" /><span>Markword<span className="brand-caption">{t('A space for your words')}</span></span></div>
-        <div className="document-heading"><FileText size={18} aria-hidden="true" /><span title={title}>{title}</span><span className="document-extension">.md</span></div>
+        <div className="document-heading"><FileText size={18} aria-hidden="true" /><span title={title}>{title}</span><span className="document-extension">.{DOCUMENT_MODES[mode].extension}</span></div>
         <nav className="header-actions" aria-label={t('Document tools')}>
-          <button className="toolbar-button open-trigger" type="button" disabled={importingWord} onClick={() => fileInputRef.current?.click()} aria-label={t(importingWord ? 'Converting Word…' : 'Open Markdown, Word, or project')} title={t('Open Markdown, Word, or project')}><FolderOpen size={17} aria-hidden="true" /><span>{t(importingWord ? 'Converting Word…' : 'Open')}</span></button>
+          <button className="toolbar-button open-trigger" type="button" disabled={importingWord} onClick={() => fileInputRef.current?.click()} aria-label={t(importingWord ? 'Converting Word…' : 'Open document or project')} title={t('Open document or project')}><FolderOpen size={17} aria-hidden="true" /><span>{t(importingWord ? 'Converting Word…' : 'Open')}</span></button>
           <button className="toolbar-button language-toggle" type="button" onClick={() => setLocale(locale === 'en' ? 'zh-TW' : 'en')} title={t(locale === 'en' ? 'Switch to Traditional Chinese' : 'Switch to English')} aria-label={t(locale === 'en' ? 'Switch to Traditional Chinese' : 'Switch to English')}><Languages size={17} aria-hidden="true" /><span>{locale === 'en' ? t('Traditional Chinese') : 'EN'}</span></button>
-          <ExportMenu disabled={!markdown.trim()} exporting={exporting} clientExporting={clientExporting} exportStyle={exportStyle} onStyleChange={setExportStyle} hasAssets={referencedAssets.size > 0} onMarkdown={downloadMarkdown} onProject={() => void downloadProject()} onHtml={() => void downloadHtml()} onExport={(format) => void handleExport(format)} />
+          <ExportMenu mode={mode} disabled={!markdown.trim()} exporting={exporting} clientExporting={clientExporting} exportStyle={exportStyle} onStyleChange={setExportStyle} hasAssets={referencedAssets.size > 0} onSource={downloadSource} onProject={() => void downloadProject()} onHtml={() => void downloadHtml()} onExport={(format) => void handleExport(format)} />
         </nav>
       </header>
 
       <nav className="workspace-toolbar" aria-label={t('Workspace tools')}>
         <div className="workspace-toolbar__group">
-          <button className="toolbar-button outline-trigger" type="button" aria-label={t('Document outline')} aria-controls="document-outline" aria-expanded={window.matchMedia('(max-width: 760px)').matches ? mobileOutlineOpen : !outlineCollapsed} onClick={() => {
+          {mode === 'markdown' ? <button className="toolbar-button outline-trigger" type="button" aria-label={t('Document outline')} aria-controls="document-outline" aria-expanded={window.matchMedia('(max-width: 760px)').matches ? mobileOutlineOpen : !outlineCollapsed} onClick={() => {
             if (window.matchMedia('(max-width: 760px)').matches) setMobileOutlineOpen((open) => !open)
             else setOutlineCollapsed((collapsed) => !collapsed)
-          }}><ListTree size={17} aria-hidden="true" /><span>{t('Outline')}</span></button>
+          }}><ListTree size={17} aria-hidden="true" /><span>{t('Outline')}</span></button> : null}
           <button className="toolbar-button asset-trigger" type="button" onClick={() => setAssetsOpen(true)} aria-label={t('Manage local assets')}><Paperclip size={17} aria-hidden="true" /><span>{t('Assets')}</span>{assets.length ? <small>{assets.length}</small> : null}</button>
           <button className="toolbar-button revision-trigger" type="button" onClick={() => setRevisionsOpen(true)} aria-label={t('Revision history')}><History size={17} aria-hidden="true" /><span>{t('Revision history')}</span></button>
         </div>
@@ -536,11 +542,11 @@ export default function App() {
           if (files.length) void handleDroppedFiles(files)
         }}
       >
-        {mobileOutlineOpen ? <button className="outline-scrim" type="button" aria-label={t('Collapse document outline')} onClick={() => setMobileOutlineOpen(false)} /> : null}
-        <OutlinePanel mobileOpen={mobileOutlineOpen} onMobileClose={() => setMobileOutlineOpen(false)} headings={headings} collapsed={outlineCollapsed} activeLine={activeLine} onCollapsedChange={setOutlineCollapsed} onJump={jumpToLine} />
+        {mode === 'markdown' && mobileOutlineOpen ? <button className="outline-scrim" type="button" aria-label={t('Collapse document outline')} onClick={() => setMobileOutlineOpen(false)} /> : null}
+        {mode === 'markdown' ? <OutlinePanel mobileOpen={mobileOutlineOpen} onMobileClose={() => setMobileOutlineOpen(false)} headings={headings} collapsed={outlineCollapsed} activeLine={activeLine} onCollapsedChange={setOutlineCollapsed} onJump={jumpToLine} /> : null}
         <section className="pane pane--editor" style={{ flex: `${split} 1 0` }}>
-          <header className="pane-header"><div className="pane-title"><FileText size={16} aria-hidden="true" />{t('Editor')}<span>Markdown</span></div><div className="pane-tools"><button type="button" onClick={() => editorRef.current?.search()} title={t('Search document')} aria-label={t('Search document')}><Search size={17} aria-hidden="true" /></button><button type="button" className={typewriterMode ? 'is-active' : ''} aria-pressed={typewriterMode} onClick={() => setTypewriterMode((enabled) => !enabled)} title={t('Typewriter mode')} aria-label={t('Typewriter mode')}><AlignCenter size={17} aria-hidden="true" /></button></div></header>
-          <EditorPane ref={editorRef} value={markdown} onChange={setMarkdown} onScrollLine={handleEditorScroll} typewriter={typewriterMode} onSlashCommand={() => setCommandOpen(true)} onPasteFiles={(files) => void handleAssetFiles(files)} />
+          <header className="pane-header"><div className="pane-title"><FileText size={16} aria-hidden="true" />{t('Editor')}<select className="document-mode" aria-label={t('Document mode')} value={mode} onChange={(event) => setMode(normalizeDocumentMode(event.target.value))}>{(Object.keys(DOCUMENT_MODES) as DocumentMode[]).map((value) => <option key={value} value={value}>{t(DOCUMENT_MODES[value].label)}</option>)}</select></div><div className="pane-tools"><button type="button" onClick={() => editorRef.current?.search()} title={t('Search document')} aria-label={t('Search document')}><Search size={17} aria-hidden="true" /></button><button type="button" className={typewriterMode ? 'is-active' : ''} aria-pressed={typewriterMode} onClick={() => setTypewriterMode((enabled) => !enabled)} title={t('Typewriter mode')} aria-label={t('Typewriter mode')}><AlignCenter size={17} aria-hidden="true" /></button></div></header>
+          <EditorPane ref={editorRef} mode={mode} value={markdown} onChange={setMarkdown} onScrollLine={handleEditorScroll} typewriter={typewriterMode} onSlashCommand={() => setCommandOpen(true)} onPasteFiles={(files) => void handleAssetFiles(files)} />
         </section>
 
         <button className="splitter" type="button" onPointerDown={beginResize} onKeyDown={(event) => {
@@ -554,10 +560,10 @@ export default function App() {
             <PreviewSettings theme={theme} onThemeChange={setTheme} markdownSize={previewTypography.markdownFontSize} mermaidSize={previewTypography.mermaidFontSize} onMarkdownSizeChange={setMarkdownFontSize} onMermaidSizeChange={setMermaidFontSize} onReset={resetPreviewFontSizes} />
             <button className={`toolbar-button sync-toggle ${syncEnabled ? 'is-active' : ''}`} type="button" aria-label={t('Toggle synchronized scrolling')} title={t(syncEnabled ? 'Disable synchronized scrolling' : 'Enable synchronized scrolling')} aria-pressed={syncEnabled} onClick={() => setSyncEnabled((enabled) => !enabled)}>{syncEnabled ? <Link2 size={17} aria-hidden="true" /> : <Unlink2 size={17} aria-hidden="true" />}</button>
           </div></header>
-          <PreviewPane ref={previewRef} markdown={deferredMarkdown} theme={theme} markdownFontSize={previewTypography.markdownFontSize} mermaidFontSize={previewTypography.mermaidFontSize} assetVersion={assetVersion} onScrollLine={handlePreviewScroll} onLayout={handlePreviewLayout} onSourceLine={jumpToLine} />
+          <PreviewPane ref={previewRef} mode={mode} markdown={deferredMarkdown} theme={theme} markdownFontSize={previewTypography.markdownFontSize} mermaidFontSize={previewTypography.mermaidFontSize} assetVersion={assetVersion} onScrollLine={handlePreviewScroll} onLayout={handlePreviewLayout} onSourceLine={jumpToLine} />
         </section>
 
-        {dragActive ? <div className="drop-target" aria-hidden="true"><Paperclip size={34} /><strong>{t('Drop to open or insert files')}</strong><span>{t('Markdown, Word (.docx), project ZIP, images, video, audio, and attachments')}</span></div> : null}
+        {dragActive ? <div className="drop-target" aria-hidden="true"><Paperclip size={34} /><strong>{t('Drop to open or insert files')}</strong><span>{t('Markdown, text, Mermaid, Word (.docx), project ZIP, and media')}</span></div> : null}
         {statsOpen ? <StatsPopover stats={stats} available={available} staticDeployment={IS_STATIC_DEPLOYMENT} onClose={() => setStatsOpen(false)} onClear={() => { if (window.confirm(t('Clear this document? Download a copy first if you want to keep it.'))) setMarkdown('') }} /> : null}
       </section>
 
@@ -586,11 +592,12 @@ export default function App() {
         <Modal onClose={() => setRevisionsOpen(false)} label={t('Revision history')} className="revision-overlay">
           <RevisionPanel
             currentContent={markdown}
-            currentMetadata={{ theme }}
+            currentMetadata={{ theme, mode }}
             persistence={persistence}
             onClose={() => setRevisionsOpen(false)}
             onRestore={(content, metadata) => {
               setMarkdown(content)
+              setMode(normalizeDocumentMode(metadata.mode))
               const restoredTheme = metadata.theme
               if (isThemeName(restoredTheme)) setTheme(restoredTheme)
             }}

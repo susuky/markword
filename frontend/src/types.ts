@@ -1,5 +1,6 @@
 export type ThemeName = 'Light' | 'Paper' | 'Sage' | 'Dark' | 'Ocean' | 'Nord' | 'Dracula' | 'Midnight'
 export type ExportStyleName = 'Classic' | 'Editorial' | 'Report' | 'Compact'
+export type DocumentMode = 'markdown' | 'text' | 'mermaid'
 
 export interface TextStats {
   total_chars: number

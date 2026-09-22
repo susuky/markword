@@ -1,10 +1,11 @@
 import { Archive, Check, ChevronDown, Code2, Download, FileDown, FileText, Palette, Type } from 'lucide-react'
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { IS_STATIC_DEPLOYMENT } from '../deployment'
+import { DOCUMENT_MODES } from '../documentMode'
 import { useI18n } from '../i18n'
 import { EXPORT_STYLES, THEME_META, THEMES } from '../themeConfig'
 import { DEFAULT_PREVIEW_TYPOGRAPHY, MARKDOWN_FONT_SIZE_RANGE, MERMAID_FONT_SIZE_RANGE } from '../typography'
-import type { ExportStyleName, ThemeName } from '../types'
+import type { DocumentMode, ExportStyleName, ThemeName } from '../types'
 import { FontSizeMenu } from './FontSizeMenu'
 
 function ToolbarMenu({ label, trigger, children, disabled = false, primary = false }: {
@@ -81,14 +82,15 @@ export function PreviewSettings({ theme, onThemeChange, markdownSize, mermaidSiz
   )
 }
 
-export function ExportMenu({ disabled, exporting, clientExporting, exportStyle, onStyleChange, hasAssets, onMarkdown, onProject, onHtml, onExport }: {
+export function ExportMenu({ mode, disabled, exporting, clientExporting, exportStyle, onStyleChange, hasAssets, onSource, onProject, onHtml, onExport }: {
+  mode: DocumentMode
   disabled: boolean
   exporting: 'pdf' | 'docx' | null
   clientExporting: 'html' | 'project' | null
   exportStyle: ExportStyleName
   onStyleChange: (style: ExportStyleName) => void
   hasAssets: boolean
-  onMarkdown: () => void
+  onSource: () => void
   onProject: () => void
   onHtml: () => void
   onExport: (format: 'pdf' | 'docx') => void
@@ -107,8 +109,8 @@ export function ExportMenu({ disabled, exporting, clientExporting, exportStyle, 
         </div>
         <div className="export-menu__section">
           <span>{t('Source and web')}</span>
-          <button type="button" onClick={() => { close(); onMarkdown() }}><FileDown size={18} aria-hidden="true" /><span><strong>Markdown</strong><small>{t('Keep the editable source')}</small></span></button>
-          <button type="button" onClick={() => { close(); onProject() }}><Archive size={18} aria-hidden="true" /><span><strong>{t('Project ZIP')}</strong><small>{t('Markdown and all local assets')}</small></span></button>
+          <button type="button" onClick={() => { close(); onSource() }}><FileDown size={18} aria-hidden="true" /><span><strong>{t(DOCUMENT_MODES[mode].label)}</strong><small>{t('Keep the editable source')}</small></span></button>
+          <button type="button" onClick={() => { close(); onProject() }}><Archive size={18} aria-hidden="true" /><span><strong>{t('Project ZIP')}</strong><small>{t('Document and all local assets')}</small></span></button>
           <button type="button" onClick={() => { close(); onHtml() }}><Code2 size={18} aria-hidden="true" /><span><strong>{t('Portable HTML')}</strong><small>{t('Embeds the {style} layout and local assets', { style: t(EXPORT_STYLES[exportStyle].label) })}</small></span></button>
         </div>
         <div className="export-menu__section">
