@@ -607,6 +607,9 @@ def _append_node_to_paragraph(
         return
 
     tag = node.name.lower() if node.name else ''
+    if tag == 'br':
+        p.add_run().add_break()
+        return
     child_bold = is_bold or tag in ('strong', 'b')
     child_italic = is_italic or tag in ('em', 'i')
     child_code = is_code or tag in ('code', 'kbd', 'samp')
@@ -788,6 +791,13 @@ def export_word(md_text: str, theme_name: str = 'Light', export_style: str = 'Cl
                             cell = table.cell(ri, ci)
                             cell.text = ''
                             p = cell.paragraphs[0]
+                            alignment = re.search(r'text-align:\s*(left|center|right)', cell_el.get('style', ''))
+                            if alignment:
+                                p.alignment = {
+                                    'left': WD_ALIGN_PARAGRAPH.LEFT,
+                                    'center': WD_ALIGN_PARAGRAPH.CENTER,
+                                    'right': WD_ALIGN_PARAGRAPH.RIGHT,
+                                }[alignment.group(1)]
                             for child in cell_el.children:
                                 _append_node_to_paragraph(p, child, theme, is_bold=(ri == 0))
                             for run in p.runs:

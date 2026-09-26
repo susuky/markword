@@ -1,0 +1,44 @@
+.productivity-overlay.table-editor-overlay { padding-top: min(10vh, 80px); }
+.table-editor { display: flex; flex-direction: column; width: min(1040px, 100%); max-height: calc(90dvh - 24px); overflow: hidden; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); box-shadow: 0 24px 72px rgb(24 48 36 / 20%); }
+.table-editor__header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 24px 24px 16px; }
+.table-editor h2 { margin: 0 0 8px; font-size: 22px; }
+.table-editor__header p, .table-editor__footer p { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.6; }
+.table-editor button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 36px; padding: 6px 12px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); font-size: 14px; }
+.table-editor button:hover:not(:disabled) { color: var(--accent); background: var(--accent-soft); }
+.table-editor .table-icon-button { flex: none; width: 32px; min-height: 32px; padding: 6px; border-color: transparent; background: transparent; }
+.table-editor__toolbar { display: flex; align-items: center; gap: 8px; padding: 0 24px 16px; }
+.table-editor__toolbar > span { margin-left: auto; color: var(--muted); font-size: 14px; }
+.table-editor__scroll { min-height: 0; overflow: auto; overscroll-behavior: contain; border-block: 1px solid var(--border); }
+.table-editor table { width: 100%; border-collapse: separate; border-spacing: 0; }
+.table-editor th, .table-editor td { padding: 0; border-right: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+.table-editor thead th { position: sticky; z-index: 2; top: 0; padding: 8px 10px; background: var(--surface-soft); text-align: left; }
+.table-editor__column { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 4px; color: var(--muted); font-size: 14px; font-weight: 500; }
+.table-editor select { width: 100%; min-height: 32px; border: 1px solid var(--border); border-radius: 4px; padding: 3px 6px; background: var(--surface); color: inherit; font-size: 14px; }
+.table-editor textarea { display: block; width: 100%; min-width: 160px; min-height: 48px; max-height: 180px; margin: 0; padding: 12px; border: 0; border-radius: 0; background: var(--surface); color: inherit; font: inherit; font-size: 16px; line-height: 1.5; resize: vertical; }
+.table-editor textarea:focus { position: relative; z-index: 1; outline: 2px solid var(--accent); outline-offset: -2px; background: #f6fbf8; }
+.table-editor__heading-row textarea { background: var(--accent-soft); font-weight: 650; }
+.table-editor .table-editor__row-label { width: 60px; min-width: 60px; padding: 8px; background: var(--surface-soft); color: var(--muted); font-size: 13px; font-weight: 500; text-align: center; }
+.table-editor .table-editor__row-actions { width: 44px; min-width: 44px; border-right: 0; text-align: center; }
+.table-editor tbody tr:last-child > * { border-bottom: 0; }
+.table-editor__footer { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px; padding: 18px 24px; }
+.table-editor__footer > div { display: flex; gap: 8px; margin-left: auto; }
+.table-editor .table-editor__apply { border-color: var(--accent); background: var(--accent); color: #fff; }
+.table-editor .table-editor__apply:hover { background: #105b52; color: #fff; }
+.table-editor__error { margin: 12px 24px 0; color: #a32929; font-size: 14px; }
+.pane-tools .table-tool { display: inline-flex; width: auto; gap: 6px; padding-inline: 8px; font-size: 13px; }
+@media (max-width: 900px) {
+  .productivity-overlay.table-editor-overlay { padding: 12px; }
+  .table-editor { max-height: calc(100dvh - 24px); }
+  .table-editor__header { padding: 18px 16px 14px; }
+  .table-editor__toolbar { flex-wrap: wrap; padding: 0 16px 14px; }
+  .table-editor__toolbar > span { flex-basis: 100%; }
+  .table-editor__footer { padding: 14px 16px; gap: 10px; }
+  .table-editor button, .table-editor select, .table-editor .table-icon-button { min-height: 44px; }
+  .table-editor .table-icon-button { width: 44px; }
+  .table-editor__column { gap: 4px; }
+  .pane-tools .table-tool { width: 36px; padding: 0; }
+  .pane-tools .table-tool span { display: none; }
+}
+@media (max-width: 360px) {
+  .pane--editor .pane-title > svg { display: none; }
+}

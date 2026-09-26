@@ -1,4 +1,4 @@
-import { Archive, Check, ChevronDown, Code2, Download, FileDown, FileText, Palette, Type } from 'lucide-react'
+import { Archive, Check, ChevronDown, Code2, Download, FileDown, FileText, Palette, Save, Type } from 'lucide-react'
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { IS_STATIC_DEPLOYMENT } from '../deployment'
 import { DOCUMENT_MODES } from '../documentMode'
@@ -82,7 +82,7 @@ export function PreviewSettings({ theme, onThemeChange, markdownSize, mermaidSiz
   )
 }
 
-export function ExportMenu({ mode, disabled, exporting, clientExporting, exportStyle, onStyleChange, hasAssets, onSource, onProject, onHtml, onExport }: {
+export function ExportMenu({ mode, disabled, exporting, clientExporting, exportStyle, onStyleChange, hasAssets, onSource, onSaveAs, onProject, onHtml, onExport }: {
   mode: DocumentMode
   disabled: boolean
   exporting: 'pdf' | 'docx' | null
@@ -91,6 +91,7 @@ export function ExportMenu({ mode, disabled, exporting, clientExporting, exportS
   onStyleChange: (style: ExportStyleName) => void
   hasAssets: boolean
   onSource: () => void
+  onSaveAs?: () => void
   onProject: () => void
   onHtml: () => void
   onExport: (format: 'pdf' | 'docx') => void
@@ -109,6 +110,7 @@ export function ExportMenu({ mode, disabled, exporting, clientExporting, exportS
         </div>
         <div className="export-menu__section">
           <span>{t('Source and web')}</span>
+          {onSaveAs ? <button type="button" onClick={() => { close(); onSaveAs() }}><Save size={18} aria-hidden="true" /><span><strong>{t('Save as…')}</strong><small>{t('Choose a file name and location')}</small></span></button> : null}
           <button type="button" onClick={() => { close(); onSource() }}><FileDown size={18} aria-hidden="true" /><span><strong>{t(DOCUMENT_MODES[mode].label)}</strong><small>{t('Keep the editable source')}</small></span></button>
           <button type="button" onClick={() => { close(); onProject() }}><Archive size={18} aria-hidden="true" /><span><strong>{t('Project ZIP')}</strong><small>{t('Document and all local assets')}</small></span></button>
           <button type="button" onClick={() => { close(); onHtml() }}><Code2 size={18} aria-hidden="true" /><span><strong>{t('Portable HTML')}</strong><small>{t('Embeds the {style} layout and local assets', { style: t(EXPORT_STYLES[exportStyle].label) })}</small></span></button>

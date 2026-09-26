@@ -1,0 +1,7 @@
+
+FOREGROUND  #62736B
+BACKGROUNDS
+  #FFFFFF                              5.02:1   normal AA   large AAA  non-text pass
+  #E5F2ED                              4.36:1   normal FAIL large AA   non-text pass  <- FAIL
+      -> #627068 clears 4.5 on #E5F2ED at 4.52:1 (same hue, lightness shifted)
+  #F5F8F6                              4.69:1   normal AA   large AAA  non-text pass

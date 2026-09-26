@@ -278,7 +278,7 @@
 .shortcut-help dt, .shortcut-help dd { margin: 0; }
 .shortcut-help dd { color: #596579; font-size: 12px; }
 
-@media (max-width: 760px) {
+@media (max-width: 900px) {
   .productivity-overlay { padding: 8vh 12px 12px; }
   .shortcut-help { max-height: 86dvh; padding: 14px; }
   .shortcut-help dl { grid-template-columns: 1fr; }

@@ -1,6 +1,11 @@
 import os
 import time
+import tempfile
 import unittest
+from unittest.mock import patch
+
+from docx import Document
+from docx.enum.text import WD_ALIGN_PARAGRAPH
 
 from app import _annotate_html_lines, _cleanup_old_exports, _get_export_filename, _render_md_to_html_for_export, analyze_text, export_pdf, export_word, render_preview, EXPORT_DIR
 from themes import THEMES
@@ -155,6 +160,19 @@ class TestRenderPreview(unittest.TestCase):
         self.assertIn('Noto Serif CJK TC', html)
         self.assertIn('@page', html)
         self.assertIn('#fbf7ef', html)
+
+    def test_table_export_preserves_line_breaks_pipes_and_alignment(self):
+        markdown = '| 項目 | 備註 |\n| :--- | ---: |\n| A\\|B | 第一行<br>第二行 |'
+        with tempfile.TemporaryDirectory() as directory, patch('app.EXPORT_DIR', directory):
+            document = Document(export_word(markdown))
+        table = document.tables[0]
+        self.assertEqual(table.cell(1, 0).text, 'A|B')
+        self.assertEqual(table.cell(1, 1).text, '第一行\n第二行')
+        self.assertEqual(table.cell(1, 0).paragraphs[0].alignment, WD_ALIGN_PARAGRAPH.LEFT)
+        self.assertEqual(table.cell(1, 1).paragraphs[0].alignment, WD_ALIGN_PARAGRAPH.RIGHT)
+        html = _render_md_to_html_for_export(markdown, THEMES['Light'])
+        self.assertIn('第一行<br>第二行', html)
+        self.assertIn('A|B', html)
 
 
 if __name__ == '__main__':

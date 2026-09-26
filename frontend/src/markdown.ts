@@ -35,6 +35,30 @@ const md = new MarkdownIt({
 
 md.enable('table')
 
+// Allow only a plain line break inside table cells; arbitrary HTML stays disabled.
+md.inline.ruler.before('html_inline', 'markword_table_break', (state, silent) => {
+  if (state.src[state.pos] !== '<') return false
+  const match = state.src.slice(state.pos).match(/^<br\s*\/?>/i)
+  if (!match) return false
+  if (!silent) state.push('markword_table_break', '', 0).content = match[0]
+  state.pos += match[0].length
+  return true
+})
+md.core.ruler.after('inline', 'markword_table_breaks', (state) => {
+  let inTable = false
+  for (const token of state.tokens) {
+    if (token.type === 'table_open') inTable = true
+    if (token.type === 'table_close') inTable = false
+    if (token.type !== 'inline' || !token.children) continue
+    for (const child of token.children) {
+      if (child.type !== 'markword_table_break') continue
+      child.type = inTable ? 'hardbreak' : 'text'
+      child.tag = inTable ? 'br' : ''
+      if (inTable) child.content = ''
+    }
+  }
+})
+
 function slugifyHeading(value: string) {
   return value
     .trim()

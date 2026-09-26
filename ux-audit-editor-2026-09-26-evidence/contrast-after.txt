@@ -1,0 +1,6 @@
+
+FOREGROUND  #5E6F67
+BACKGROUNDS
+  #FFFFFF                              5.32:1   normal AA   large AAA  non-text pass
+  #E5F2ED                              4.63:1   normal AA   large AAA  non-text pass
+  #F5F8F6                              4.98:1   normal AA   large AAA  non-text pass

@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from 'react'
+import { Check } from 'lucide-react'
+import { lazy, Suspense, useCallback, useEffect, useState } from 'react'
 import { useI18n } from '../i18n'
 import { DOCUMENT_MODES, normalizeDocumentMode } from '../documentMode'
 import {
@@ -11,6 +12,13 @@ import {
   type DraftPersistenceSession,
   type Revision,
 } from '../storage'
+
+function ComparisonUnavailable() {
+  const { t } = useI18n()
+  return <p role="alert">{t('Could not load the comparison. Choose Saved content to read this revision.')}</p>
+}
+
+const RevisionDiff = lazy(() => import('./RevisionDiff').catch(() => ({ default: ComparisonUnavailable })))
 
 export interface RevisionPanelProps {
   currentContent: string
@@ -61,6 +69,7 @@ export function RevisionPanel({
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
+  const [view, setView] = useState<'changes' | 'source'>('changes')
 
   const refresh = useCallback(async () => {
     try {
@@ -147,9 +156,10 @@ export function RevisionPanel({
               <button
                 type="button"
                 className={revision.id === selectedId ? 'is-selected' : ''}
+                aria-current={revision.id === selectedId ? 'true' : undefined}
                 onClick={() => setSelectedId(revision.id)}
               >
-                <strong>{formatDate(revision.createdAt, locale)}</strong>
+                <strong>{formatDate(revision.createdAt, locale)}{revision.id === selectedId ? <Check size={14} aria-hidden="true" /> : null}</strong>
                 <span>{t('{reason} · {count} characters', { reason: t(REASON_LABELS[revision.reason]), count: revision.content.length.toLocaleString(locale) })}</span>
               </button>
             </li>
@@ -167,7 +177,20 @@ export function RevisionPanel({
                 </div>
                 <button type="button" onClick={() => downloadRevision(selected)}>{t('Download {format}', { format: t(DOCUMENT_MODES[normalizeDocumentMode(selected.metadata.mode)].label) })}</button>
               </div>
-              <pre>{selected.content || t('(Empty document)')}</pre>
+              <div className="revision-preview__views" role="group" aria-label={t('Revision view')}>
+                <button type="button" aria-pressed={view === 'changes'} onClick={() => setView('changes')}>{t('Compare with current')}</button>
+                <button type="button" aria-pressed={view === 'source'} onClick={() => setView('source')}>{t('Saved content')}</button>
+              </div>
+              {view === 'source' ? <pre tabIndex={0}>{selected.content || t('(Empty document)')}</pre> : <>
+                <p className="revision-preview__direction">{t('Selected revision → Current document')}</p>
+                {normalizeDocumentMode(selected.metadata.mode) !== normalizeDocumentMode(currentMetadata.mode) ? <p className="revision-preview__format">{t('Format: {before} → {after}', {
+                  before: t(DOCUMENT_MODES[normalizeDocumentMode(selected.metadata.mode)].label),
+                  after: t(DOCUMENT_MODES[normalizeDocumentMode(currentMetadata.mode)].label),
+                })}</p> : null}
+                {selected.content === currentContent
+                  ? <div className="revision-preview__empty" role="status">{t('The text matches the current document.')}</div>
+                  : <Suspense fallback={<div className="revision-preview__empty" role="status">{t('Loading comparison…')}</div>}><RevisionDiff original={selected.content} current={currentContent} /></Suspense>}
+              </>}
               <div className="revision-preview__actions">
                 <button type="button" className="revision-action--danger" onClick={handleDelete} disabled={busy}>{t('Delete')}</button>
                 <button type="button" className="revision-action--primary" onClick={handleRestore} disabled={busy}>{t('Restore this revision')}</button>

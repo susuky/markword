@@ -280,6 +280,7 @@ test('project archives and revisions restore the document mode with the source',
 })
 
 test('plain text preserves literal content, undo history, mode, and downloads', async ({ page }) => {
+  await page.addInitScript(() => Object.defineProperty(window, 'showSaveFilePicker', { value: undefined, configurable: true }))
   await page.goto('/')
   const text = '# Literal title\n1. Literal number\n\n<script>alert(1)</script>'
   await page.locator('.cm-content').fill(text)

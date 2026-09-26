@@ -30,6 +30,7 @@ interface PreviewPaneProps {
   onScrollLine: (line: number, atEnd: boolean) => void
   onLayout: () => void
   onSourceLine?: (line: number) => void
+  onEditTable?: (line: number) => void
 }
 
 const MERMAID_SVG_CACHE_LIMIT = 40
@@ -121,6 +122,10 @@ function decoratePreviewTrigger(element: HTMLElement, label: string, title: stri
 
 function renderedHtmlWithoutPreviewControls(content: HTMLElement) {
   const clone = content.cloneNode(true) as HTMLElement
+  clone.querySelectorAll('.preview-table').forEach((wrapper) => {
+    const table = wrapper.querySelector('table')
+    if (table) wrapper.replaceWith(table)
+  })
   clone.querySelectorAll<HTMLElement>(`[${IMAGE_PREVIEW_TRIGGER}]`).forEach((element) => {
     element.removeAttribute(IMAGE_PREVIEW_TRIGGER)
     if (element.hasAttribute('data-image-preview-added-role')) element.removeAttribute('role')
@@ -169,7 +174,7 @@ function mermaidMedia(svg: SVGSVGElement, block: HTMLElement, theme: ThemeName, 
 }
 
 const PreviewPaneComponent = forwardRef<PreviewHandle, PreviewPaneProps>(function PreviewPane(
-  { markdown, mode, theme, markdownFontSize = 16, mermaidFontSize = 14, assetVersion = 0, onScrollLine, onLayout, onSourceLine },
+  { markdown, mode, theme, markdownFontSize = 16, mermaidFontSize = 14, assetVersion = 0, onScrollLine, onLayout, onSourceLine, onEditTable },
   ref,
 ) {
   const { locale, t } = useI18n()
@@ -448,6 +453,32 @@ const PreviewPaneComponent = forwardRef<PreviewHandle, PreviewPaneProps>(functio
     })
   }, [html, t])
 
+  useEffect(() => {
+    if (!onEditTable || !contentRef.current) return
+    const wrappers: HTMLElement[] = []
+    contentRef.current.querySelectorAll<HTMLTableElement>('table[data-source-start]').forEach((table, index) => {
+      const wrapper = document.createElement('div')
+      wrapper.className = 'preview-table'
+      const button = document.createElement('button')
+      button.type = 'button'
+      button.className = 'preview-table__edit'
+      button.textContent = t('Edit table')
+      button.setAttribute('aria-label', t('Edit table {number}', { number: index + 1 }))
+      button.dataset.tableLine = table.dataset.sourceStart
+      const scroll = document.createElement('div')
+      scroll.className = 'preview-table__scroll'
+      table.before(wrapper)
+      scroll.append(table)
+      wrapper.append(button, scroll)
+      wrappers.push(wrapper)
+    })
+    invalidateGeometry()
+    return () => wrappers.forEach((wrapper) => {
+      const table = wrapper.querySelector('table')
+      if (table) wrapper.replaceWith(table)
+    })
+  }, [html, invalidateGeometry, onEditTable, t])
+
   useEffect(() => () => {
     if (layoutFrameRef.current !== null) window.cancelAnimationFrame(layoutFrameRef.current)
   }, [])
@@ -488,6 +519,11 @@ const PreviewPaneComponent = forwardRef<PreviewHandle, PreviewPaneProps>(functio
   }, [t, theme])
 
   const handleClick = async (event: React.MouseEvent<HTMLElement>) => {
+    const tableButton = (event.target as Element).closest<HTMLButtonElement>('.preview-table__edit')
+    if (tableButton && onEditTable) {
+      onEditTable(Number(tableButton.dataset.tableLine))
+      return
+    }
     if (openImagePreview(event.target)) {
       event.preventDefault()
       return
@@ -501,6 +537,12 @@ const PreviewPaneComponent = forwardRef<PreviewHandle, PreviewPaneProps>(functio
   }
 
   const handleDoubleClick = (event: React.MouseEvent<HTMLElement>) => {
+    const table = (event.target as Element).closest<HTMLTableElement>('table[data-source-start]')
+    if (table && onEditTable) {
+      event.preventDefault()
+      onEditTable(Number(table.dataset.sourceStart))
+      return
+    }
     if ((event.target as Element).closest(`[${IMAGE_PREVIEW_TRIGGER}]`)) {
       event.preventDefault()
       return
