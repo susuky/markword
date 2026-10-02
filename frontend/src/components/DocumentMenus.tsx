@@ -101,7 +101,7 @@ export function ExportMenu({ mode, disabled, exporting, clientExporting, exportS
   return (
     <ToolbarMenu primary disabled={disabled || busy} label={t(busy ? 'Preparing download…' : 'Export')} trigger={<><Download size={17} aria-hidden="true" /><span>{t(busy ? 'Preparing download…' : 'Export')}</span></>}>
       {(close) => <div className="export-menu" role="dialog" aria-label={t('Download and export')}>
-        <div className="menu-heading"><strong>{t('Download and export')}</strong><span>{t('Choose a layout, then select an output format')}</span></div>
+        <div className="menu-heading"><strong>{t('Download and export')}</strong><span>{t('Layouts apply to HTML and PDF')}</span></div>
         <div className="export-style-picker">
           <span>{t('Document layout')}</span>
           <div>{(Object.keys(EXPORT_STYLES) as ExportStyleName[]).map((name) => <button key={name} type="button" className={name === exportStyle ? 'is-selected' : ''} aria-pressed={name === exportStyle} onClick={() => onStyleChange(name)}>

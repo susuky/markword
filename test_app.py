@@ -6,6 +6,7 @@ from unittest.mock import patch
 
 from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.oxml.ns import qn
 
 from app import _annotate_html_lines, _cleanup_old_exports, _get_export_filename, _render_md_to_html_for_export, analyze_text, export_pdf, export_word, render_preview, EXPORT_DIR
 from themes import THEMES
@@ -79,7 +80,16 @@ class TestExportFilename(unittest.TestCase):
 
     def test_h1_filename_is_bounded(self):
         filename = _get_export_filename(f'# {"長" * 300}', 'pdf')
-        self.assertEqual(filename, f'{"長" * 120}.pdf')
+        self.assertLessEqual(len(filename.encode('utf-8')), 240)
+        self.assertTrue(filename.endswith('.pdf'))
+
+    def test_long_unicode_titles_are_written_in_both_formats(self):
+        for title in ['長' * 120, 'Report台灣🌟' * 60]:
+            with tempfile.TemporaryDirectory() as directory, patch('app.EXPORT_DIR', directory):
+                for exporter in [export_pdf, export_word]:
+                    path = exporter(f'# {title}\n\n保留全文')
+                    self.assertTrue(os.path.isfile(path))
+                    self.assertLessEqual(len(os.path.basename(path).encode('utf-8')), 240)
 
     def test_cleanup_old_exports(self):
         '''
@@ -173,6 +183,32 @@ class TestRenderPreview(unittest.TestCase):
         html = _render_md_to_html_for_export(markdown, THEMES['Light'])
         self.assertIn('第一行<br>第二行', html)
         self.assertIn('A|B', html)
+
+    def test_word_nested_lists_keep_text_order_indentation_and_numbering(self):
+        markdown = '3. Parent\n    - Child **bold** *italic*\n        7. Grandchild\n        8. Next grandchild\n    - Next child\n4. Next parent\n\nParagraph\n\n1. Restart'
+        with tempfile.TemporaryDirectory() as directory, patch('app.EXPORT_DIR', directory):
+            document = Document(export_word(markdown))
+        paragraphs = document.paragraphs
+        self.assertEqual([p.text.strip() for p in paragraphs], [
+            'Parent', 'Child bold italic', 'Grandchild', 'Next grandchild', 'Next child', 'Next parent', 'Paragraph', 'Restart',
+        ])
+        self.assertEqual([p.paragraph_format.left_indent.inches for p in paragraphs[:6]], [.25, .5, .75, .75, .5, .25])
+        self.assertEqual([p._p.pPr.numPr.ilvl.val for p in paragraphs[:6]], [0, 1, 2, 2, 1, 0])
+        self.assertTrue(any(run.bold and run.text == 'bold' for run in paragraphs[1].runs))
+        numbering = document.part.numbering_part.element
+        def numbering_values(paragraph):
+            num_id = paragraph._p.pPr.numPr.numId.val
+            num = numbering.xpath(f'w:num[@w:numId="{num_id}"]')[0]
+            abstract_id = num.find(qn('w:abstractNumId')).get(qn('w:val'))
+            level = numbering.xpath(f'w:abstractNum[@w:abstractNumId="{abstract_id}"]/w:lvl')[0]
+            return num_id, level.find(qn('w:start')).get(qn('w:val')), level.find(qn('w:numFmt')).get(qn('w:val'))
+        parent = numbering_values(paragraphs[0])
+        self.assertEqual(parent[1:], ('3', 'decimal'))
+        self.assertEqual(numbering_values(paragraphs[5]), parent)
+        self.assertEqual(numbering_values(paragraphs[1])[2], 'bullet')
+        self.assertEqual(numbering_values(paragraphs[2])[1:], ('7', 'decimal'))
+        self.assertNotEqual(numbering_values(paragraphs[7])[0], parent[0])
+        self.assertEqual(numbering_values(paragraphs[7])[1:], ('1', 'decimal'))
 
 
 if __name__ == '__main__':

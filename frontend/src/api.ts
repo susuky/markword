@@ -4,7 +4,7 @@ import { translate } from './i18n'
 async function parseError(response: Response) {
   try {
     const body = await response.json()
-    return body.detail || translate('The server could not process the request')
+    return typeof body.detail === 'string' ? translate(body.detail) : translate('The server could not process the request')
   } catch {
     return translate('The server could not process the request')
   }
@@ -25,7 +25,7 @@ export async function exportDocument(format: 'pdf' | 'docx', markdown: string, t
   const response = await fetch(`/api/export/${format}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ markdown, theme, style }),
+    body: JSON.stringify({ markdown, theme, ...(format === 'pdf' ? { style } : {}) }),
   })
   if (!response.ok) throw new Error(await parseError(response))
   const blob = await response.blob()

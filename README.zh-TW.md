@@ -69,7 +69,8 @@ docker compose down
 - Word 匯入在瀏覽器內轉換，支援標題、段落、粗體、斜體、刪除線、清單、連結、基本表格與內嵌圖片。表格第一列會成為 Markdown 表頭；頁首頁尾、分頁、合併儲存格及精確版面不保證保留，請檢查轉換結果。Markdown／Word 單檔上限為 15 MiB（15,728,640 位元組），Word 解壓後內容上限為 50 MB；舊版 `.doc` 請先另存為 `.docx`。
 - Word 圖片會存入本機資產庫；如需連同圖片備份，請匯出專案 ZIP 或可攜 HTML。只下載 Markdown 不會包含圖片檔。GitHub Pages 版本也能匯入 Word，無須上傳文件。
 - 「匯出」選單集中 Markdown、專案 ZIP、HTML、PDF、Word；HTML／PDF 可先選擇經典、編輯排版、報告或精簡版型。
-- 主題同時控制預覽、HTML、PDF、Word 與 Mermaid 配色；可攜 HTML 會嵌入已渲染的 Mermaid SVG 與本機資產。
+- Word 使用固定版型並套用主題配色，保留巢狀清單的內容、縮排與編號。API 的 Word `style` 僅接受 `Classic`；其他版型回傳 `422`。
+- 主題同時控制預覽、HTML、PDF、Word 與 Mermaid 配色；可攜 HTML 會固定匯出當下的文件內容，等待 Mermaid 與 KaTeX 完成，並嵌入 SVG、公式樣式、公式字型與本機資產。
 - 草稿存在瀏覽器 IndexedDB；內容變更後每五分鐘建立一個本機版本，最多保留 120 個。版本記錄預設比較「選取版本 → 目前文件」，以 `−`／`+` 與顏色標示刪除／新增，可跳到上一處或下一處變更，也可切換「查看舊版全文」。比較區為唯讀，還原版本前會先備份目前內容。
 - 頁首「儲存」與 `Ctrl/Cmd+S` 使用瀏覽器的 File System Access API；功能是否提供取決於瀏覽器及使用環境。透過「開啟」選取的 Markdown、純文字或 Mermaid 可存回原檔；拖放、Word 轉換、專案 ZIP 匯入的內容則需選擇新檔。切換文件模式後也會重新選擇儲存位置，以免用不同格式覆寫原檔。
 - 「另存新檔」位於匯出選單與命令選單；既有下載功能仍可建立副本。儲存前會比對原檔內容，偵測到其他程式的修改便停止寫入並提示另存。取消或寫入失敗不會清除編輯內容；只有寫入完成才顯示已存回檔案，儲存途中新增的內容仍標示尚未存回。
@@ -82,14 +83,17 @@ docker compose down
 - PDF／Word 的 Mermaid 圖表使用已安裝的 Mermaid 套件與本機 Chromium 產生 PNG，不會將圖表原文傳給第三方服務，也沒有雲端備援。React 預覽仍由瀏覽器內的 Mermaid 套件繪圖；舊版預覽也改用本機套件。
 - 匯出用 Chromium 在處理圖表前就停用網路，並限制圖片、字型與樣式的載入。無法繪製圖表時，文件會保留原始碼並標示無法繪圖；缺少渲染器或執行逾時會讓匯出失敗，不會轉送外部服務。
 - PDF 的資源讀取只接受內嵌的 `data:` 內容。圖片、CSS、字型、SVG 巢狀引用或附件若要求讀取網路或 `file://` 檔案，匯出會中止，API 回傳 `422`，並清除未完成的檔案。一般可點擊的超連結仍會保留。
+- Linux API 每份匯出使用獨立工作程序，預設同時最多兩份，不另行排隊；滿載時回傳 `503`。每份工作的時間與累計 CPU 預算為 60 秒，記憶體預算為 1,024 MiB。系統每 100 ms 檢查包含 Chromium 的程序樹 CPU 與 RSS，另對轉換程序及其子程序設定 CPU、資料記憶體及 128 MiB 單檔寫入上限。超限、取消或轉換程序崩潰時，會回收子程序並清理該次暫存目錄；成功成品在下載回應結束後清除。
+- 這些限制以單個 API 程序為範圍，RSS 是定期檢查而非容器層級硬上限。多個 Uvicorn worker 各有自己的併發額度；對外部署仍需另設整體容器資源與存取限制。
 - 瀏覽器 IndexedDB 的圖片與附件仍不會傳給 PDF／Word API。需要包含這些資產時，請匯出可攜 HTML，再由瀏覽器列印成 PDF，或使用專案 ZIP 備份。
 - 安裝套件與瀏覽器時需要下載依賴；安裝完成後，這兩種匯出不需要連上網際網路。文件會送至你所連線的 Markword API，因此要讓文件留在自己的電腦，請在該電腦執行服務。Markdown 內直接引用的遠端圖片仍可能由一般瀏覽器預覽載入。
 
 ### 本機資產與備份
 
-- 本機資產以 Blob 儲存在瀏覽器 IndexedDB，不會上傳到 GitHub Pages 或 Markword 伺服器；單一檔案上限為 200 MB，專案內容上限為 500 MB。
+- 本機資產以 Blob 儲存在瀏覽器 IndexedDB，不會上傳到 GitHub Pages 或 Markword 伺服器；單一檔案上限為 200 MiB，專案展開內容上限為 500 MiB。專案 ZIP 上限為 512 MiB，最多 2,000 個項目；匯入時會先預檢，再分段計算實際解壓量，超限立即停止。Word 匯入使用同一個解壓檢查，內容上限為 50 MB。
 - 圖片使用標準相對路徑，例如 `![photo](./assets/photo.png)`；影片與音訊使用 `@[video](./assets/demo.mp4)` 與 `@[audio](./assets/voice.mp3)`。
 - 「專案 ZIP」包含 Markdown、`assets/` 與 `markword.json`，可重新由「開啟」載入，也是跨裝置與清除網站資料前的建議備份格式。
+- 匯入專案時，與本機既有資產同名的檔案會另存新路徑，同步更新文件中的圖片、連結與影音引用；舊資產保留供原文件及版本還原使用。專案 ZIP 仍包含整個本機資產庫，分享前可在「資產」查看檔案清單。
 - 可攜 HTML 會把目前文件引用的本機資產轉成 data URL；大型影片會讓 HTML 檔案明顯變大，這種情況建議使用專案 ZIP。
 - FastAPI 的 PDF／Word 匯出目前不會傳送瀏覽器 IndexedDB 裡的資產；需要包含資產時，請使用可攜 HTML（可再由瀏覽器列印成 PDF）或專案 ZIP。
 - 瀏覽器儲存空間與保留政策依瀏覽器／裝置而異。刪除網站資料、使用不同網域或更換裝置前，請先匯出專案 ZIP。
@@ -100,6 +104,7 @@ Markword 目前採用「單一工作草稿」模型，適合在自己的電腦�
 
 - 以「開啟」或拖放載入另一個 `.md`／`.markdown`／`.docx` 時，工作區會切換成新內容；Word 轉換失敗時保留目前文件。瀏覽器不會把原始文件加入 Git，也不會上傳到外部服務。
 - 目前內容會在編輯後約 350 ms 自動寫入瀏覽器 IndexedDB。內容持續變更時，每五分鐘建立一個本機版本，最多保留 120 個；還原前會先保存當下內容。
+- 多個分頁共用草稿時，寫入會比對儲存版本；較舊分頁無法覆寫另一分頁的新內容。出現衝突提示時，先下載該分頁的內容，再重新載入以讀取已儲存的版本。
 - Markdown 改變時會重新產生帶有來源起訖行的預覽區塊。表格、程式碼、圖片、Mermaid 與 KaTeX 完成排版後，預覽會重新量測高度，因此同步捲動不依賴某一份固定文件或固定行高。
 - 磁碟上的原始檔若被其他程式修改，瀏覽器不會在背景持續監看；請重新開啟或拖放該檔案。若要把工作區內容寫回磁碟，使用 Markdown 下載按鈕。
 - 版本記錄、目前草稿與本機資產只存在該瀏覽器的本機儲存空間；清除網站資料或更換瀏覽器前，應先下載專案 ZIP。這不是多文件資料庫，也不會把測試文件提交到 repository。
@@ -114,6 +119,9 @@ README 的畫面示範使用另寫的通用 Markdown；實際使用者文件與�
 | --- | --- | --- |
 | `MARKWORD_FRONTEND_DIR` | `frontend/dist` | 前端正式版靜態檔目錄 |
 | `MARKWORD_EXPORT_DIR` | `exports` | PDF／Word 匯出檔目錄 |
+| `MARKWORD_EXPORT_MAX_CONCURRENT` | `2` | 每個 API 程序的同時匯出數 |
+| `MARKWORD_EXPORT_TIMEOUT_SECONDS` | `60` | 每份匯出的時間及累計 CPU 秒數預算 |
+| `MARKWORD_EXPORT_MEMORY_MB` | `1024` | 每份匯出程序樹的 RSS 預算與轉換程序的資料記憶體上限，單位 MiB |
 | `MARKWORD_CORS_ORIGINS` | Vite 的 localhost origins | 逗號分隔的跨來源白名單 |
 | `MARKWORD_HOST` | `127.0.0.1` | 使用 `python app.py` 或 `python -m backend.main` 啟動時的監聽位址 |
 | `MARKWORD_PORT` | `27860` | 使用 `python app.py` 啟動時的監聽埠 |
@@ -225,7 +233,7 @@ Mermaid 匯出會讀取 `frontend/node_modules/mermaid/dist/mermaid.min.js`，�
 | `POST` | `/api/analyze` | 文字統計 |
 | `GET` | `/api/themes` | 取得預覽主題 |
 | `POST` | `/api/export/pdf` | 依 `theme` 與 `style` 匯出 PDF |
-| `POST` | `/api/export/docx` | 依相同的 `style` 契約匯出 Word |
+| `POST` | `/api/export/docx` | 依 `theme` 匯出固定版型 Word，`style` 僅接受 `Classic` |
 
 完整 request／response schema 可在 `/docs` 查看。為了讓既有啟動腳本容易遷移，`python app.py` 仍可使用，但新的部署設定建議直接指定 `backend.main:app`。
 
@@ -253,6 +261,8 @@ npm run test:ui
 ```
 
 介面測試會視需要啟動本機預覽，驗證草稿復原、版本還原、下載、鍵盤操作與手機版面；需先備妥 Playwright Chromium 瀏覽器（`npx playwright install chromium`）。
+
+若 `5173` 已被其他專案使用，可設定 `MARKWORD_TEST_PORT=5183` 執行測試。使用既有 Chromium 時，可用 `PLAYWRIGHT_CHROMIUM_EXECUTABLE` 指定執行檔。`.github/workflows/test.yml` 會在 pull request 與 `main` 推送時執行後端測試、兩種前端建置、lint 與 Playwright 測試。
 
 舊版 Gradio 的畫面截圖保留於 `assets/`，僅供遷移前後對照。
 

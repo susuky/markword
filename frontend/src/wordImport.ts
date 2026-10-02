@@ -1,21 +1,20 @@
 import DOMPurify from 'dompurify'
-import { unzipSync } from 'fflate'
+import { zipSync } from 'fflate'
 import mammoth from 'mammoth'
 import TurndownService from 'turndown'
 import { assetMarkdownUrl, importLocalAssets } from './assets'
+import { unzipBounded } from './zip'
 
 export async function importWordDocument(file: File) {
   if (file.size > 15 * 1024 * 1024) throw new Error('Word file exceeds 15 MiB')
-  const arrayBuffer = await file.arrayBuffer()
-  // Inspect ZIP sizes without expanding entries before handing the file to Mammoth.
-  let expandedBytes = 0
-  unzipSync(new Uint8Array(arrayBuffer), {
-    filter(entry) {
-      expandedBytes += entry.originalSize
-      if (expandedBytes > 50_000_000) throw new Error('Word contents exceed 50 MB')
-      return false
-    },
+  const entries = await unzipBounded(new Uint8Array(await file.arrayBuffer()), {
+    maxTotalBytes: 50_000_000,
+    maxEntryBytes: 50_000_000,
+    maxEntries: 2000,
   })
+  // Mammoth uses a different ZIP parser. Give it only verified, stored bytes so
+  // inconsistent headers cannot bypass the expansion budget on a second pass.
+  const arrayBuffer = zipSync(entries, { level: 0 }).buffer
 
   const images: File[] = []
   const imagePrefix = `word-import-${crypto.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`}`

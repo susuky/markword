@@ -18,13 +18,13 @@ from weasyprint.urls import FatalURLFetchingError
 from app import (
     _cleanup_old_exports,
     analyze_text,
-    export_pdf,
-    export_word,
 )
+from backend.export_jobs import run_export
 from backend.schemas import (
     AnalyzeRequest,
     AnalyzeResponse,
     ExportRequest,
+    WordExportRequest,
     ThemeResponse,
     ThemesResponse,
 )
@@ -104,10 +104,10 @@ async def list_themes() -> ThemesResponse:
     )
 
 
-def _remove_export_directory(path: str) -> None:
+def _remove_export_directory(directory: str) -> None:
     """Remove the per-request directory after its response has been sent."""
     try:
-        shutil.rmtree(Path(path).parent, ignore_errors=True)
+        shutil.rmtree(directory, ignore_errors=True)
     except (OSError, ValueError):
         pass
 
@@ -116,7 +116,6 @@ async def _export_response(
     payload: ExportRequest,
     export_format: Literal["pdf", "docx"],
 ) -> FileResponse:
-    exporter = export_pdf if export_format == "pdf" else export_word
     media_type = (
         "application/pdf"
         if export_format == "pdf"
@@ -124,12 +123,14 @@ async def _export_response(
     )
 
     try:
-        path = await run_in_threadpool(exporter, payload.markdown, payload.theme, payload.style)
+        path, directory = await run_export(payload, export_format)
     except FatalURLFetchingError as exc:
         raise HTTPException(
             status_code=422,
             detail="PDF export could not load a resource. Use embedded images and styles instead of external or local file references.",
         ) from exc
+    except HTTPException:
+        raise
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"{export_format} export failed") from exc
 
@@ -140,7 +141,7 @@ async def _export_response(
         path,
         filename=os.path.basename(path),
         media_type=media_type,
-        background=BackgroundTask(_remove_export_directory, path),
+        background=BackgroundTask(_remove_export_directory, directory),
     )
 
 
@@ -150,7 +151,7 @@ async def create_pdf(payload: ExportRequest) -> FileResponse:
 
 
 @app.post("/api/export/docx", tags=["markdown"])
-async def create_docx(payload: ExportRequest) -> FileResponse:
+async def create_docx(payload: WordExportRequest) -> FileResponse:
     return await _export_response(payload, "docx")
 
 

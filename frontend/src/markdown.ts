@@ -226,30 +226,31 @@ md.renderer.rules.local_media = (tokens, index) => {
   return `<figure class="local-media local-media--${kind} is-loading" data-source-start="${startLine}" data-source-end="${endLine}"><${kind} controls preload="metadata" data-asset-path="${safePath}"></${kind}><figcaption>${filename}</figcaption></figure>`
 }
 
-function extractFootnotes(source: string): { source: string; definitions: Map<string, FootnoteDefinition> } {
-  const lines = source.split('\n')
-  const definitions = new Map<string, FootnoteDefinition>()
-  for (let index = 0; index < lines.length; index += 1) {
-    const match = lines[index].match(/^\[\^([^\]]+)\]:\s*(.*)$/)
-    if (!match) continue
-    const start = index
-    const content = [match[2]]
-    let end = index
-    while (end + 1 < lines.length && /^(?: {2,}|\t)/.test(lines[end + 1])) {
-      end += 1
-      content.push(lines[end].replace(/^(?: {2,}|\t)/, ''))
-    }
-    definitions.set(match[1], {
-      id: match[1],
-      content: content.join('\n'),
-      startLine: start + 1,
-      endLine: end + 1,
-    })
-    for (let clear = start; clear <= end; clear += 1) lines[clear] = ''
-    index = end
+function footnoteDefinitionRule(state: StateBlock, startLine: number, endLine: number, silent: boolean) {
+  if (state.sCount[startLine] - state.blkIndent >= 4) return false
+  const start = state.bMarks[startLine] + state.tShift[startLine]
+  const match = state.src.slice(start, state.eMarks[startLine]).match(/^\[\^([^\]]+)\]:\s*(.*)$/)
+  if (!match) return false
+  if (silent) return true
+  let nextLine = startLine + 1
+  const content = [match[2]]
+  while (nextLine < endLine && state.sCount[nextLine] >= state.blkIndent + 2) {
+    content.push(state.getLines(nextLine, nextLine + 1, state.blkIndent + 2, false))
+    nextLine += 1
   }
-  return { source: lines.join('\n'), definitions }
+  const env = state.env as MarkdownEnvironment
+  env.footnotes.set(match[1], {
+    id: match[1],
+    content: content.join('\n'),
+    startLine: startLine + 1,
+    endLine: nextLine,
+  })
+  state.line = nextLine
+  return true
 }
+
+// Block parsing already understands fences, indented code and nested containers.
+md.block.ruler.before('reference', 'markword_footnote_definition', footnoteDefinitionRule, { alt: ['paragraph', 'reference'] })
 
 function annotateSourceRanges(tokens: Token[]) {
   for (const token of tokens) {
@@ -328,13 +329,12 @@ export function renderMarkdown(source: string, mode: DocumentMode = 'markdown') 
   if (mode === 'text') return source.split('\n').map((line, index) =>
     `<div data-source-start="${index + 1}" data-source-end="${index + 1}" style="white-space:pre-wrap;min-height:1.78em">${md.utils.escapeHtml(line)}</div>`,
   ).join('')
-  const extracted = extractFootnotes(source)
   const env: MarkdownEnvironment = {
-    footnotes: extracted.definitions,
+    footnotes: new Map(),
     footnoteOrder: [],
     footnoteReferenceCounts: new Map(),
   }
-  const tokens = md.parse(extracted.source, env)
+  const tokens = md.parse(source, env)
   annotateSourceRanges(tokens)
   const html = md.renderer.render(tokens, md.options, env) + renderFootnotes(env)
   return DOMPurify.sanitize(html, {

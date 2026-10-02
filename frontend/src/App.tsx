@@ -10,7 +10,6 @@ import {
   createProjectArchive,
   importLocalAssets,
   importProjectArchive,
-  inlineAssetsInHtml,
   referencedAssetPaths,
   requestPersistentStorage,
 } from './assets'
@@ -28,7 +27,6 @@ import { IS_STATIC_DEPLOYMENT } from './deployment'
 import { DOCUMENT_MODES, documentAsMarkdown, normalizeDocumentMode } from './documentMode'
 import { useDebouncedStats } from './hooks/useDebouncedStats'
 import { useI18n, type Locale } from './i18n'
-import { renderMarkdown } from './markdown'
 import { canOpenLocalFile, canSaveLocalFile, FileChangedError, pickLocalFile, writeLocalFile, type LinkedFile } from './localFiles'
 import './productivity.css'
 import { SAMPLE_MARKDOWN } from './sample'
@@ -85,14 +83,14 @@ function collectHeadings(markdown: string): OutlineHeading[] {
   return headings
 }
 
-function portableHtml(markdown: string, theme: ThemeName, exportStyle: ExportStyleName, locale: Locale, renderedHtml?: string | null) {
+function portableHtml(markdown: string, theme: ThemeName, exportStyle: ExportStyleName, locale: Locale, renderedHtml: string, mathCss: string) {
   const colors = THEME_META[theme]
   const title = documentTitle(markdown).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
   return `<!doctype html>
 <html lang="${locale === 'zh-TW' ? 'zh-Hant' : 'en'}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${title}</title><style>
 :root{color-scheme:${colors.dark ? 'dark' : 'light'}}*{box-sizing:border-box}body{margin:0;background:${colors.background};color:${colors.text};font-family:"Noto Sans TC","Microsoft JhengHei",system-ui,sans-serif;line-height:1.78}.document{width:min(100% - 40px,880px);margin:auto;padding:48px 0 80px}h1,h2{border-bottom:1px solid ${colors.border};padding-bottom:.3em}h1{font-size:2.25rem}h2{font-size:1.55rem;margin-top:1.5em}h3{font-size:1.2rem;margin-top:1.4em}a{color:${colors.accent}}code{background:${colors.code};padding:.14em .35em;border-radius:4px}pre{overflow:auto;background:${colors.code};border:1px solid ${colors.border};border-radius:8px;padding:16px}pre code{padding:0}.copy-code,.mermaid-loading{display:none}.mermaid-fallback{display:block}.mermaid-block{border:1px solid ${colors.border};border-radius:8px;padding:16px}blockquote{margin:1.2em 0;padding:.6em 1em;border-left:3px solid ${colors.accent};color:${colors.muted};background:${colors.code}}table{width:100%;border-collapse:collapse}th,td{border:1px solid ${colors.border};padding:8px 11px;text-align:left}th{background:${colors.code}}img,svg,video{max-width:100%;height:auto}audio{width:100%}.local-media{margin:1.25em 0}.local-media figcaption{margin-top:.4em;color:${colors.muted};font-size:.82em}@media print{.document{width:auto;padding:0}}
-</style><style>${EXPORT_STYLES[exportStyle].css}</style></head><body><main class="document">${renderedHtml || renderMarkdown(markdown)}</main></body></html>`
+</style><style>${EXPORT_STYLES[exportStyle].css}</style><style>${mathCss}</style></head><body><main class="document">${renderedHtml}</main></body></html>`
 }
 
 export default function App() {
@@ -147,7 +145,8 @@ export default function App() {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const assetInputRef = useRef<HTMLInputElement>(null)
   const { stats, available } = useDebouncedStats(markdown)
-  const saveLabel = t(persistenceStatus === 'saved' ? 'Saved in this browser' : persistenceStatus === 'error' ? 'Draft not saved. Download a backup.' : persistenceStatus === 'saving' ? 'Saving…' : 'Draft not saved')
+  const saveWarning = persistenceStatus === 'error' || persistenceStatus === 'conflict'
+  const saveLabel = t(persistenceStatus === 'conflict' ? 'Changed in another tab. Download a backup.' : persistenceStatus === 'saved' ? 'Saved in this browser' : persistenceStatus === 'error' ? 'Draft not saved. Download a backup.' : persistenceStatus === 'saving' ? 'Saving…' : 'Draft not saved')
   const fileDirty = linkedFile && (fileSaveFailed || linkedFile.content !== markdown || linkedFile.mode !== mode)
   const fileSaveLabel = t(fileBusy === 'saving' ? 'Saving file…' : fileDirty ? 'File has unsaved changes' : 'Saved to file')
   const totalLines = Math.max(1, markdown.split('\n').length)
@@ -371,16 +370,16 @@ export default function App() {
     if (clientExporting) return
     setClientExporting('html')
     try {
-      const renderedHtml = previewRef.current?.getRenderedHtml() ?? renderMarkdown(markdown, mode)
-      const embeddedHtml = await inlineAssetsInHtml(renderedHtml)
-      downloadBlob(portableHtml(markdown, theme, exportStyle, locale, embeddedHtml), 'text/html;charset=utf-8', `${documentTitle(markdown)}.html`)
+      const { renderHtmlSnapshot } = await import('./htmlExport')
+      const snapshot = await renderHtmlSnapshot(markdown, mode, theme, previewTypography.mermaidFontSize)
+      downloadBlob(portableHtml(markdown, theme, exportStyle, locale, snapshot.html, snapshot.css), 'text/html;charset=utf-8', `${documentTitle(markdown)}.html`)
       showNotice(t('Portable HTML downloaded'))
     } catch (error) {
       showNotice(error instanceof Error ? error.message : t('Could not create portable HTML'))
     } finally {
       setClientExporting(null)
     }
-  }, [clientExporting, exportStyle, locale, markdown, mode, showNotice, t, theme])
+  }, [clientExporting, exportStyle, locale, markdown, mode, previewTypography.mermaidFontSize, showNotice, t, theme])
 
   const downloadProject = useCallback(async () => {
     if (clientExporting) return
@@ -641,7 +640,7 @@ export default function App() {
         <span className="status-lines">{t('Lines {count}', { count: stats.line_count.toLocaleString(locale) })}</span>
         <div className="save-status-group">
           {linkedFile ? <span className={`file-save-status ${fileDirty ? 'status-warn' : 'status-ok'}`} role="status" title={`${linkedFile.handle.name} · ${fileSaveLabel}`}><Save size={14} aria-hidden="true" /><span className="file-save-status__name">{linkedFile.handle.name}</span><span>{fileSaveLabel}</span></span> : null}
-          <span className={`save-status ${persistenceStatus === 'error' ? 'status-warn' : persistenceStatus === 'saved' ? 'status-ok' : ''}`} role="status" title={saveLabel}>{persistenceStatus === 'saved' ? <CheckCircle2 size={14} aria-hidden="true" /> : persistenceStatus === 'error' ? <AlertCircle size={14} aria-hidden="true" /> : <Circle size={12} aria-hidden="true" />}<span>{saveLabel}</span></span>
+          <span className={`save-status ${saveWarning ? 'status-warn' : persistenceStatus === 'saved' ? 'status-ok' : ''}`} role="status" title={saveLabel}>{persistenceStatus === 'saved' ? <CheckCircle2 size={14} aria-hidden="true" /> : saveWarning ? <AlertCircle size={14} aria-hidden="true" /> : <Circle size={12} aria-hidden="true" />}<span>{saveLabel}</span></span>
         </div>
         <span className="status-line">{t('Line {line} / {total}', { line: Math.round(activeLine), total: totalLines })}</span>
         <button className="status-action help-trigger" type="button" onClick={() => setHelpOpen(true)} aria-label={t('Keyboard shortcuts')} title={t('Keyboard shortcuts')}><HelpCircle size={16} aria-hidden="true" /></button>

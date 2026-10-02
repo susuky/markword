@@ -12,12 +12,12 @@ import '../markdownFeatures.css'
 import { useI18n } from '../i18n'
 import { getAssetsByPaths } from '../storage'
 import type { DocumentMode, ThemeName } from '../types'
-import { mermaidThemeVariables, THEME_META } from '../themeConfig'
+import { THEME_META } from '../themeConfig'
+import { mermaidFontScale, normalizeMermaidLabelWidths, renderMathBlocks, renderMermaidSvg, showMermaidError } from '../dynamicMarkdown'
 import { ImageLightbox, type LightboxMedia } from './ImageLightbox'
 
 export interface PreviewHandle {
   scrollToLine: (line: number, atEnd?: boolean) => void
-  getRenderedHtml: () => string | null
 }
 
 interface PreviewPaneProps {
@@ -35,34 +35,8 @@ interface PreviewPaneProps {
 
 const MERMAID_SVG_CACHE_LIMIT = 40
 const MERMAID_RENDER_DEBOUNCE_MS = 300
-const MERMAID_BASE_FONT_SIZE = 14
-const MERMAID_BASE_NODE_SPACING = 50
-const MERMAID_BASE_RANK_SPACING = 50
-const MERMAID_BASE_WRAPPING_WIDTH = 360
 const MERMAID_BASE_PREVIEW_MAX_HEIGHT = 360
 const IMAGE_PREVIEW_TRIGGER = 'data-image-preview-trigger'
-let mermaidRenderSequence = 0
-
-function nextMermaidRenderId(index: number) {
-  mermaidRenderSequence += 1
-  return `mermaid-${Date.now().toString(36)}-${mermaidRenderSequence.toString(36)}-${index}`
-}
-
-function normalizeMermaidLabelWidths(svg: SVGSVGElement) {
-  // Mermaid may widen foreignObject for long labels while leaving its XHTML wrapper at wrappingWidth.
-  svg.querySelectorAll<SVGForeignObjectElement>('foreignObject').forEach((foreignObject) => {
-    const container = foreignObject.firstElementChild
-    const width = Number.parseFloat(foreignObject.getAttribute('width') ?? '')
-    if (!(container instanceof HTMLElement) || !Number.isFinite(width) || width <= 0) return
-    container.style.width = `${width}px`
-    container.style.maxWidth = `${width}px`
-  })
-}
-
-function mermaidFontScale(fontSize: number) {
-  return Math.max(0.5, fontSize / MERMAID_BASE_FONT_SIZE)
-}
-
 function configureMermaidPreview(block: HTMLElement, svg: SVGSVGElement, fontSize: number) {
   const viewBoxWidth = svg.viewBox.baseVal.width
   const previewScale = Math.max(1, mermaidFontScale(fontSize))
@@ -118,26 +92,6 @@ function decoratePreviewTrigger(element: HTMLElement, label: string, title: stri
     element.title = title
     element.setAttribute('data-image-preview-added-title', '')
   }
-}
-
-function renderedHtmlWithoutPreviewControls(content: HTMLElement) {
-  const clone = content.cloneNode(true) as HTMLElement
-  clone.querySelectorAll('.preview-table').forEach((wrapper) => {
-    const table = wrapper.querySelector('table')
-    if (table) wrapper.replaceWith(table)
-  })
-  clone.querySelectorAll<HTMLElement>(`[${IMAGE_PREVIEW_TRIGGER}]`).forEach((element) => {
-    element.removeAttribute(IMAGE_PREVIEW_TRIGGER)
-    if (element.hasAttribute('data-image-preview-added-role')) element.removeAttribute('role')
-    if (element.hasAttribute('data-image-preview-added-tabindex')) element.removeAttribute('tabindex')
-    if (element.hasAttribute('data-image-preview-added-label')) element.removeAttribute('aria-label')
-    if (element.hasAttribute('data-image-preview-added-title')) element.removeAttribute('title')
-    element.removeAttribute('data-image-preview-added-role')
-    element.removeAttribute('data-image-preview-added-tabindex')
-    element.removeAttribute('data-image-preview-added-label')
-    element.removeAttribute('data-image-preview-added-title')
-  })
-  return clone.innerHTML
 }
 
 function mermaidMedia(svg: SVGSVGElement, block: HTMLElement, theme: ThemeName, label: string): LightboxMedia {
@@ -222,9 +176,6 @@ const PreviewPaneComponent = forwardRef<PreviewHandle, PreviewPaneProps>(functio
       scroll.scrollTop = atEnd ? maxScroll : lineToPreviewOffset(line, readAnchors(), maxScroll)
       window.setTimeout(() => { suppressScrollRef.current = false }, 100)
     },
-    getRenderedHtml() {
-      return contentRef.current ? renderedHtmlWithoutPreviewControls(contentRef.current) : null
-    },
   }), [readAnchors])
 
   useEffect(() => {
@@ -240,7 +191,7 @@ const PreviewPaneComponent = forwardRef<PreviewHandle, PreviewPaneProps>(functio
     }
 
     const cache = mermaidSvgCacheRef.current
-    const pending: Array<{ block: HTMLElement; cacheKey: string; index: number; source: string }> = []
+    const pending: Array<{ block: HTMLElement; cacheKey: string; source: string }> = []
     for (const [index, block] of blocks.entries()) {
       const source = decodeURIComponent(block.dataset.mermaidSource || '')
       const cacheKey = `${theme}\u0000${mermaidFontSize}\u0000${index}\u0000${source}`
@@ -254,7 +205,7 @@ const PreviewPaneComponent = forwardRef<PreviewHandle, PreviewPaneProps>(functio
         }
         block.classList.add('is-rendered')
       } else {
-        pending.push({ block, cacheKey, index, source })
+        pending.push({ block, cacheKey, source })
       }
     }
     if (!pending.length) {
@@ -264,29 +215,10 @@ const PreviewPaneComponent = forwardRef<PreviewHandle, PreviewPaneProps>(functio
 
     const renderTimer = window.setTimeout(() => {
       void (async () => {
-        const { default: mermaid } = await import('mermaid')
-        if (cancelled) return
-        await document.fonts.ready
-        if (cancelled) return
-        const layoutScale = mermaidFontScale(mermaidFontSize)
-        mermaid.initialize({
-          startOnLoad: false,
-          securityLevel: 'strict',
-          suppressErrorRendering: true,
-          theme: 'base',
-          themeVariables: mermaidThemeVariables(theme, mermaidFontSize),
-          fontFamily: 'Noto Sans TC, sans-serif',
-          flowchart: {
-            padding: Math.round(15 * layoutScale),
-            nodeSpacing: Math.round(MERMAID_BASE_NODE_SPACING * layoutScale),
-            rankSpacing: Math.round(MERMAID_BASE_RANK_SPACING * layoutScale),
-            wrappingWidth: Math.round(MERMAID_BASE_WRAPPING_WIDTH * layoutScale),
-          },
-        })
-        for (const { block, cacheKey, index, source } of pending) {
+        for (const { block, cacheKey, source } of pending) {
           if (cancelled) return
           try {
-            const { svg } = await mermaid.render(nextMermaidRenderId(index), source)
+            const svg = await renderMermaidSvg(source, theme, mermaidFontSize)
             if (cancelled) return
             block.innerHTML = svg
             const renderedSvg = block.querySelector<SVGSVGElement>('svg')
@@ -302,16 +234,7 @@ const PreviewPaneComponent = forwardRef<PreviewHandle, PreviewPaneProps>(functio
             block.classList.add('is-rendered')
           } catch (error) {
             if (cancelled) return
-            block.classList.add('has-error')
-            const code = document.createElement('code')
-            code.textContent = source
-            const pre = document.createElement('pre')
-            pre.className = 'mermaid-fallback'
-            pre.append(code)
-            const message = document.createElement('p')
-            message.className = 'mermaid-error'
-            message.textContent = t('Could not draw this diagram. Check the Mermaid syntax.')
-            block.replaceChildren(message, pre)
+            showMermaidError(block, source)
             console.warn('Mermaid render failed', error)
           }
           invalidateGeometry()
@@ -325,31 +248,11 @@ const PreviewPaneComponent = forwardRef<PreviewHandle, PreviewPaneProps>(functio
   }, [html, invalidateGeometry, mermaidFontSize, theme, t])
 
   useEffect(() => {
-    let cancelled = false
     const blocks = Array.from(contentRef.current?.querySelectorAll<HTMLElement>('[data-math-source]') || [])
     if (!blocks.length) return
-
-    void (async () => {
-      const [{ default: katex }] = await Promise.all([
-        import('katex'),
-        import('katex/dist/katex.min.css'),
-      ])
-      if (cancelled) return
-      for (const block of blocks) {
-        if (cancelled) return
-        const source = decodeURIComponent(block.dataset.mathSource || '')
-        katex.render(source, block, {
-          displayMode: block.dataset.mathDisplay === 'true',
-          output: 'htmlAndMathml',
-          strict: 'warn',
-          throwOnError: false,
-          trust: false,
-        })
-        block.classList.add('is-rendered')
-        invalidateGeometry()
-      }
-    })()
-    return () => { cancelled = true }
+    void Promise.all([renderMathBlocks(blocks), import('katex/dist/katex.min.css')])
+      .then(invalidateGeometry)
+      .catch((error) => console.warn('Math render failed', error))
   }, [html, invalidateGeometry])
 
   useEffect(() => {

@@ -169,7 +169,7 @@ def _get_export_filename(md_text: str, ext: str = 'pdf') -> str:
         if clean_title:
             # Keep enough room for the extension and filesystem metadata while
             # preserving readable Unicode names in Content-Disposition.
-            clean_title = clean_title[:120].rstrip(' ._')
+            clean_title = clean_title[:120].encode('utf-8')[:239 - len(ext)].decode('utf-8', errors='ignore').rstrip(' ._')
             if clean_title:
                 return f'{clean_title}.{ext}'
 
@@ -630,6 +630,8 @@ def export_word(md_text: str, theme_name: str = 'Light', export_style: str = 'Cl
     Returns:
         Path to the generated .docx file, or None if input is empty.
     '''
+    if export_style != 'Classic':
+        raise ValueError('Word supports only the Classic layout')
     if not md_text or not md_text.strip():
         return None
 
@@ -669,6 +671,52 @@ def export_word(md_text: str, theme_name: str = 'Light', export_style: str = 'Cl
     body_html = body_html.replace('✅', '✓').replace('❌', '✗')
 
     soup = BeautifulSoup(body_html, 'html.parser')
+
+    def append_list(element, depth=0):
+        # Give each list its own numbering instance, including ordered starts.
+        numbering = doc.part.numbering_part.element
+        num_id = max([int(n.get(qn('w:numId'))) for n in numbering.findall(qn('w:num'))] + [0]) + 1
+        abstract_id = max([int(n.get(qn('w:abstractNumId'))) for n in numbering.findall(qn('w:abstractNum'))] + [0]) + 1
+        abstract = OxmlElement('w:abstractNum')
+        abstract.set(qn('w:abstractNumId'), str(abstract_id))
+        level_index = min(depth, 8)
+        level = OxmlElement('w:lvl')
+        level.set(qn('w:ilvl'), str(level_index))
+        start = element.get('start', '1')
+        for tag, value in [('start', str(start) if str(start).isdigit() else '1'),
+                           ('numFmt', 'decimal' if element.name == 'ol' else 'bullet'),
+                           ('lvlText', f'%{level_index + 1}.' if element.name == 'ol' else '•')]:
+            child = OxmlElement(f'w:{tag}')
+            child.set(qn('w:val'), value)
+            level.append(child)
+        abstract.append(level)
+        numbering.insert(0, abstract)
+        num = OxmlElement('w:num')
+        num.set(qn('w:numId'), str(num_id))
+        reference = OxmlElement('w:abstractNumId')
+        reference.set(qn('w:val'), str(abstract_id))
+        num.append(reference)
+        numbering.append(num)
+        for item in element.find_all('li', recursive=False):
+            paragraph = doc.add_paragraph()
+            paragraph.paragraph_format.left_indent = Inches(0.25 * (depth + 1))
+            paragraph.paragraph_format.first_line_indent = Inches(-0.18)
+            properties = paragraph._p.get_or_add_pPr().get_or_add_numPr()
+            properties.get_or_add_ilvl().val = level_index
+            properties.get_or_add_numId().val = num_id
+            for child in item.children:
+                if child.name in ('ul', 'ol'):
+                    append_list(child, depth + 1)
+                    paragraph = None
+                elif isinstance(child, NavigableString) and not str(child).strip() and (paragraph is None or not paragraph.text):
+                    continue
+                else:
+                    if paragraph is None:
+                        paragraph = doc.add_paragraph()
+                        paragraph.paragraph_format.left_indent = Inches(0.25 * (depth + 1))
+                    elif child.name == 'p' and paragraph.text:
+                        paragraph.add_run().add_break()
+                    _append_node_to_paragraph(paragraph, child, theme)
 
     for element in soup.children:
         if isinstance(element, NavigableString):
@@ -714,13 +762,7 @@ def export_word(md_text: str, theme_name: str = 'Light', export_style: str = 'Cl
 
         # Lists (ul / ol)
         if tag in ('ul', 'ol'):
-            list_style = 'List Bullet' if tag == 'ul' else 'List Number'
-            for li in element.find_all('li', recursive=False):
-                p = doc.add_paragraph(style=list_style)
-                for child in li.children:
-                    if child.name in ('ul', 'ol'):
-                        continue
-                    _append_node_to_paragraph(p, child, theme)
+            append_list(element)
             continue
 
         # Blockquote
@@ -803,7 +845,11 @@ def export_word(md_text: str, theme_name: str = 'Light', export_style: str = 'Cl
 
     tmp_dir = tempfile.mkdtemp(dir=EXPORT_DIR, prefix='word_')
     out_path = os.path.join(tmp_dir, filename)
-    doc.save(out_path)
+    try:
+        doc.save(out_path)
+    except Exception:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+        raise
     return out_path
 
 

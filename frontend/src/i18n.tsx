@@ -6,6 +6,13 @@ type Variables = Record<string, string | number>
 const LOCALE_KEY = 'markword.preference.locale'
 
 const ZH_TW: Record<string, string> = {
+  'Archive contents exceed the import limits': '壓縮檔展開後過大或檔案數過多，請縮小後再匯入',
+  'Archive is damaged or uses an unsupported format': '壓縮檔已損毀或格式不受支援，請重新壓縮後再匯入',
+  'Layouts apply to HTML and PDF': '版型適用於 HTML 與 PDF',
+  'Exports are busy. Please try again shortly.': '目前有其他文件正在匯出，請稍後再試。',
+  'This document exceeds the export limits. Try a smaller document.': '這份文件超出匯出限制，請拆成較小的文件後再試。',
+  'Export took too long. Try a smaller document.': '匯出時間過長，請拆成較小的文件後再試。',
+  'Document export is unavailable. Download portable HTML instead.': '目前無法匯出此格式，請改為下載可攜 HTML。',
   'Markword': 'Markword',
   'Document mode': '文件模式',
   'Plain text': '純文字',
@@ -31,6 +38,8 @@ const ZH_TW: Record<string, string> = {
   'Workspace tools': '工作區工具',
   'Find a command': '尋找操作',
   'Saved in this browser': '已儲存在此瀏覽器',
+  'Another tab saved changes. Download this copy before reloading.': '其他分頁已儲存變更。請先下載此份內容，再重新載入。',
+  'Changed in another tab. Download a backup.': '其他分頁已更新，請先下載備份。',
   'Draft not saved. Download a backup.': '草稿未儲存，請下載備份',
   'Saving…': '正在儲存…',
   'Preparing download…': '正在準備下載…',

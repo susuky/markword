@@ -1,0 +1,44 @@
+name: Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install dependencies and browsers
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y fonts-noto-cjk libpango-1.0-0 libpangoft2-1.0-0
+          pip install -r requirements.txt pytest httpx
+          npm --prefix frontend ci
+          python -m playwright install --with-deps chromium
+      - name: Install frontend browser
+        working-directory: frontend
+        run: npx playwright install chromium
+      - name: Backend and real export tests
+        run: python -m pytest -q
+      - name: Frontend checks
+        working-directory: frontend
+        run: |
+          npm run lint
+          npm run build
+          npm run build:pages
+          npm run test:ui -- --workers=2

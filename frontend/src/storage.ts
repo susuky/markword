@@ -15,11 +15,12 @@ export const MAX_REVISIONS = 120
 export type MetadataValue = string | number | boolean | null
 export type DraftMetadata = Record<string, MetadataValue>
 export type RevisionReason = 'auto' | 'manual' | 'pre-restore'
-export type PersistenceStatus = 'idle' | 'saving' | 'saved' | 'error'
+export type PersistenceStatus = 'idle' | 'saving' | 'saved' | 'error' | 'conflict'
 export type AssetKind = 'image' | 'video' | 'audio' | 'file'
 
 export interface StoredDraft {
   id: typeof CURRENT_DRAFT_ID
+  version?: number
   content: string
   metadata: DraftMetadata
   createdAt: number
@@ -59,6 +60,12 @@ export interface RestoredRevision {
 
 let databasePromise: Promise<IDBDatabase> | null = null
 const revisionEvents = new EventTarget()
+
+export class DraftConflictError extends Error {
+  constructor() {
+    super(translate('Another tab saved changes. Download this copy before reloading.'))
+  }
+}
 
 function requestResult<T>(request: IDBRequest<T>): Promise<T> {
   return new Promise((resolve, reject) => {
@@ -154,28 +161,50 @@ export async function loadCurrentDraft(
   if (stored) return stored
 
   const legacyContent = localStorage.getItem(LEGACY_DOCUMENT_KEY)
-  const draft = await saveCurrentDraft(legacyContent ?? fallbackContent, fallbackMetadata)
+  let draft: StoredDraft
+  try {
+    draft = await saveCurrentDraft(legacyContent ?? fallbackContent, fallbackMetadata, null)
+  } catch (error) {
+    if (!(error instanceof DraftConflictError)) throw error
+    // Two tabs may initialize an empty database at the same time.
+    const current = await getCurrentDraft()
+    if (!current) throw error
+    draft = current
+  }
   if (legacyContent !== null) localStorage.removeItem(LEGACY_DOCUMENT_KEY)
   return draft
 }
 
 export async function saveCurrentDraft(
   content: string,
-  metadata: DraftMetadata = {},
+  metadata: DraftMetadata,
+  expectedVersion: number | null,
 ): Promise<StoredDraft> {
-  const previous = await getCurrentDraft()
+  const database = await openDatabase()
+  const transaction = database.transaction(DRAFT_STORE, 'readwrite')
+  const complete = transactionComplete(transaction)
+  const store = transaction.objectStore(DRAFT_STORE)
+  const previous = await requestResult(store.get(CURRENT_DRAFT_ID) as IDBRequest<StoredDraft | undefined>)
+  // Read, compare and write in one transaction across all browser tabs.
+  if ((previous ? previous.version ?? 0 : null) !== expectedVersion) {
+    await complete
+    throw new DraftConflictError()
+  }
+  if (previous && previous.content === content && JSON.stringify(previous.metadata) === JSON.stringify(metadata)) {
+    await complete
+    return previous
+  }
   const now = Date.now()
   const draft: StoredDraft = {
     id: CURRENT_DRAFT_ID,
+    version: (previous?.version ?? 0) + 1,
     content,
     metadata: cloneMetadata(metadata),
     createdAt: previous?.createdAt ?? now,
     updatedAt: now,
   }
-  const database = await openDatabase()
-  const transaction = database.transaction(DRAFT_STORE, 'readwrite')
-  transaction.objectStore(DRAFT_STORE).put(draft)
-  await transactionComplete(transaction)
+  store.put(draft)
+  await complete
   return draft
 }
 
@@ -292,13 +321,14 @@ export async function deleteAsset(id: string): Promise<void> {
 export async function restoreRevision(
   revisionId: string,
   currentContent: string,
-  currentMetadata: DraftMetadata = {},
+  currentMetadata: DraftMetadata,
+  expectedVersion: number,
 ): Promise<RestoredRevision> {
   const revision = await getRevision(revisionId)
   if (!revision) throw new Error(translate('Revision not found'))
 
   await createSnapshot(currentContent, currentMetadata, 'pre-restore')
-  const draft = await saveCurrentDraft(revision.content, revision.metadata)
+  const draft = await saveCurrentDraft(revision.content, revision.metadata, expectedVersion)
   return { draft, revision }
 }
 
@@ -329,6 +359,7 @@ export class DraftPersistenceSession {
   private snapshotTimer: number | null = null
   private savePromise: Promise<StoredDraft> | null = null
   private started = false
+  private version = 0
 
   constructor(private readonly options: PersistenceSessionOptions = {}) {}
 
@@ -339,6 +370,7 @@ export class DraftPersistenceSession {
     ])
     this.content = draft.content
     this.metadata = cloneMetadata(draft.metadata)
+    this.version = draft.version ?? 0
     this.lastSnapshottedContent = revisions[0]?.content ?? draft.content
     return draft
   }
@@ -351,7 +383,7 @@ export class DraftPersistenceSession {
       if (this.content !== this.lastSnapshottedContent) {
         void this.snapshot('auto').catch((error) => {
           const normalized = error instanceof Error ? error : new Error(translate('Automatic revision failed'))
-          this.options.onStatusChange?.('error', normalized)
+          this.options.onStatusChange?.(error instanceof DraftConflictError ? 'conflict' : 'error', normalized)
         })
       }
     }, interval)
@@ -364,7 +396,7 @@ export class DraftPersistenceSession {
     if (this.saveTimer !== null) window.clearTimeout(this.saveTimer)
     this.saveTimer = window.setTimeout(() => {
       this.saveTimer = null
-      void this.flush()
+      void this.flush().catch(() => undefined)
     }, 350)
   }
 
@@ -373,15 +405,18 @@ export class DraftPersistenceSession {
       window.clearTimeout(this.saveTimer)
       this.saveTimer = null
     }
-    if (this.savePromise) await this.savePromise
-    this.savePromise = saveCurrentDraft(this.content, this.metadata)
+    while (this.savePromise) await this.savePromise
+    const content = this.content
+    const metadata = this.metadata
+    this.savePromise = saveCurrentDraft(content, metadata, this.version)
     try {
       const draft = await this.savePromise
-      this.options.onStatusChange?.('saved')
+      this.version = draft.version ?? 0
+      this.options.onStatusChange?.(this.content === content && this.metadata === metadata ? 'saved' : 'saving')
       return draft
     } catch (error) {
       const normalized = error instanceof Error ? error : new Error(translate('Save failed'))
-      this.options.onStatusChange?.('error', normalized)
+      this.options.onStatusChange?.(error instanceof DraftConflictError ? 'conflict' : 'error', normalized)
       throw normalized
     } finally {
       this.savePromise = null
@@ -398,7 +433,8 @@ export class DraftPersistenceSession {
 
   async restore(revisionId: string): Promise<RestoredRevision> {
     await this.flush()
-    const restored = await restoreRevision(revisionId, this.content, this.metadata)
+    const restored = await restoreRevision(revisionId, this.content, this.metadata, this.version)
+    this.version = restored.draft.version ?? 0
     this.content = restored.draft.content
     this.metadata = cloneMetadata(restored.draft.metadata)
     this.lastSnapshottedContent = restored.draft.content

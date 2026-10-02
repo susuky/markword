@@ -2,6 +2,8 @@
 
 PDF／Word 已改為本機 Mermaid 渲染，且 PDF 只接受內嵌資源。安裝、離線處理範圍與限制請參閱[本機匯出說明](README.zh-TW.md#本機匯出與資源限制)。
 
+匯入解壓限制、同名資產保留、多分頁衝突保護與新版匯出行為，以[繁體中文使用說明](README.zh-TW.md#使用-markword)為準。Word 使用固定版型，僅接受 `style: Classic`；四種成品版型適用於 HTML／PDF。
+
 **English** | [繁體中文](README.zh-TW.md)
 
 
@@ -202,7 +204,7 @@ Open `http://localhost:27860`. Rebuild the frontend before redeploying frontend 
 | `POST` | `/api/analyze` | Text statistics |
 | `GET` | `/api/themes` | Preview themes |
 | `POST` | `/api/export/pdf` | Export PDF using `theme` and `style` |
-| `POST` | `/api/export/docx` | Export Word using the same style contract |
+| `POST` | `/api/export/docx` | 依 `theme` 匯出固定版型 Word，`style` 僅接受 `Classic` |
 
 The complete request/response schema is available at `/docs`. `python app.py` remains available for existing launch scripts, but new deployments should target `backend.main:app` directly.
 

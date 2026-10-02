@@ -1,6 +1,9 @@
 import { translate } from './i18n'
 import { DOCUMENT_MODES, normalizeDocumentMode } from './documentMode'
 import type { DocumentMode } from './types'
+import { unzipBounded } from './zip'
+import { markdownLanguage } from '@codemirror/lang-markdown'
+import { unescapeAll } from 'markdown-it/lib/common/utils.mjs'
 import {
   getAssetsByPaths,
   listAssets,
@@ -16,6 +19,7 @@ const ASSET_DIRECTORY = 'assets/'
 const PROJECT_MANIFEST = 'markword.json'
 const MAX_PROJECT_ARCHIVE_BYTES = 512 * 1024 * 1024
 const MAX_PROJECT_UNPACKED_BYTES = 500 * 1024 * 1024
+const MAX_PROJECT_ENTRIES = 2000
 const IMAGE_EXTENSIONS = new Set(['avif', 'bmp', 'gif', 'jpeg', 'jpg', 'png', 'svg', 'webp'])
 const VIDEO_EXTENSIONS = new Set(['m4v', 'mov', 'mp4', 'ogv', 'webm'])
 const AUDIO_EXTENSIONS = new Set(['aac', 'flac', 'm4a', 'mp3', 'oga', 'ogg', 'wav', 'webm'])
@@ -226,6 +230,7 @@ export async function inlineAssetsInHtml(html: string): Promise<string> {
 export async function createProjectArchive(markdown: string, title: string, assets: readonly StoredAsset[], mode: DocumentMode = 'markdown'): Promise<Blob> {
   const projectBytes = new Blob([markdown]).size + assets.reduce((total, asset) => total + asset.size, 0)
   if (projectBytes > MAX_PROJECT_UNPACKED_BYTES) throw new Error(translate('Project contents exceed 500 MB'))
+  if (assets.length + 2 > MAX_PROJECT_ENTRIES) throw new Error(translate('Archive contents exceed the import limits'))
   const [fflate, assetEntries] = await Promise.all([
     import('fflate'),
     Promise.all(assets.map(async (asset) => [asset.path, new Uint8Array(await asset.blob.arrayBuffer())] as const)),
@@ -243,6 +248,10 @@ export async function createProjectArchive(markdown: string, title: string, asse
     [PROJECT_MANIFEST]: fflate.strToU8(JSON.stringify(manifest, null, 2)),
   }
   assetEntries.forEach(([path, bytes]) => { entries[path] = bytes })
+  const contents = Object.values(entries)
+  if (contents.some((bytes) => bytes.length > MAX_LOCAL_ASSET_BYTES) || contents.reduce((total, bytes) => total + bytes.length, 0) > MAX_PROJECT_UNPACKED_BYTES) {
+    throw new Error(translate('Archive contents exceed the import limits'))
+  }
   const archive = await new Promise<Uint8Array>((resolve, reject) => {
     fflate.zip(entries, { level: 0 }, (error, data) => {
       if (error) reject(error)
@@ -258,14 +267,11 @@ export async function importProjectArchive(file: File): Promise<ProjectArchive> 
     import('fflate'),
     file.arrayBuffer(),
   ])
-  const entries = await new Promise<Record<string, Uint8Array>>((resolve, reject) => {
-    fflate.unzip(new Uint8Array(archive), (error, unpacked) => {
-      if (error) reject(error)
-      else resolve(unpacked)
-    })
+  const entries = await unzipBounded(new Uint8Array(archive), {
+    maxTotalBytes: MAX_PROJECT_UNPACKED_BYTES,
+    maxEntryBytes: MAX_LOCAL_ASSET_BYTES,
+    maxEntries: MAX_PROJECT_ENTRIES,
   })
-  const unpackedBytes = Object.values(entries).reduce((total, entry) => total + entry.byteLength, 0)
-  if (unpackedBytes > MAX_PROJECT_UNPACKED_BYTES) throw new Error(translate('Project archive expands beyond 500 MB'))
 
   let manifest: ProjectManifest | null = null
   if (entries[PROJECT_MANIFEST]) {
@@ -281,7 +287,10 @@ export async function importProjectArchive(file: File): Promise<ProjectArchive> 
   if (!documentName) throw new Error(translate('Project archive does not contain a Markdown document'))
 
   const existing = await listAssets()
-  const existingByPath = new Map(existing.map((asset) => [asset.path, asset]))
+  const usedPaths = new Set(existing.map((asset) => asset.path.toLocaleLowerCase()))
+  const archivePaths = new Set(Object.keys(entries).map(normalizeAssetPath).filter((path): path is string => Boolean(path)))
+  const reservedPaths = new Set([...usedPaths, ...Array.from(archivePaths, (path) => path.toLocaleLowerCase())])
+  const replacements = new Map<string, string>()
   const manifestAssetEntries = Array.isArray(manifest?.assets) ? manifest.assets : []
   const manifestAssets = new Map(manifestAssetEntries.flatMap((asset) => {
     if (!asset || typeof asset !== 'object' || typeof asset.path !== 'string') return []
@@ -289,30 +298,52 @@ export async function importProjectArchive(file: File): Promise<ProjectArchive> 
     return path ? [[path, asset] as const] : []
   }))
   const now = Date.now()
+  const importedPaths = new Set<string>()
   const importedAssets = Object.entries(entries).flatMap(([rawPath, bytes], index): StoredAsset[] => {
-    const path = normalizeAssetPath(rawPath)
-    if (!path || rawPath.endsWith('/')) return []
-    const previous = existingByPath.get(path)
-    const metadata = manifestAssets.get(path)
-    const name = safeFilename(typeof metadata?.name === 'string' ? metadata.name : path.split('/').at(-1) ?? 'asset')
+    const originalPath = normalizeAssetPath(rawPath)
+    if (!originalPath || rawPath.endsWith('/')) return []
+    if (importedPaths.has(originalPath)) throw new Error(translate('Archive is damaged or uses an unsupported format'))
+    importedPaths.add(originalPath)
+    const path = usedPaths.has(originalPath.toLocaleLowerCase())
+      ? uniqueAssetPath(originalPath.split('/').at(-1)!, reservedPaths) : originalPath
+    usedPaths.add(path.toLocaleLowerCase())
+    if (path !== originalPath) replacements.set(originalPath, path)
+    const metadata = manifestAssets.get(originalPath)
+    const name = safeFilename(typeof metadata?.name === 'string' ? metadata.name : originalPath.split('/').at(-1) ?? 'asset')
     const type = typeof metadata?.type === 'string' && metadata.type.length <= 200 ? metadata.type : mimeTypeFromName(name)
     const kind = metadata?.kind && ['image', 'video', 'audio', 'file'].includes(metadata.kind)
       ? metadata.kind
       : assetKind(type, name)
     return [{
-      id: previous?.id ?? createId(),
+      id: createId(),
       path,
       name,
       type,
       kind,
       size: bytes.byteLength,
       blob: new Blob([bytes], { type }),
-      createdAt: previous?.createdAt ?? now + index,
+      createdAt: now + index,
       updatedAt: now + index,
     }]
   })
+  let markdown = fflate.strFromU8(entries[documentName])
+  const mode = normalizeDocumentMode(manifest?.mode)
+  if (replacements.size && mode === 'markdown') {
+    // Reuse the editor parser's exact URL ranges: reference links, angle
+    // brackets and media work, while code examples and labels remain literal.
+    const edits: Array<{ from: number; to: number; path: string }> = []
+    markdownLanguage.parser.parse(markdown).iterate({ enter(node) {
+      if (node.name !== 'URL') return
+      const original = normalizeAssetPath(unescapeAll(markdown.slice(node.from, node.to)))
+      const path = original ? replacements.get(original) : undefined
+      if (path) edits.push({ from: node.from, to: node.to, path })
+    } })
+    edits.reverse().forEach(({ from, to, path }) => {
+      markdown = markdown.slice(0, from) + assetMarkdownUrl(path) + markdown.slice(to)
+    })
+  }
   await putAssets(importedAssets)
-  return { markdown: fflate.strFromU8(entries[documentName]), mode: normalizeDocumentMode(manifest?.mode), documentName, assets: importedAssets }
+  return { markdown, mode, documentName, assets: importedAssets }
 }
 
 export async function requestPersistentStorage(): Promise<boolean> {

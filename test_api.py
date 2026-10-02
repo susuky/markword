@@ -95,11 +95,12 @@ async def test_pdf_export_download_and_cleanup(client, monkeypatch, tmp_path):
 
     seen = {}
 
-    def fake_export(markdown, theme, style):
-        seen.update(markdown=markdown, theme=theme, style=style)
-        return str(export_path)
+    async def fake_export(payload, export_format):
+        seen.update(markdown=payload.markdown, theme=payload.theme, style=payload.style)
+        assert export_format == 'pdf'
+        return str(export_path), str(export_dir)
 
-    monkeypatch.setattr(main, "export_pdf", fake_export)
+    monkeypatch.setattr(main, "run_export", fake_export)
     response = await client.post(
         "/api/export/pdf",
         json={"markdown": "# 測試文件", "theme": "Light"},
@@ -125,6 +126,36 @@ async def test_pdf_export_rejects_local_resources_without_disclosing_path(client
     assert response.status_code == 422
     assert "embedded" in response.json()["detail"]
     assert "private.txt" not in response.text
+    assert list(tmp_path.iterdir()) == []
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize('style', ['Editorial', 'Report', 'Compact'])
+async def test_word_rejects_unsupported_layouts(client, style):
+    response = await client.post('/api/export/docx', json={'markdown': '# Word', 'style': style})
+    assert response.status_code == 422
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize('export_format', ['pdf', 'docx'])
+async def test_real_export_job_downloads_and_cleans_up(client, monkeypatch, tmp_path, export_format):
+    from io import BytesIO
+    from docx import Document
+    import app as export_app
+
+    monkeypatch.setattr(export_app, 'EXPORT_DIR', str(tmp_path))
+    response = await client.post(f'/api/export/{export_format}', json={
+        'markdown': '# 匯出🌟' + '長標題' * 60 + '\n\n1. Parent\n    - Child\n\n```mermaid\nflowchart LR\n A[開始] --> B[完成]\n```',
+    })
+    assert response.status_code == 200, response.text if response.status_code != 200 else ''
+    assert "filename*=utf-8''" in response.headers['content-disposition'].lower()
+    if export_format == 'pdf':
+        assert response.content.startswith(b'%PDF-')
+        assert b'/Subtype /Image' in response.content
+    else:
+        doc = Document(BytesIO(response.content))
+        assert any(p.text.strip() == 'Child' for p in doc.paragraphs)
+        assert len(doc.inline_shapes) == 1
     assert list(tmp_path.iterdir()) == []
 
 

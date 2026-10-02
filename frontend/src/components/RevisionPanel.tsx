@@ -3,10 +3,8 @@ import { lazy, Suspense, useCallback, useEffect, useState } from 'react'
 import { useI18n } from '../i18n'
 import { DOCUMENT_MODES, normalizeDocumentMode } from '../documentMode'
 import {
-  createSnapshot,
   deleteRevision,
   listRevisions,
-  restoreRevision,
   subscribeToRevisions,
   type DraftMetadata,
   type DraftPersistenceSession,
@@ -23,7 +21,7 @@ const RevisionDiff = lazy(() => import('./RevisionDiff').catch(() => ({ default:
 export interface RevisionPanelProps {
   currentContent: string
   currentMetadata?: DraftMetadata
-  persistence?: DraftPersistenceSession
+  persistence: DraftPersistenceSession
   onRestore: (content: string, metadata: DraftMetadata) => void
   onClose?: () => void
 }
@@ -94,8 +92,7 @@ export function RevisionPanel({
     setBusy(true)
     setMessage('')
     try {
-      if (persistence) await persistence.snapshot('manual')
-      else await createSnapshot(currentContent, currentMetadata, 'manual')
+      await persistence.snapshot('manual')
       setMessage(t('Current revision created'))
     } catch (error) {
       setMessage(error instanceof Error ? error.message : t('Could not create revision'))
@@ -109,9 +106,7 @@ export function RevisionPanel({
     setBusy(true)
     setMessage('')
     try {
-      const restored = persistence
-        ? await persistence.restore(selected.id)
-        : await restoreRevision(selected.id, currentContent, currentMetadata)
+      const restored = await persistence.restore(selected.id)
       onRestore(restored.draft.content, restored.draft.metadata)
       setMessage(t('Restored; the previous content was backed up first'))
     } catch (error) {

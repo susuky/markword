@@ -1,6 +1,7 @@
 """Request and response models for the Markword API."""
 
 from pydantic import BaseModel, Field, field_validator
+from typing import Literal
 
 from themes import THEMES
 from export_styles import EXPORT_STYLES
@@ -26,7 +27,7 @@ class AnalyzeResponse(BaseModel):
 class ExportRequest(BaseModel):
     markdown: str = Field(min_length=1, max_length=MAX_TEXT_LENGTH)
     theme: str = "Light"
-    style: str = "Classic"
+    style: str = Field(default="Classic", description="HTML/PDF layout; Word supports only Classic")
 
     @field_validator("markdown")
     @classmethod
@@ -50,6 +51,10 @@ class ExportRequest(BaseModel):
             allowed = ", ".join(EXPORT_STYLES)
             raise ValueError(f"unknown style; expected one of: {allowed}")
         return value
+
+
+class WordExportRequest(ExportRequest):
+    style: Literal['Classic'] = 'Classic'
 
 
 class ThemeResponse(BaseModel):
