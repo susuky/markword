@@ -21,16 +21,38 @@ interface MarkdownEnvironment {
   footnoteReferenceCounts: Map<string, number>
 }
 
+// ponytail: bounded FIFO; unchanged code blocks reuse highlighting while prose changes.
+const highlightCache = new Map<string, string>()
+const MAX_HIGHLIGHT_CACHE_CHARS = 1_000_000
+const MAX_HIGHLIGHT_CACHE_ENTRIES = 100
+let highlightCacheChars = 0
+
+function highlightCode(code: string, language: string) {
+  const key = JSON.stringify([language, code])
+  const cached = highlightCache.get(key)
+  if (cached !== undefined) return cached
+  const result = language && hljs.getLanguage(language)
+    ? hljs.highlight(code, { language }).value
+    : hljs.highlightAuto(code).value
+  const chars = key.length + result.length
+  if (chars <= MAX_HIGHLIGHT_CACHE_CHARS) {
+    while (highlightCache.size >= MAX_HIGHLIGHT_CACHE_ENTRIES || highlightCacheChars + chars > MAX_HIGHLIGHT_CACHE_CHARS) {
+      const [oldKey, oldValue] = highlightCache.entries().next().value!
+      highlightCacheChars -= oldKey.length + oldValue.length
+      highlightCache.delete(oldKey)
+    }
+    highlightCache.set(key, result)
+    highlightCacheChars += chars
+  }
+  return result
+}
+
 const md = new MarkdownIt({
   breaks: false,
   html: false,
   linkify: true,
   typographer: true,
-  highlight(code, language) {
-    return language && hljs.getLanguage(language)
-      ? hljs.highlight(code, { language }).value
-      : hljs.highlightAuto(code).value
-  },
+  highlight: highlightCode,
 })
 
 md.enable('table')

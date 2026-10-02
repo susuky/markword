@@ -102,12 +102,16 @@ export function ExportMenu({ mode, disabled, exporting, clientExporting, exportS
     <ToolbarMenu primary disabled={disabled || busy} label={t(busy ? 'Preparing download…' : 'Export')} trigger={<><Download size={17} aria-hidden="true" /><span>{t(busy ? 'Preparing download…' : 'Export')}</span></>}>
       {(close) => <div className="export-menu" role="dialog" aria-label={t('Download and export')}>
         <div className="menu-heading"><strong>{t('Download and export')}</strong><span>{t('Layouts apply to HTML and PDF')}</span></div>
-        <div className="export-style-picker">
-          <span>{t('Document layout')}</span>
+        <details className="export-style-picker">
+          <summary>
+            <span>{t('Document layout')}</span>
+            <strong>{t(EXPORT_STYLES[exportStyle].label)}</strong>
+            <ChevronDown size={16} aria-hidden="true" />
+          </summary>
           <div>{(Object.keys(EXPORT_STYLES) as ExportStyleName[]).map((name) => <button key={name} type="button" className={name === exportStyle ? 'is-selected' : ''} aria-pressed={name === exportStyle} onClick={() => onStyleChange(name)}>
             <strong>{t(EXPORT_STYLES[name].label)}</strong><small>{t(EXPORT_STYLES[name].description)}</small>
           </button>)}</div>
-        </div>
+        </details>
         <div className="export-menu__section">
           <span>{t('Source and web')}</span>
           {onSaveAs ? <button type="button" onClick={() => { close(); onSaveAs() }}><Save size={18} aria-hidden="true" /><span><strong>{t('Save as…')}</strong><small>{t('Choose a file name and location')}</small></span></button> : null}

@@ -261,6 +261,7 @@ test('Word export does not send an HTML or PDF layout', async ({ page }) => {
   await page.goto('/')
   await page.getByRole('button', { name: 'Export', exact: true }).click()
   await expect(page.getByText('Layouts apply to HTML and PDF', { exact: true })).toBeVisible()
+  await page.locator('.export-style-picker summary').click()
   await page.getByRole('button', { name: /^Editorial Generous/ }).click()
   const download = page.waitForEvent('download')
   await page.getByRole('button', { name: /^Word Uses the current palette/ }).click()
