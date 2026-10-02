@@ -114,6 +114,21 @@ async def test_pdf_export_download_and_cleanup(client, monkeypatch, tmp_path):
 
 
 @pytest.mark.anyio
+async def test_pdf_export_rejects_local_resources_without_disclosing_path(client, monkeypatch, tmp_path):
+    import app as export_app
+
+    monkeypatch.setattr(export_app, "EXPORT_DIR", str(tmp_path))
+    response = await client.post(
+        "/api/export/pdf",
+        json={"markdown": '<link rel="attachment" href="file:///tmp/private.txt">'},
+    )
+    assert response.status_code == 422
+    assert "embedded" in response.json()["detail"]
+    assert "private.txt" not in response.text
+    assert list(tmp_path.iterdir()) == []
+
+
+@pytest.mark.anyio
 async def test_spa_fallback(client, monkeypatch, tmp_path):
     (tmp_path / "index.html").write_text("<main>Markword</main>", encoding="utf-8")
     monkeypatch.setattr(main, "FRONTEND_DIR", Path(tmp_path))

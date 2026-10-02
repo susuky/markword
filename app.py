@@ -4,13 +4,12 @@ import base64
 import hashlib
 import html
 import json
+from io import BytesIO
 import os
 import re
 import shutil
 import tempfile
 import time
-import urllib.parse
-import urllib.request
 
 from bs4 import BeautifulSoup, NavigableString
 from docx import Document
@@ -24,8 +23,10 @@ from docx.shared import Inches, Pt, RGBColor
 gr = None
 import markdown as md
 from markdown_it import MarkdownIt
-from weasyprint import HTML
+from weasyprint import HTML, URLFetcher
+from weasyprint.urls import FatalURLFetchingError
 
+from mermaid_renderer import MERMAID_BUNDLE, render_mermaid_png
 from themes import THEMES, Theme
 from export_styles import EXPORT_STYLES
 
@@ -176,39 +177,6 @@ def _get_export_filename(md_text: str, ext: str = 'pdf') -> str:
     return f'export_{text_hash}.{ext}'
 
 
-def _fetch_mermaid_png(code: str, theme: Theme) -> bytes | None:
-    '''
-    Fetch rendered PNG bytes for a Mermaid diagram from mermaid.ink API.
-
-    Args:
-        code: Mermaid diagram source string.
-        theme: Markword theme including Mermaid color variables.
-
-    Returns:
-        PNG image bytes, or None if fetching fails.
-    '''
-    try:
-        payload = json.dumps({
-            'code': code,
-            'mermaid': {
-                'theme': 'base',
-                'themeVariables': theme.mermaid_variables,
-            },
-        })
-        b64_str = base64.urlsafe_b64encode(payload.encode('utf-8')).decode('utf-8')
-        url = f'https://mermaid.ink/img/{b64_str}'
-        req = urllib.request.Request(
-            url,
-            headers={'User-Agent': 'Mozilla/5.0'}
-        )
-        with urllib.request.urlopen(req, timeout=8) as response:
-            if response.status == 200:
-                return response.read()
-    except Exception:
-        pass
-    return None
-
-
 def _sanitize_emojis_for_export(text: str) -> str:
     '''
     Replace color emojis with clean HTML / Unicode symbols for PDF export.
@@ -239,7 +207,7 @@ def _replace_mermaid_blocks(md_text: str) -> tuple[str, bool]:
 
     def _replacer(match: re.Match) -> str:
         code = match.group(1).strip()
-        return f'<div class="mermaid">\n{code}\n</div>'
+        return f'<div class="mermaid">\n{html.escape(code)}\n</div>'
 
     return _MERMAID_BLOCK_RE.sub(_replacer, md_text), has_mermaid
 
@@ -311,10 +279,11 @@ def _build_html_page(body_html: str, theme: Theme, has_mermaid: bool = False) ->
     '''
     mermaid_script = ''
     if has_mermaid:
+        bundle = MERMAID_BUNDLE.read_text(encoding='utf-8').replace('</script', '<\\/script')
+        config = json.dumps({'startOnLoad': True, 'securityLevel': 'strict', 'theme': theme.mermaid_theme})
         mermaid_script = (
-            '<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/'
-            'mermaid.min.js"></script>\n'
-            f'<script>mermaid.initialize({{startOnLoad:true, theme:"{theme.mermaid_theme}"}});</script>'
+            f'<script>{bundle}</script>\n'
+            f'<script>mermaid.initialize({config});</script>'
         )
 
     scroll_script = '''
@@ -481,11 +450,11 @@ def _render_md_to_html_for_export(md_text: str, theme: Theme, export_style: str 
     '''
     def _mermaid_replacer(match: re.Match) -> str:
         code = match.group(1).strip()
-        png_data = _fetch_mermaid_png(code, theme)
+        png_data = render_mermaid_png(code, theme)
         if png_data:
             b64_img = base64.b64encode(png_data).decode('utf-8')
             return f'<div class="mermaid-img"><img src="data:image/png;base64,{b64_img}" alt="Mermaid Diagram" /></div>'
-        return f'<pre class="mermaid-fallback">[Mermaid Diagram]\n{html.escape(code)}</pre>'
+        return f'<pre class="mermaid-fallback">[Mermaid diagram could not be rendered]\n{html.escape(code)}</pre>'
 
     processed = _MERMAID_BLOCK_RE.sub(_mermaid_replacer, md_text)
     body_html = md.markdown(processed, extensions=_MD_EXTENSIONS)
@@ -516,7 +485,26 @@ def export_pdf(md_text: str, theme_name: str = 'Light', export_style: str = 'Cla
 
     tmp_dir = tempfile.mkdtemp(dir=EXPORT_DIR, prefix='pdf_')
     out_path = os.path.join(tmp_dir, filename)
-    HTML(string=html_str).write_pdf(out_path)
+    fetcher = URLFetcher(allowed_protocols={'data'}, allow_redirects=False)
+    resource_failed = False
+
+    def fetch_embedded_resource(url):
+        nonlocal resource_failed
+        try:
+            return fetcher(url)
+        except Exception as exc:
+            resource_failed = True
+            raise FatalURLFetchingError('Resource unavailable for offline export') from exc
+
+    try:
+        HTML(string=html_str, url_fetcher=fetch_embedded_resource).write_pdf(out_path)
+        # WeasyPrint catches even fatal errors while drawing nested SVGs. Do not
+        # return a successful but incomplete PDF when that path rejected a URL.
+        if resource_failed:
+            raise FatalURLFetchingError('Resource unavailable for offline export')
+    except (Exception, FatalURLFetchingError):
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+        raise
     return out_path
 
 
@@ -662,20 +650,17 @@ def export_word(md_text: str, theme_name: str = 'Light', export_style: str = 'Cl
         rPr.insert(0, rFonts)
     rFonts.set(qn('w:eastAsia'), 'Noto Sans CJK TC')
 
-    # Handle Mermaid diagrams: render to PNG temp files before HTML parsing
-    mermaid_images: dict[str, str] = {}
+    # Keep rendered diagram bytes in this request, without temporary image files.
+    mermaid_images: dict[str, bytes] = {}
 
     def _mermaid_word_replacer(match: re.Match) -> str:
         code = match.group(1).strip()
-        png_data = _fetch_mermaid_png(code, theme)
+        png_data = render_mermaid_png(code, theme)
         placeholder_id = f'MERMAID_IMG_PLACEHOLDER_{len(mermaid_images)}'
         if png_data:
-            tmp_img = tempfile.NamedTemporaryFile(suffix='.png', delete=False, prefix='mermaid_')
-            tmp_img.write(png_data)
-            tmp_img.close()
-            mermaid_images[placeholder_id] = tmp_img.name
+            mermaid_images[placeholder_id] = png_data
             return f'<p class="mermaid-img-p">{placeholder_id}</p>'
-        return f'<pre class="code-block">[Mermaid Diagram]\n{code}</pre>'
+        return f'<pre class="code-block">[Mermaid diagram could not be rendered]\n{html.escape(code)}</pre>'
 
     processed_md = _MERMAID_BLOCK_RE.sub(_mermaid_word_replacer, md_text)
 
@@ -716,11 +701,10 @@ def export_word(md_text: str, theme_name: str = 'Light', export_style: str = 'Cl
         if tag == 'p':
             p_text = element.get_text().strip()
             if p_text in mermaid_images:
-                img_path = mermaid_images[p_text]
                 p = doc.add_paragraph()
                 p.alignment = WD_ALIGN_PARAGRAPH.CENTER
                 run = p.add_run()
-                run.add_picture(img_path, width=Inches(5.5))
+                run.add_picture(BytesIO(mermaid_images[p_text]), width=Inches(5.5))
                 continue
 
             p = doc.add_paragraph()
@@ -1299,6 +1283,6 @@ if __name__ == '__main__':
 
     uvicorn.run(
         'backend.main:app',
-        host=os.getenv('MARKWORD_HOST', '0.0.0.0'),
+        host=os.getenv('MARKWORD_HOST', '127.0.0.1'),
         port=int(os.getenv('MARKWORD_PORT', '27860')),
     )

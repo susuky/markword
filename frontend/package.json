@@ -5,12 +5,12 @@
   "version": "0.4.0",
   "type": "module",
   "scripts": {
-    "dev": "vite --host 0.0.0.0",
+    "dev": "vite --host 127.0.0.1",
     "build": "tsc -b && vite build",
     "build:pages": "tsc -b && vite build --mode pages",
     "lint": "eslint .",
     "test:ui": "playwright test",
-    "preview": "vite preview --host 0.0.0.0"
+    "preview": "vite preview --host 127.0.0.1"
   },
   "dependencies": {
     "@codemirror/commands": "^6.11.0",

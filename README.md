@@ -1,5 +1,7 @@
 # Markword
 
+PDF／Word 已改為本機 Mermaid 渲染，且 PDF 只接受內嵌資源。安裝、離線處理範圍與限制請參閱[本機匯出說明](README.zh-TW.md#本機匯出與資源限制)。
+
 **English** | [繁體中文](README.zh-TW.md)
 
 
@@ -92,7 +94,7 @@ README screenshots use generic sample Markdown. User documents and browser Index
 | `MARKWORD_FRONTEND_DIR` | `frontend/dist` | Production frontend directory |
 | `MARKWORD_EXPORT_DIR` | `exports` | PDF/Word export directory |
 | `MARKWORD_CORS_ORIGINS` | Vite localhost origins | Comma-separated CORS allowlist |
-| `MARKWORD_HOST` | `0.0.0.0` | Host used by `python app.py` |
+| `MARKWORD_HOST` | `127.0.0.1` | `python app.py` 與 `python -m backend.main` 的監聽位址 |
 | `MARKWORD_PORT` | `27860` | Port used by `python app.py` |
 
 ### systemd deployment
@@ -115,6 +117,8 @@ sudo -u markword npm run build
 cd /opt/markword
 sudo -u markword uv venv
 sudo -u markword uv pip install -r requirements.txt
+sudo /opt/markword/.venv/bin/python -m playwright install-deps chromium
+sudo -u markword /opt/markword/.venv/bin/python -m playwright install chromium
 sudo install -m 0644 markword.service.example /etc/systemd/system/markword.service
 ```
 
@@ -131,10 +135,11 @@ For updates, rebuild the frontend, update Python dependencies, and restart:
 ```bash
 cd /opt/markword/frontend && sudo -u markword npm install && sudo -u markword npm run build
 cd /opt/markword && sudo -u markword uv pip install -r requirements.txt
+sudo -u markword /opt/markword/.venv/bin/python -m playwright install chromium
 sudo systemctl restart markword
 ```
 
-For public internet deployment, place Caddy or Nginx in front of FastAPI for TLS, domains, and request size limits. Keep Uvicorn on loopback and proxy requests to it.
+預設啟動方式與 Docker Compose 只讓本機連線。API 沒有內建登入驗證；若自行改成區網監聽或透過反向代理公開，需另行加入存取驗證與請求／資源限制。
 
 ## Development
 
@@ -158,6 +163,8 @@ Install backend dependencies and start FastAPI:
 ```bash
 uv venv
 uv pip install -r requirements.txt
+uv run python -m playwright install --with-deps chromium
+npm --prefix frontend ci
 uv run uvicorn backend.main:app --reload --host 127.0.0.1 --port 27860
 ```
 
@@ -182,7 +189,7 @@ cd frontend
 npm install
 npm run build
 cd ..
-uv run uvicorn backend.main:app --host 0.0.0.0 --port 27860
+uv run uvicorn backend.main:app --host 127.0.0.1 --port 27860
 ```
 
 Open `http://localhost:27860`. Rebuild the frontend before redeploying frontend changes.

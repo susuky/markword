@@ -77,6 +77,14 @@ docker compose down
 - PWA 只快取編輯器／預覽所需的 app shell 與靜態資源；PDF／Word 仍由本機 FastAPI 服務產生。
 - 使用頁首的語言按鈕切換英文與繁體中文；偏好會保存在本機，且不會修改文件內容。
 
+### 本機匯出與資源限制
+
+- PDF／Word 的 Mermaid 圖表使用已安裝的 Mermaid 套件與本機 Chromium 產生 PNG，不會將圖表原文傳給第三方服務，也沒有雲端備援。React 預覽仍由瀏覽器內的 Mermaid 套件繪圖；舊版預覽也改用本機套件。
+- 匯出用 Chromium 在處理圖表前就停用網路，並限制圖片、字型與樣式的載入。無法繪製圖表時，文件會保留原始碼並標示無法繪圖；缺少渲染器或執行逾時會讓匯出失敗，不會轉送外部服務。
+- PDF 的資源讀取只接受內嵌的 `data:` 內容。圖片、CSS、字型、SVG 巢狀引用或附件若要求讀取網路或 `file://` 檔案，匯出會中止，API 回傳 `422`，並清除未完成的檔案。一般可點擊的超連結仍會保留。
+- 瀏覽器 IndexedDB 的圖片與附件仍不會傳給 PDF／Word API。需要包含這些資產時，請匯出可攜 HTML，再由瀏覽器列印成 PDF，或使用專案 ZIP 備份。
+- 安裝套件與瀏覽器時需要下載依賴；安裝完成後，這兩種匯出不需要連上網際網路。文件會送至你所連線的 Markword API，因此要讓文件留在自己的電腦，請在該電腦執行服務。Markdown 內直接引用的遠端圖片仍可能由一般瀏覽器預覽載入。
+
 ### 本機資產與備份
 
 - 本機資產以 Blob 儲存在瀏覽器 IndexedDB，不會上傳到 GitHub Pages 或 Markword 伺服器；單一檔案上限為 200 MB，專案內容上限為 500 MB。
@@ -107,7 +115,7 @@ README 的畫面示範使用另寫的通用 Markdown；實際使用者文件與�
 | `MARKWORD_FRONTEND_DIR` | `frontend/dist` | 前端正式版靜態檔目錄 |
 | `MARKWORD_EXPORT_DIR` | `exports` | PDF／Word 匯出檔目錄 |
 | `MARKWORD_CORS_ORIGINS` | Vite 的 localhost origins | 逗號分隔的跨來源白名單 |
-| `MARKWORD_HOST` | `0.0.0.0` | 使用 `python app.py` 啟動時的監聽位址 |
+| `MARKWORD_HOST` | `127.0.0.1` | 使用 `python app.py` 或 `python -m backend.main` 啟動時的監聽位址 |
 | `MARKWORD_PORT` | `27860` | 使用 `python app.py` 啟動時的監聽埠 |
 
 ### systemd 部署
@@ -130,6 +138,8 @@ sudo -u markword npm run build
 cd /opt/markword
 sudo -u markword uv venv
 sudo -u markword uv pip install -r requirements.txt
+sudo /opt/markword/.venv/bin/python -m playwright install-deps chromium
+sudo -u markword /opt/markword/.venv/bin/python -m playwright install chromium
 sudo install -m 0644 markword.service.example /etc/systemd/system/markword.service
 ```
 
@@ -146,10 +156,11 @@ sudo systemctl status markword
 ```bash
 cd /opt/markword/frontend && sudo -u markword npm install && sudo -u markword npm run build
 cd /opt/markword && sudo -u markword uv pip install -r requirements.txt
+sudo -u markword /opt/markword/.venv/bin/python -m playwright install chromium
 sudo systemctl restart markword
 ```
 
-若要直接公開到網際網路，建議在 FastAPI 前方放置 Caddy 或 Nginx，負責 TLS、網域與請求大小限制；Uvicorn 維持監聽 loopback，再由 reverse proxy 轉送。
+預設啟動方式與 Docker Compose 只讓本機連線。API 沒有內建登入驗證；若自行改成區網監聽或透過反向代理公開，需另行加入存取驗證與請求／資源限制。Docker 內部的 Uvicorn 仍監聽 `0.0.0.0`，對外範圍由 Compose 的 `127.0.0.1:27860:27860` 限制。
 
 ## 開發
 
@@ -168,11 +179,13 @@ docker-compose.yml   單機容器部署範例
 
 ### 本機開發
 
-先安裝後端依賴並啟動 FastAPI：
+先安裝後端依賴與本機 Chromium，並安裝前端依賴以提供 Mermaid 套件：
 
 ```bash
 uv venv
 uv pip install -r requirements.txt
+uv run python -m playwright install --with-deps chromium
+npm --prefix frontend ci
 uv run uvicorn backend.main:app --reload --host 127.0.0.1 --port 27860
 ```
 
@@ -197,10 +210,12 @@ cd frontend
 npm install
 npm run build
 cd ..
-uv run uvicorn backend.main:app --host 0.0.0.0 --port 27860
+uv run uvicorn backend.main:app --host 127.0.0.1 --port 27860
 ```
 
 瀏覽器開啟 `http://localhost:27860`。重新部署前端變更時，須再次執行 `npm run build`。
+
+Mermaid 匯出會讀取 `frontend/node_modules/mermaid/dist/mermaid.min.js`，正式版部署也要保留此檔。Docker 建置會自動複製該套件檔並安裝 Chromium；手動部署若只複製 `frontend/dist`，需一併補齊此檔與 Playwright 瀏覽器。
 
 ### API
 

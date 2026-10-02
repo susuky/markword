@@ -13,6 +13,7 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from starlette.background import BackgroundTask
+from weasyprint.urls import FatalURLFetchingError
 
 from app import (
     _cleanup_old_exports,
@@ -124,6 +125,11 @@ async def _export_response(
 
     try:
         path = await run_in_threadpool(exporter, payload.markdown, payload.theme, payload.style)
+    except FatalURLFetchingError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail="PDF export could not load a resource. Use embedded images and styles instead of external or local file references.",
+        ) from exc
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"{export_format} export failed") from exc
 
@@ -177,6 +183,6 @@ if __name__ == "__main__":
 
     uvicorn.run(
         "backend.main:app",
-        host=os.getenv("MARKWORD_HOST", "0.0.0.0"),
+        host=os.getenv("MARKWORD_HOST", "127.0.0.1"),
         port=int(os.getenv("MARKWORD_PORT", "27860")),
     )

@@ -5,7 +5,7 @@ services:
     image: markword:local
     restart: unless-stopped
     ports:
-      - "27860:27860"
+      - "127.0.0.1:27860:27860"
     environment:
       MARKWORD_FRONTEND_DIR: /app/frontend/dist
       MARKWORD_EXPORT_DIR: /app/exports

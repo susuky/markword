@@ -14,7 +14,8 @@ LABEL org.opencontainers.image.licenses="LicenseRef-Proprietary"
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     MARKWORD_FRONTEND_DIR=/app/frontend/dist \
-    MARKWORD_EXPORT_DIR=/app/exports
+    MARKWORD_EXPORT_DIR=/app/exports \
+    PLAYWRIGHT_BROWSERS_PATH=/opt/playwright
 
 RUN apt-get update \
     && apt-get install --no-install-recommends -y \
@@ -27,13 +28,16 @@ RUN apt-get update \
 
 WORKDIR /app
 COPY requirements.txt ./
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt \
+    && python -m playwright install --with-deps chromium \
+    && rm -rf /var/lib/apt/lists/*
 
 RUN groupadd --system markword \
     && useradd --system --gid markword --create-home --home-dir /home/markword --shell /usr/sbin/nologin markword
 
 COPY --chown=markword:markword . .
 COPY --chown=markword:markword --from=frontend-build /build/frontend/dist ./frontend/dist
+COPY --chown=markword:markword --from=frontend-build /build/frontend/node_modules/mermaid/dist/mermaid.min.js ./frontend/node_modules/mermaid/dist/mermaid.min.js
 
 RUN mkdir -p /app/exports \
     && chown -R markword:markword /app/exports
