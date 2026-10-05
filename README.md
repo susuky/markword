@@ -210,7 +210,7 @@ The complete request/response schema is available at `/docs`. `python app.py` re
 
 ### GitHub Pages build
 
-The repository includes `.github/workflows/deploy-pages.yml` for publishing a static edition. To enable deployment, select **GitHub Actions** in **Settings → Pages → Build and deployment**. Once configured, pushes to `main` trigger the workflow.
+GitHub Pages 發布目前停用：GitHub Actions 中的 Pages workflow 已手動停用；`.github/workflows/deploy-pages.yml` 也已停用推送觸發與建置工作。恢復方式請參閱[繁體中文建置說明](README.zh-TW.md#github-pages-建置)；靜態版建置與 CI 檢查仍保留。
 
 Pages uses a dedicated `pages` build mode. The normal `npm run build` and full FastAPI deployment remain unchanged. Build the Pages edition locally with:
 

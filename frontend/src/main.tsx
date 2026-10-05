@@ -18,14 +18,11 @@ const isProduction = (import.meta as ImportMeta & { env?: { PROD?: boolean } }).
 
 if (isProduction && 'serviceWorker' in navigator) {
   const hadServiceWorkerController = navigator.serviceWorker.controller !== null
-  let isReloadingForServiceWorker = false
 
   if (hadServiceWorkerController) {
     navigator.serviceWorker.addEventListener('controllerchange', () => {
-      if (isReloadingForServiceWorker) return
-      isReloadingForServiceWorker = true
-      window.location.reload()
-    }, { once: true })
+      window.dispatchEvent(new Event('markword:update-available'))
+    })
   }
 
   window.addEventListener('load', () => {

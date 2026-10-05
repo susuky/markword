@@ -81,6 +81,14 @@ test('Word files at the 15 MiB limit still import successfully', async ({ page }
 })
 
 test('dropping Word converts it, and invalid imports preserve the current draft', async ({ page }) => {
+  // Keep the preceding error visible while the next invalid Word is processing.
+  await page.addInitScript(() => {
+    const arrayBuffer = File.prototype.arrayBuffer
+    File.prototype.arrayBuffer = async function () {
+      if (this.name === 'Meeting.docx') await new Promise((resolve) => setTimeout(resolve, 400))
+      return arrayBuffer.call(this)
+    }
+  })
   await page.goto('./')
   await expect(page.locator('.cm-content')).toBeVisible()
   // LAN deployments over HTTP may not provide crypto.randomUUID.
@@ -105,7 +113,10 @@ test('dropping Word converts it, and invalid imports preserve the current draft'
     { name: 'Legacy.doc', mimeType: 'application/msword', buffer: Buffer.from('legacy') },
     { name: 'Wrong.pdf', mimeType: 'application/pdf', buffer: Buffer.from('pdf') },
   ]) {
+    await expect(page.getByRole('button', { name: 'Open document or project', exact: true })).toBeEnabled()
     await input.setInputFiles(invalid)
+    // Identical errors from consecutive files must not satisfy this check early.
+    await expect(page.getByRole('button', { name: 'Open document or project', exact: true })).toBeEnabled()
     await expect(page.locator('.toast')).toContainText(invalid.name === 'Large.docx' ? 'larger than 15 MiB'
       : invalid.name === 'Legacy.doc' ? 'Save this Word file as .docx'
       : invalid.name === 'Wrong.pdf' ? 'Please choose a Markdown, text, Mermaid, Word (.docx)'
@@ -114,6 +125,24 @@ test('dropping Word converts it, and invalid imports preserve the current draft'
   }
   await input.setInputFiles({ name: 'Original.md', mimeType: 'text/markdown', buffer: Buffer.from('# Markdown still works') })
   await expect(page.locator('.markdown-body h1')).toHaveText('Markdown still works')
+})
+
+test('oversized Markdown and Word files are rejected before reading or replacing the draft', async ({ page }) => {
+  await page.addInitScript(() => {
+    File.prototype.text = File.prototype.arrayBuffer = async () => { throw new Error('Oversized files must not be read') }
+  })
+  await page.goto('./')
+  await page.locator('.cm-content').fill('# Preserve the current draft')
+  for (const name of ['Oversized.md', 'Oversized.docx']) {
+    await page.locator('input[type="file"]').first().setInputFiles({
+      name, mimeType: name.endsWith('.docx') ? wordMime : 'text/markdown', buffer: Buffer.alloc(15_728_641),
+    })
+    await expect(openButton()).toBeEnabled()
+    await expect(page.locator('.toast')).toHaveText('This file is larger than 15 MiB. Please choose a smaller file.')
+    await expect(page.locator('.cm-content')).toHaveText('# Preserve the current draft')
+  }
+
+  function openButton() { return page.getByRole('button', { name: 'Open document or project', exact: true }) }
 })
 
 test('Word import and review notices work on mobile in Traditional Chinese', async ({ page }) => {

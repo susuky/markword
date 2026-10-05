@@ -105,6 +105,8 @@ Markword 目前採用「單一工作草稿」模型，適合在自己的電腦�
 - 以「開啟」或拖放載入另一個 `.md`／`.markdown`／`.docx` 時，工作區會切換成新內容；Word 轉換失敗時保留目前文件。瀏覽器不會把原始文件加入 Git，也不會上傳到外部服務。
 - 目前內容會在編輯後約 350 ms 自動寫入瀏覽器 IndexedDB。內容持續變更時，每五分鐘建立一個本機版本，最多保留 120 個；還原前會先保存當下內容。
 - 多個分頁共用草稿時，寫入會比對儲存版本；較舊分頁無法覆寫另一分頁的新內容。出現衝突提示時，先下載該分頁的內容，再重新載入以讀取已儲存的版本。
+- 網頁有新版本時會先提示；選擇「儲存並更新」後，只有最新草稿成功儲存才會重新整理。儲存失敗或衝突時保留文件，可下載原始檔或含本機資產的專案 ZIP 備份。
+- 草稿載入完成前無法編輯或透過快捷鍵開啟檔案。開啟檔案期間仍可編輯；若內容或文件模式已有變更，就保留目前文件，不套用較晚完成的匯入結果。匯入的資產仍留在本機資產庫。
 - Markdown 改變時會重新產生帶有來源起訖行的預覽區塊。表格、程式碼、圖片、Mermaid 與 KaTeX 完成排版後，預覽會重新量測高度，因此同步捲動不依賴某一份固定文件或固定行高。
 - 磁碟上的原始檔若被其他程式修改，瀏覽器不會在背景持續監看；請重新開啟或拖放該檔案。若要把工作區內容寫回磁碟，使用 Markdown 下載按鈕。
 - 版本記錄、目前草稿與本機資產只存在該瀏覽器的本機儲存空間；清除網站資料或更換瀏覽器前，應先下載專案 ZIP。這不是多文件資料庫，也不會把測試文件提交到 repository。
@@ -239,7 +241,7 @@ Mermaid 匯出會讀取 `frontend/node_modules/mermaid/dist/mermaid.min.js`，�
 
 ### GitHub Pages 建置
 
-儲存庫提供 `.github/workflows/deploy-pages.yml` 作為靜態版發布流程。若要啟用，請先在 **Settings → Pages → Build and deployment** 將來源設為 **GitHub Actions**；設定完成後，推送到 `main` 會觸發建置與部署。
+GitHub Pages 發布目前停用：GitHub Actions 中的 Pages workflow 已手動停用；`.github/workflows/deploy-pages.yml` 也已移除 `main` 推送觸發，且建置工作設定為略過，即使重新啟用 workflow，仍不會部署。日後儲存庫具備 Pages 發布資格時，需移除 `build` 的停用條件、設定 **Settings → Pages → Build and deployment → GitHub Actions**，並在 Actions 重新啟用 workflow；可按需恢復推送觸發。
 
 Pages 使用獨立的 `pages` build mode；一般的 `npm run build` 與 FastAPI 完整版部署不受影響。本機可用以下指令驗證 Pages 產物：
 

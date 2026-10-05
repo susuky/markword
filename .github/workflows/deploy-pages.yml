@@ -1,8 +1,6 @@
 name: Deploy GitHub Pages
 
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -16,6 +14,8 @@ concurrency:
 
 jobs:
   build:
+    # 暫停 Pages 部署；待儲存庫具備 Pages 發布資格後再移除此條件。
+    if: ${{ false }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout

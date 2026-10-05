@@ -108,6 +108,7 @@ export default function App() {
   const [exportStyle, setExportStyle] = useState<ExportStyleName>(() => loadPreference('export-style', 'Classic'))
   const [exporting, setExporting] = useState<'pdf' | 'docx' | null>(null)
   const [notice, setNotice] = useState('')
+  const noticeTimerRef = useRef<number | null>(null)
   const [activeLine, setActiveLine] = useState(1)
   const [mobileOutlineOpen, setMobileOutlineOpen] = useState(false)
   const [outlineCollapsed, setOutlineCollapsed] = useState(() => loadPreference('outline-collapsed', false))
@@ -136,8 +137,14 @@ export default function App() {
   const [fileSaveFailed, setFileSaveFailed] = useState(false)
   const [clientExporting, setClientExporting] = useState<'html' | 'project' | null>(null)
   const [hydrated, setHydrated] = useState(false)
+  const [updateAvailable, setUpdateAvailable] = useState(false)
+  const [updateBusy, setUpdateBusy] = useState(false)
+  const [updateError, setUpdateError] = useState('')
   const [persistenceStatus, setPersistenceStatus] = useState<PersistenceStatus>('idle')
   const [persistence] = useState(() => new DraftPersistenceSession({ onStatusChange: setPersistenceStatus }))
+  const documentVersionRef = useRef(0)
+  const currentDocumentRef = useRef({ markdown, mode, theme })
+  currentDocumentRef.current = { markdown, mode, theme }
   const activeLineRef = useRef(1)
   const workspaceRef = useRef<HTMLDivElement>(null)
   const editorRef = useRef<EditorHandle>(null)
@@ -155,6 +162,24 @@ export default function App() {
   const referencedAssets = useMemo(() => mode === 'markdown' ? referencedAssetPaths(markdown) : new Set<string>(), [markdown, mode])
   activeLineRef.current = activeLine
 
+  const changeMarkdown = useCallback((content: string) => {
+    if (content !== currentDocumentRef.current.markdown) documentVersionRef.current += 1
+    currentDocumentRef.current.markdown = content
+    setMarkdown(content)
+  }, [])
+
+  const changeMode = useCallback((nextMode: DocumentMode) => {
+    if (nextMode !== currentDocumentRef.current.mode) documentVersionRef.current += 1
+    currentDocumentRef.current.mode = nextMode
+    setMode(nextMode)
+  }, [])
+
+  useEffect(() => {
+    const onUpdate = () => { setUpdateError(''); setUpdateAvailable(true) }
+    window.addEventListener('markword:update-available', onUpdate)
+    return () => window.removeEventListener('markword:update-available', onUpdate)
+  }, [])
+
   useEffect(() => {
     let cancelled = false
     void Promise.all([
@@ -162,8 +187,8 @@ export default function App() {
       listAssets().catch(() => []),
     ]).then(([draft, storedAssets]) => {
       if (cancelled) return
-      setMarkdown(draft.content)
-      setMode(normalizeDocumentMode(draft.metadata.mode))
+      changeMarkdown(draft.content)
+      changeMode(normalizeDocumentMode(draft.metadata.mode))
       setAssets(storedAssets)
       const savedTheme = draft.metadata.theme
       if (isThemeName(savedTheme)) setTheme(savedTheme)
@@ -179,7 +204,7 @@ export default function App() {
       cancelled = true
       persistence.stop()
     }
-  }, [persistence])
+  }, [changeMarkdown, changeMode, persistence])
 
   useEffect(() => {
     if (hydrated) persistence.update(markdown, { theme, mode })
@@ -207,9 +232,42 @@ export default function App() {
   }, [])
 
   const showNotice = useCallback((message: string) => {
+    if (noticeTimerRef.current !== null) window.clearTimeout(noticeTimerRef.current)
     setNotice(message)
-    window.setTimeout(() => setNotice(''), 3000)
+    noticeTimerRef.current = window.setTimeout(() => {
+      noticeTimerRef.current = null
+      setNotice('')
+    }, 3000)
   }, [])
+
+  useEffect(() => () => {
+    if (noticeTimerRef.current !== null) window.clearTimeout(noticeTimerRef.current)
+  }, [])
+
+  const saveAndUpdate = async () => {
+    if (!hydrated || updateBusy || fileBusyRef.current || assetBusy || clientExporting) return
+    setUpdateBusy(true)
+    setUpdateError('')
+    try {
+      const version = documentVersionRef.current
+      const current = currentDocumentRef.current
+      // Include edits whose React persistence effect has not run yet.
+      persistence.update(current.markdown, { theme: current.theme, mode: current.mode })
+      const saved = await persistence.flush()
+      const latest = currentDocumentRef.current
+      if (version !== documentVersionRef.current || saved.content !== latest.markdown
+        || saved.metadata.mode !== latest.mode || saved.metadata.theme !== latest.theme
+        || fileBusyRef.current) {
+        setUpdateError(t('Your document changed while saving. Save again to update.'))
+        return
+      }
+      window.location.reload()
+    } catch {
+      setUpdateError(t('Your draft could not be saved. Download a backup before reloading, or try saving again.'))
+    } finally {
+      setUpdateBusy(false)
+    }
+  }
 
   const refreshAssets = useCallback(async () => {
     const storedAssets = await listAssets()
@@ -242,10 +300,16 @@ export default function App() {
   }, [assetBusy, insertAssets, refreshAssets, showNotice, t])
 
   const loadFile = useCallback(async (inputFile?: File) => {
-    if (fileBusyRef.current || wordImportBusyRef.current || assetBusy) return
+    if (!hydrated || fileBusyRef.current || wordImportBusyRef.current || assetBusy) return
     if (!inputFile && !canOpenLocalFile) { fileInputRef.current?.click(); return }
     fileBusyRef.current = true
     setFileBusy('opening')
+    const openingVersion = documentVersionRef.current
+    const canReplaceDocument = () => {
+      if (documentVersionRef.current === openingVersion) return true
+      showNotice(t('Your document changed while opening this file. Your edits are kept; open the file again when you are ready.'))
+      return false
+    }
     try {
       const picked = inputFile ? null : await pickLocalFile(t('Documents and projects'))
       const file = inputFile ?? picked?.file
@@ -255,12 +319,13 @@ export default function App() {
         setAssetBusy(true)
         try {
           const project = await importProjectArchive(file)
-          setMarkdown(project.markdown)
-          setMode(project.mode)
+          await refreshAssets()
+          if (!canReplaceDocument()) return
+          changeMarkdown(project.markdown)
+          changeMode(project.mode)
           setLinkedFile(null)
           setFileSaveFailed(false)
           setActiveLine(1)
-          await refreshAssets()
           editorRef.current?.jumpToLine(1)
           showNotice(t('Opened project {file}', { file: file.name }))
         } catch (error) {
@@ -291,8 +356,9 @@ export default function App() {
           const { importWordDocument } = await import('./wordImport')
           const converted = await importWordDocument(file)
           await refreshAssets()
-          setMarkdown(converted.markdown)
-          setMode('markdown')
+          if (!canReplaceDocument()) return
+          changeMarkdown(converted.markdown)
+          changeMode('markdown')
           setLinkedFile(null)
           setFileSaveFailed(false)
           setActiveLine(1)
@@ -311,9 +377,10 @@ export default function App() {
       }
       try {
         const content = await file.text()
+        if (!canReplaceDocument()) return
         const nextMode = /\.(mmd|mermaid)$/i.test(file.name) ? 'mermaid' : /\.txt$/i.test(file.name) ? 'text' : 'markdown'
-        setMarkdown(content)
-        setMode(nextMode)
+        changeMarkdown(content)
+        changeMode(nextMode)
         setLinkedFile(picked && canSaveLocalFile ? { handle: picked.handle, content, byteLength: file.size, mode: nextMode } : null)
         setFileSaveFailed(false)
         setActiveLine(1)
@@ -328,7 +395,7 @@ export default function App() {
       fileBusyRef.current = false
       setFileBusy(null)
     }
-  }, [assetBusy, refreshAssets, showNotice, t])
+  }, [assetBusy, changeMarkdown, changeMode, hydrated, refreshAssets, showNotice, t])
 
   const handleDroppedFiles = useCallback(async (files: readonly File[]) => {
     const documentFile = files.find((file) => /\.(?:md|markdown|txt|mmd|mermaid|docx|doc|zip)$/i.test(file.name))
@@ -523,6 +590,7 @@ export default function App() {
   ].map((action) => ({ ...action, shortcut: formatShortcut(shortcuts[action.id]) })), [createManualSnapshot, downloadHtml, downloadSource, downloadProject, focusMode, loadFile, mode, saveFile, shortcuts, syncEnabled, t, typewriterMode])
 
   useEffect(() => {
+    if (!hydrated) return
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.defaultPrevented || event.isComposing || event.keyCode === 229 || event.repeat) return
       const target = event.target as HTMLElement | null
@@ -548,7 +616,7 @@ export default function App() {
     }
     window.addEventListener('keydown', onKeyDown, true)
     return () => window.removeEventListener('keydown', onKeyDown, true)
-  }, [commandActions, focusMode, shortcuts])
+  }, [commandActions, focusMode, hydrated, shortcuts])
 
   if (!hydrated) {
     return <main className="app-shell productivity-shell"><div className="app-loading">{t('Loading local draft…')}</div></main>
@@ -613,8 +681,8 @@ export default function App() {
         {mode === 'markdown' && mobileOutlineOpen ? <button className="outline-scrim" type="button" aria-label={t('Collapse document outline')} onClick={() => setMobileOutlineOpen(false)} /> : null}
         {mode === 'markdown' ? <OutlinePanel mobileOpen={mobileOutlineOpen} onMobileClose={() => setMobileOutlineOpen(false)} headings={headings} collapsed={outlineCollapsed} activeLine={activeLine} onCollapsedChange={setOutlineCollapsed} onJump={jumpToLine} /> : null}
         <section className="pane pane--editor" style={{ flex: `${split} 1 0` }}>
-          <header className="pane-header"><div className="pane-title"><FileText size={16} aria-hidden="true" />{t('Editor')}<select className="document-mode" aria-label={t('Document mode')} value={mode} onChange={(event) => setMode(normalizeDocumentMode(event.target.value))}>{(Object.keys(DOCUMENT_MODES) as DocumentMode[]).map((value) => <option key={value} value={value}>{t(DOCUMENT_MODES[value].label)}</option>)}</select></div><div className="pane-tools">{mode === 'markdown' ? <button type="button" className="table-tool" onClick={() => editorRef.current?.editTable()} title={t('Insert or edit table')} aria-label={t('Insert or edit table')}><Table2 size={17} aria-hidden="true" /><span>{t('Table')}</span></button> : null}<button type="button" onClick={() => editorRef.current?.search()} title={t('Search document')} aria-label={t('Search document')}><Search size={17} aria-hidden="true" /></button><button type="button" className={typewriterMode ? 'is-active' : ''} aria-pressed={typewriterMode} onClick={() => setTypewriterMode((enabled) => !enabled)} title={t('Typewriter mode')} aria-label={t('Typewriter mode')}><AlignCenter size={17} aria-hidden="true" /></button></div></header>
-          <EditorPane ref={editorRef} mode={mode} value={markdown} onChange={setMarkdown} onScrollLine={handleEditorScroll} typewriter={typewriterMode} onSlashCommand={() => setCommandOpen(true)} onPasteFiles={(files) => void handleAssetFiles(files)} />
+          <header className="pane-header"><div className="pane-title"><FileText size={16} aria-hidden="true" />{t('Editor')}<select className="document-mode" aria-label={t('Document mode')} value={mode} onChange={(event) => changeMode(normalizeDocumentMode(event.target.value))}>{(Object.keys(DOCUMENT_MODES) as DocumentMode[]).map((value) => <option key={value} value={value}>{t(DOCUMENT_MODES[value].label)}</option>)}</select></div><div className="pane-tools">{mode === 'markdown' ? <button type="button" className="table-tool" onClick={() => editorRef.current?.editTable()} title={t('Insert or edit table')} aria-label={t('Insert or edit table')}><Table2 size={17} aria-hidden="true" /><span>{t('Table')}</span></button> : null}<button type="button" onClick={() => editorRef.current?.search()} title={t('Search document')} aria-label={t('Search document')}><Search size={17} aria-hidden="true" /></button><button type="button" className={typewriterMode ? 'is-active' : ''} aria-pressed={typewriterMode} onClick={() => setTypewriterMode((enabled) => !enabled)} title={t('Typewriter mode')} aria-label={t('Typewriter mode')}><AlignCenter size={17} aria-hidden="true" /></button></div></header>
+          <EditorPane ref={editorRef} mode={mode} value={markdown} onChange={changeMarkdown} onScrollLine={handleEditorScroll} typewriter={typewriterMode} onSlashCommand={() => setCommandOpen(true)} onPasteFiles={(files) => void handleAssetFiles(files)} />
         </section>
 
         <button className="splitter" type="button" onPointerDown={beginResize} onKeyDown={(event) => {
@@ -632,7 +700,7 @@ export default function App() {
         </section>
 
         {dragActive ? <div className="drop-target" aria-hidden="true"><Paperclip size={34} /><strong>{t('Drop to open or insert files')}</strong><span>{t('Markdown, text, Mermaid, Word (.docx), project ZIP, and media')}</span></div> : null}
-        {statsOpen ? <StatsPopover stats={stats} available={available} staticDeployment={IS_STATIC_DEPLOYMENT} onClose={() => setStatsOpen(false)} onClear={() => { if (window.confirm(t('Clear this document? Download a copy first if you want to keep it.'))) setMarkdown('') }} /> : null}
+        {statsOpen ? <StatsPopover stats={stats} available={available} staticDeployment={IS_STATIC_DEPLOYMENT} onClose={() => setStatsOpen(false)} onClear={() => { if (window.confirm(t('Clear this document? Download a copy first if you want to keep it.'))) changeMarkdown('') }} /> : null}
       </section>
 
       <footer className="status-bar">
@@ -667,8 +735,8 @@ export default function App() {
             persistence={persistence}
             onClose={() => setRevisionsOpen(false)}
             onRestore={(content, metadata) => {
-              setMarkdown(content)
-              setMode(normalizeDocumentMode(metadata.mode))
+              changeMarkdown(content)
+              changeMode(normalizeDocumentMode(metadata.mode))
               const restoredTheme = metadata.theme
               if (isThemeName(restoredTheme)) setTheme(restoredTheme)
             }}
@@ -683,6 +751,19 @@ export default function App() {
             <button type="button" onClick={() => setFileError('')}>{t('Close')}</button>
             <button type="button" onClick={() => { downloadSource(); setFileError('') }}>{t('Download source')}</button>
             <button type="button" className="file-error-panel__primary" onClick={() => void saveFile(true)}>{t('Save as…')}</button>
+          </div>
+        </section>
+      </Modal> : null}
+      {updateAvailable ? <Modal label={t('Update available')} onClose={() => { if (!updateBusy) setUpdateAvailable(false) }} className="update-overlay">
+        <section className="file-error-panel">
+          <h2>{t('Update available')}</h2>
+          <p>{t('A new version is ready. Save your draft before updating.')}</p>
+          {updateError ? <p role="alert">{updateError}</p> : null}
+          <div>
+            <button type="button" disabled={updateBusy} onClick={() => setUpdateAvailable(false)}>{t('Later')}</button>
+            <button type="button" onClick={downloadSource}>{t('Download source')}</button>
+            <button type="button" disabled={Boolean(clientExporting) || assetBusy || Boolean(fileBusy)} onClick={() => void downloadProject()}>{t('Download project ZIP')}</button>
+            <button type="button" className="file-error-panel__primary" disabled={updateBusy || Boolean(fileBusy) || assetBusy || Boolean(clientExporting)} onClick={() => void saveAndUpdate()}>{t(updateBusy ? 'Saving…' : 'Save and update')}</button>
           </div>
         </section>
       </Modal> : null}
