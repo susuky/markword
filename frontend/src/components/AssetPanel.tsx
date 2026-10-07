@@ -106,7 +106,7 @@ export function AssetPanel({
 
         <div className="asset-panel__actions">
           <button type="button" className="asset-primary" disabled={busy} onClick={onAdd}><Plus size={16} />{t('Import files')}</button>
-          <button type="button" disabled={busy} onClick={onExportProject}><Archive size={16} />{t('Download project ZIP')}</button>
+          <button type="button" disabled={busy} onClick={onExportProject}><Archive size={16} />{t('Download document and asset library ZIP')}</button>
         </div>
 
         <div className="asset-list">
@@ -129,7 +129,7 @@ export function AssetPanel({
           )}
         </div>
 
-        <footer><HardDrive size={14} /><span>{t('Export a project ZIP before clearing browser data or changing devices.')}</span></footer>
+        <footer><HardDrive size={14} /><span>{t('This ZIP saves the current document and asset library, but not revision history.')}</span></footer>
       </section>
     </Modal>
   )

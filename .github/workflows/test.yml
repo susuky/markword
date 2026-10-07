@@ -26,7 +26,7 @@ jobs:
       - name: Install dependencies and browsers
         run: |
           sudo apt-get update
-          sudo apt-get install -y fonts-noto-cjk libpango-1.0-0 libpangoft2-1.0-0
+          sudo apt-get install -y fonts-noto-cjk libpango-1.0-0 libpangoft2-1.0-0 poppler-utils
           pip install -r requirements.txt pytest httpx
           npm --prefix frontend ci
           python -m playwright install --with-deps chromium

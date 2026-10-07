@@ -160,6 +160,33 @@ async def test_real_export_job_downloads_and_cleans_up(client, monkeypatch, tmp_
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize('export_format', ['pdf', 'docx'])
+async def test_worker_preserves_math_and_embedded_image(client, monkeypatch, tmp_path, export_format):
+    import base64
+    from io import BytesIO
+    from docx import Document
+    from PIL import Image
+    import app as export_app
+
+    monkeypatch.setattr(export_app, 'EXPORT_DIR', str(tmp_path))
+    image = BytesIO()
+    Image.new('RGB', (20, 20), '#237474').save(image, format='PNG')
+    image_url = 'data:image/png;base64,' + base64.b64encode(image.getvalue()).decode()
+    response = await client.post(f'/api/export/{export_format}', json={
+        'markdown': f'# Formula and picture\n\nBefore $x^2$ after.\n\n![Photo]({image_url})\n\n- [x] Done',
+    })
+    assert response.status_code == 200, response.text if response.status_code != 200 else ''
+    if export_format == 'pdf':
+        assert response.content.startswith(b'%PDF-')
+        assert response.content.count(b'/Subtype /Image') >= 2
+    else:
+        doc = Document(BytesIO(response.content))
+        assert len(doc.inline_shapes) == 2
+        assert any(p.text == 'Before  after.' for p in doc.paragraphs)
+    assert list(tmp_path.iterdir()) == []
+
+
+@pytest.mark.anyio
 async def test_spa_fallback(client, monkeypatch, tmp_path):
     (tmp_path / "index.html").write_text("<main>Markword</main>", encoding="utf-8")
     monkeypatch.setattr(main, "FRONTEND_DIR", Path(tmp_path))

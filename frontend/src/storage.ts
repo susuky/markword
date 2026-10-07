@@ -14,7 +14,7 @@ export const MAX_REVISIONS = 120
 
 export type MetadataValue = string | number | boolean | null
 export type DraftMetadata = Record<string, MetadataValue>
-export type RevisionReason = 'auto' | 'manual' | 'pre-restore'
+export type RevisionReason = 'auto' | 'manual' | 'pre-restore' | 'pre-open'
 export type PersistenceStatus = 'idle' | 'saving' | 'saved' | 'error' | 'conflict'
 export type AssetKind = 'image' | 'video' | 'audio' | 'file'
 
@@ -139,7 +139,7 @@ function cloneMetadata(metadata: DraftMetadata = {}): DraftMetadata {
 }
 
 function createRevisionId(): string {
-  if ('randomUUID' in crypto) return crypto.randomUUID()
+  if (typeof crypto.randomUUID === 'function') return crypto.randomUUID()
   return `${Date.now()}-${Math.random().toString(36).slice(2)}`
 }
 
@@ -424,9 +424,9 @@ export class DraftPersistenceSession {
   }
 
   async snapshot(reason: RevisionReason = 'manual'): Promise<Revision> {
-    await this.flush()
-    const revision = await createSnapshot(this.content, this.metadata, reason)
-    this.lastSnapshottedContent = this.content
+    const draft = await this.flush()
+    const revision = await createSnapshot(draft.content, draft.metadata, reason)
+    this.lastSnapshottedContent = revision.content
     this.options.onRevisionCreated?.(revision)
     return revision
   }

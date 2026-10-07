@@ -30,6 +30,7 @@ const REASON_LABELS: Record<Revision['reason'], string> = {
   auto: 'Auto revision',
   manual: 'Manual revision',
   'pre-restore': 'Pre-restore backup',
+  'pre-open': 'Pre-open backup',
 }
 
 function formatDate(timestamp: number, locale: string): string {

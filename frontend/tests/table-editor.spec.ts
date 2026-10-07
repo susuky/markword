@@ -156,6 +156,12 @@ test('keyboard navigation, composition, cancellation, and document modes remain 
     element.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true, data: '中文' }))
   })
   await expect(first).toBeFocused()
+  await first.evaluate((element) => {
+    // Some IMEs report the commit key as 229 after isComposing has cleared.
+    element.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', keyCode: 229, bubbles: true, cancelable: true }))
+    element.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', keyCode: 229, bubbles: true, cancelable: true }))
+  })
+  await expect(first).toBeFocused()
   await first.fill('中文表頭')
   await page.keyboard.press('Enter')
   await expect(page.getByRole('textbox', { name: 'Row 1, column 1', exact: true })).toBeFocused()

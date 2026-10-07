@@ -8,6 +8,9 @@ declare global {
       releaseRead?: () => void
       releaseDraft?: () => void
       pickerCalls?: number
+      failRevisionWrites?: boolean
+      holdSnapshot?: boolean
+      releaseSnapshot?: () => void
     }
   }
 }
@@ -95,7 +98,7 @@ test('a conflicting update keeps both tab copies and offers a project backup on 
   await expect(stale.locator('.save-status')).toContainText('其他分頁已更新')
   await expect(stale.locator('.cm-content')).toHaveText('# 保留此分頁的修改')
   const backup = stale.waitForEvent('download')
-  await dialog.getByRole('button', { name: '下載專案 ZIP', exact: true }).click()
+  await dialog.getByRole('button', { name: '下載文件與資產庫 ZIP', exact: true }).click()
   expect((await backup).suggestedFilename()).toMatch(/\.markword\.zip$/)
   await expect(dialog).toBeVisible()
   expect(await stale.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
@@ -128,6 +131,31 @@ async function holdFileRead(page: Page) {
 }
 
 for (const file of slowFiles) {
+  test(`opening ${file.name} backs up the latest content and document settings before replacement`, async ({ page }, testInfo) => {
+    await page.goto('/')
+    await page.getByRole('combobox', { name: 'Document mode' }).selectOption('text')
+    await page.getByRole('button', { name: 'Preview theme: Light', exact: true }).click()
+    await page.locator('.theme-menu__grid button').nth(1).click()
+    const original = 'Latest text before opening another document'
+    const imported = file.name.endsWith('.docx') ? 'Imported source' : '# Imported source'
+    await page.locator('.cm-content').fill(original)
+    await page.locator('input[type=file]').first().setInputFiles(file)
+    await expect(page.locator('.cm-content')).toHaveText(imported)
+    await expect(page.locator('.save-status')).toHaveText('Saved in this browser')
+    await page.reload()
+    await expect(page.locator('.cm-content')).toHaveText(imported)
+    await page.getByRole('button', { name: 'Revision history', exact: true }).click()
+    await expect(page.locator('.revision-list')).toContainText('Pre-open backup')
+    await page.getByRole('button', { name: 'Restore this revision', exact: true }).click()
+    await expect(page.getByRole('textbox', { name: 'Source editor', exact: true })).toHaveText(original)
+    await expect(page.getByRole('combobox', { name: 'Document mode' })).toHaveValue('text')
+    await expect(page.getByRole('button', { name: 'Preview theme: Paper', exact: true })).toBeVisible()
+    await page.getByRole('button', { name: 'Close revision history', exact: true }).click()
+    await page.screenshot({ path: testInfo.outputPath(`pre-open-${file.name}.png`) })
+    await page.reload()
+    await expect(page.locator('.cm-content')).toHaveText(original)
+  })
+
   test(`delayed ${file.name} imports keep intervening edits and document mode`, async ({ page }) => {
     await holdFileRead(page)
     await page.goto('/')
@@ -148,6 +176,74 @@ for (const file of slowFiles) {
     await expect(page.getByRole('combobox', { name: 'Document mode' })).toHaveValue('text')
   })
 }
+
+test('a failed pre-open backup keeps the current document and can be retried', async ({ page }) => {
+  await page.addInitScript(() => {
+    window.dataLossHarness = { failRevisionWrites: false }
+    const add = IDBObjectStore.prototype.add
+    IDBObjectStore.prototype.add = function (...args) {
+      if (this.name === 'revisions' && window.dataLossHarness.failRevisionWrites) throw new DOMException('Storage full', 'QuotaExceededError')
+      return add.apply(this, args)
+    }
+  })
+  await page.goto('/')
+  await page.locator('.cm-content').fill('# Keep before opening')
+  await page.evaluate(() => { window.dataLossHarness.failRevisionWrites = true })
+  await page.locator('input[type=file]').first().setInputFiles(slowFiles[0])
+  await expect(page.locator('.toast')).toContainText('It has not been replaced')
+  await expect(page.locator('.cm-content')).toHaveText('# Keep before opening')
+  await page.reload()
+  await expect(page.locator('.cm-content')).toHaveText('# Keep before opening')
+  await page.locator('input[type=file]').first().setInputFiles(slowFiles[0])
+  await expect(page.locator('.cm-content')).toHaveText('# Imported source')
+})
+
+test('a conflicting pre-open backup does not replace either tab copy', async ({ page, context }) => {
+  await page.goto('/')
+  await page.locator('.cm-content').fill('# Shared copy')
+  await expect(page.locator('.save-status')).toHaveText('Saved in this browser')
+  const stale = await context.newPage()
+  await stale.goto('/')
+  await expect(stale.locator('.cm-content')).toHaveText('# Shared copy')
+  await page.locator('.cm-content').fill('# Newer copy in another tab')
+  await expect(page.locator('.save-status')).toHaveText('Saved in this browser')
+  await stale.locator('.cm-content').fill('# Unsaved stale copy')
+  await stale.locator('input[type=file]').first().setInputFiles(slowFiles[0])
+  await expect(stale.locator('.toast')).toContainText('It has not been replaced')
+  await expect(stale.locator('.cm-content')).toHaveText('# Unsaved stale copy')
+  await page.reload()
+  await expect(page.locator('.cm-content')).toHaveText('# Newer copy in another tab')
+})
+
+test('edits made while the pre-open snapshot commits are preserved', async ({ page }) => {
+  await page.addInitScript(() => {
+    window.dataLossHarness = { holdSnapshot: true }
+    const add = IDBObjectStore.prototype.add
+    IDBObjectStore.prototype.add = function (...args) {
+      const result = add.apply(this, args)
+      if (this.name === 'revisions' && window.dataLossHarness.holdSnapshot) {
+        window.dataLossHarness.holdSnapshot = false
+        const transaction = this.transaction
+        transaction.addEventListener('complete', (event) => {
+          event.stopImmediatePropagation()
+          window.dataLossHarness.releaseSnapshot = () => transaction.dispatchEvent(new Event('complete'))
+        }, { once: true })
+      }
+      return result
+    }
+  })
+  await page.goto('/')
+  await page.locator('.cm-content').fill('# Before snapshot')
+  await page.locator('input[type=file]').first().setInputFiles(slowFiles[0])
+  await expect.poll(() => page.evaluate(() => Boolean(window.dataLossHarness.releaseSnapshot))).toBe(true)
+  await page.locator('.cm-content').fill('# Edited while backing up')
+  await page.evaluate(() => window.dataLossHarness.releaseSnapshot?.())
+  await expect(page.locator('.toast')).toContainText('Your document changed while opening this file')
+  await expect(page.locator('.cm-content')).toHaveText('# Edited while backing up')
+  await expect(page.locator('.save-status')).toHaveText('Saved in this browser')
+  await page.reload()
+  await expect(page.locator('.cm-content')).toHaveText('# Edited while backing up')
+})
 
 test('updates wait for a pending import to finish', async ({ page }) => {
   await holdFileRead(page)

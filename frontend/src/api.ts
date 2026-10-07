@@ -1,5 +1,6 @@
 import type { ExportStyleName, TextStats, ThemeName } from './types'
 import { translate } from './i18n'
+import { inlineLocalImagesForExport } from './assets'
 
 async function parseError(response: Response) {
   try {
@@ -22,10 +23,11 @@ export async function analyzeText(text: string, signal?: AbortSignal): Promise<T
 }
 
 export async function exportDocument(format: 'pdf' | 'docx', markdown: string, theme: ThemeName, style: ExportStyleName) {
+  const source = await inlineLocalImagesForExport(markdown)
   const response = await fetch(`/api/export/${format}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ markdown, theme, ...(format === 'pdf' ? { style } : {}) }),
+    body: JSON.stringify({ markdown: source, theme, ...(format === 'pdf' ? { style } : {}) }),
   })
   if (!response.ok) throw new Error(await parseError(response))
   const blob = await response.blob()

@@ -3,7 +3,7 @@ import { DOCUMENT_MODES, normalizeDocumentMode } from './documentMode'
 import type { DocumentMode } from './types'
 import { unzipBounded } from './zip'
 import { markdownLanguage } from '@codemirror/lang-markdown'
-import { unescapeAll } from 'markdown-it/lib/common/utils.mjs'
+import { normalizeReference, unescapeAll } from 'markdown-it/lib/common/utils.mjs'
 import {
   getAssetsByPaths,
   listAssets,
@@ -14,6 +14,10 @@ import {
 
 export const MAX_LOCAL_ASSET_BYTES = 200 * 1024 * 1024
 export const PROJECT_ARCHIVE_MIME = 'application/zip'
+export type ProjectArchiveScope = 'all' | 'document'
+export const MAX_EXPORT_IMAGE_BYTES = 3 * 1024 * 1024
+const MAX_EXPORT_MARKDOWN_LENGTH = 5_000_000
+const EXPORT_IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/bmp'])
 
 const ASSET_DIRECTORY = 'assets/'
 const PROJECT_MANIFEST = 'markword.json'
@@ -29,6 +33,7 @@ interface ProjectManifest {
   version: 1
   document: string
   createdAt: string
+  missingAssets?: string[]
   assets?: Array<{
     path: string
     name: string
@@ -45,7 +50,7 @@ export interface ProjectArchive {
 }
 
 function createId(): string {
-  if ('randomUUID' in crypto) return crypto.randomUUID()
+  if (typeof crypto.randomUUID === 'function') return crypto.randomUUID()
   return `${Date.now()}-${Math.random().toString(36).slice(2)}`
 }
 
@@ -162,14 +167,82 @@ export function assetMarkdown(asset: StoredAsset): string {
   return `[📎 ${label}](${url})`
 }
 
-export function referencedAssetPaths(markdown: string): Set<string> {
-  const paths = new Set<string>()
-  const matches = markdown.matchAll(/(?:\.\/|\/)assets\/[A-Za-z0-9_%.,+@()\-~]+/g)
-  for (const match of matches) {
-    const path = normalizeAssetPath(match[0])
-    if (path) paths.add(path)
+interface AssetReference {
+  path: string
+  from: number
+  to: number
+  image: boolean
+  // Reference images become inline images, leaving shared link definitions intact.
+  referenceTitle?: string
+}
+
+function localAssetReferences(markdown: string): AssetReference[] {
+  // Markdown escapes cannot encode letters; percent URLs and HTML entities can.
+  // Skip parsing prose only when neither a literal nor encoded assets/ is possible.
+  if (!/assets|[%&]/.test(markdown)) return []
+  const references: AssetReference[] = []
+  const definitions = new Map<string, { path: string | null; title: string }>()
+  const pending: Array<{ label: string; from: number; to: number; image: boolean }> = []
+  let tree = markdownLanguage.parser.parse(markdown)
+  if (markdown.includes('[^')) {
+    // The editor's CommonMark parser treats a short footnote as a link
+    // definition. Mask its opening bracket without shifting source positions
+    // so images in Markword footnote content are parsed as inline Markdown.
+    let footnotes = markdown
+    tree.iterate({ enter({ node, name, from }) {
+      if (name !== 'LinkReference') return
+      const label = node.getChild('LinkLabel')
+      if (label && markdown.slice(label.from, label.from + 2) === '[^') {
+        footnotes = footnotes.slice(0, from) + 'x' + footnotes.slice(from + 1)
+      }
+    } })
+    if (footnotes !== markdown) tree = markdownLanguage.parser.parse(footnotes)
   }
-  return paths
+  // URL nodes preserve exact source ranges, including escaped parentheses and
+  // angle brackets. Fenced/inline code has no link nodes and stays literal.
+  tree.iterate({ enter({ node, name, from, to }) {
+    if (name !== 'Image' && name !== 'Link' && name !== 'LinkReference') return
+    const url = node.getChild('URL')
+    const label = node.getChild('LinkLabel')
+    const path = url ? normalizeAssetPath(unescapeAll(markdown.slice(url.from, url.to))) : null
+    if (name === 'LinkReference') {
+      if (label) {
+        const key = normalizeReference(markdown.slice(label.from + 1, label.to - 1))
+        const title = node.getChild('LinkTitle')
+        // CommonMark uses the first definition, even if it points outside assets/.
+        if (!definitions.has(key)) definitions.set(key, { path, title: title ? markdown.slice(title.from, title.to) : '' })
+      }
+    } else if (url) {
+      if (path) references.push({ path, from: url.from, to: url.to, image: name === 'Image' })
+    } else {
+      const closing = node.getChildren('LinkMark').find((mark) => markdown.slice(mark.from, mark.to) === ']')
+      if (!closing) return
+      const explicit = label ? markdown.slice(label.from + 1, label.to - 1) : ''
+      pending.push({
+        label: normalizeReference(explicit || markdown.slice(from + (name === 'Image' ? 2 : 1), closing.from)),
+        from: closing.to,
+        to,
+        image: name === 'Image',
+      })
+    }
+    // Nested images/links in alt text render as text, not additional resources.
+    if (name === 'Image') return false
+  } })
+  for (const reference of pending) {
+    const definition = definitions.get(reference.label)
+    if (definition?.path) references.push({ ...reference, path: definition.path, referenceTitle: definition.title })
+  }
+  return references
+}
+
+export function referencedAssetPaths(markdown: string): Set<string> {
+  return new Set(localAssetReferences(markdown).map(({ path }) => path))
+}
+
+function requireReferencedAssets(paths: Iterable<string>, assets: ReadonlyMap<string, StoredAsset>): void {
+  for (const path of paths) {
+    if (!assets.has(path)) throw new Error(translate('Local asset is missing: {file}. Restore it before exporting.', { file: path }))
+  }
 }
 
 export async function importLocalAssets(files: readonly File[]): Promise<StoredAsset[]> {
@@ -211,6 +284,7 @@ export async function inlineAssetsInHtml(html: string): Promise<string> {
   const elements = Array.from(document.body.querySelectorAll<HTMLElement>('[data-asset-path]'))
   const paths = [...new Set(elements.map((element) => normalizeAssetPath(element.dataset.assetPath)).filter((path): path is string => Boolean(path)))]
   const assets = await getAssetsByPaths(paths)
+  requireReferencedAssets(paths, assets)
   const dataUrls = new Map<string, string>()
   for (const [path, asset] of assets) dataUrls.set(path, await blobToDataUrl(asset.blob))
 
@@ -227,7 +301,54 @@ export async function inlineAssetsInHtml(html: string): Promise<string> {
   return document.body.innerHTML
 }
 
-export async function createProjectArchive(markdown: string, title: string, assets: readonly StoredAsset[], mode: DocumentMode = 'markdown'): Promise<Blob> {
+export async function inlineLocalImagesForExport(markdown: string): Promise<string> {
+  if (markdown.length > MAX_EXPORT_MARKDOWN_LENGTH) {
+    throw new Error(translate('This document exceeds the export limits. Try a smaller document.'))
+  }
+  const images = localAssetReferences(markdown).filter(({ image }) => image)
+  if (!images.length) return markdown
+  const paths = [...new Set(images.map(({ path }) => path))]
+  const assets = await getAssetsByPaths(paths)
+  requireReferencedAssets(paths, assets)
+  const types = new Map<string, string>()
+  for (const [path, asset] of assets) {
+    const declaredType = (asset.blob.type || asset.type || '').split(';')[0].trim().toLowerCase()
+    const type = !declaredType || declaredType === 'application/octet-stream' ? mimeTypeFromName(asset.name) : declaredType
+    if (!EXPORT_IMAGE_TYPES.has(type)) {
+      throw new Error(translate('Cannot export {file}. Use a PNG, JPEG, GIF, WebP, or BMP image.', { file: asset.name }))
+    }
+    if (asset.blob.size > MAX_EXPORT_IMAGE_BYTES) {
+      throw new Error(translate('Image {file} is larger than 3 MB. Use a smaller image or download portable HTML.', { file: asset.name }))
+    }
+    types.set(path, type)
+  }
+  const replacement = (image: AssetReference, url: string) => image.referenceTitle === undefined
+    ? url : `(${url}${image.referenceTitle ? ` ${image.referenceTitle}` : ''})`
+  const length = images.reduce((total, image) => {
+    const bytes = assets.get(image.path)!.blob.size
+    const header = `data:${types.get(image.path)};base64,`
+    return total + replacement(image, header).length + 4 * Math.ceil(bytes / 3) - (image.to - image.from)
+  }, markdown.length)
+  if (length > MAX_EXPORT_MARKDOWN_LENGTH) {
+    throw new Error(translate('Images make this document too large to export. Use smaller images or download portable HTML.'))
+  }
+  const dataUrls = new Map<string, string>()
+  for (const [path, asset] of assets) {
+    dataUrls.set(path, await blobToDataUrl(new Blob([asset.blob], { type: types.get(path) })))
+  }
+  let result = markdown
+  for (const image of images.sort((a, b) => b.from - a.from)) {
+    result = result.slice(0, image.from) + replacement(image, dataUrls.get(image.path)!) + result.slice(image.to)
+  }
+  return result
+}
+
+export async function createProjectArchive(markdown: string, title: string, assets: readonly StoredAsset[], mode: DocumentMode = 'markdown', scope: ProjectArchiveScope = 'all'): Promise<Blob> {
+  const paths = mode === 'markdown' ? referencedAssetPaths(markdown) : new Set<string>()
+  const available = new Map(assets.map((asset) => [asset.path, asset]))
+  if (scope === 'document') requireReferencedAssets(paths, available)
+  const missingAssets = [...paths].filter((path) => !available.has(path))
+  if (scope === 'document') assets = assets.filter((asset) => paths.has(asset.path))
   const projectBytes = new Blob([markdown]).size + assets.reduce((total, asset) => total + asset.size, 0)
   if (projectBytes > MAX_PROJECT_UNPACKED_BYTES) throw new Error(translate('Project contents exceed 500 MB'))
   if (assets.length + 2 > MAX_PROJECT_ENTRIES) throw new Error(translate('Archive contents exceed the import limits'))
@@ -241,6 +362,7 @@ export async function createProjectArchive(markdown: string, title: string, asse
     version: 1,
     document: documentName,
     createdAt: new Date().toISOString(),
+    ...(missingAssets.length ? { missingAssets } : {}),
     assets: assets.map(({ path, name, type, kind }) => ({ path, name, type, kind })),
   }
   const entries: Record<string, Uint8Array> = {

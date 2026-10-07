@@ -14,6 +14,7 @@ import time
 from bs4 import BeautifulSoup, NavigableString
 from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.opc.constants import RELATIONSHIP_TYPE as RT
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Inches, Pt, RGBColor
@@ -21,14 +22,14 @@ from docx.shared import Inches, Pt, RGBColor
 # backend never pays Gradio's large startup cost when an old environment still
 # happens to have the package installed.
 gr = None
-import markdown as md
 from markdown_it import MarkdownIt
 from weasyprint import HTML, URLFetcher
 from weasyprint.urls import FatalURLFetchingError
 
-from mermaid_renderer import MERMAID_BUNDLE, render_mermaid_png
+from mermaid_renderer import MERMAID_BUNDLE
 from themes import THEMES, Theme
 from export_styles import EXPORT_STYLES
+from export_markdown import render_export_body
 
 EXPORT_DIR = os.path.abspath(
     os.getenv(
@@ -139,15 +140,6 @@ _MERMAID_BLOCK_RE = re.compile(
     r'```mermaid\s*\n(.*?)```',
     re.DOTALL,
 )
-
-_MD_EXTENSIONS = [
-    'tables',
-    'fenced_code',
-    'codehilite',
-    'toc',
-    'sane_lists',
-    'smarty',
-]
 
 
 def _get_export_filename(md_text: str, ext: str = 'pdf') -> str:
@@ -448,20 +440,10 @@ def _render_md_to_html_for_export(md_text: str, theme: Theme, export_style: str 
     Returns:
         Complete HTML string suitable for weasyprint PDF generation.
     '''
-    def _mermaid_replacer(match: re.Match) -> str:
-        code = match.group(1).strip()
-        png_data = render_mermaid_png(code, theme)
-        if png_data:
-            b64_img = base64.b64encode(png_data).decode('utf-8')
-            return f'<div class="mermaid-img"><img src="data:image/png;base64,{b64_img}" alt="Mermaid Diagram" /></div>'
-        return f'<pre class="mermaid-fallback">[Mermaid diagram could not be rendered]\n{html.escape(code)}</pre>'
-
-    processed = _MERMAID_BLOCK_RE.sub(_mermaid_replacer, md_text)
-    body_html = md.markdown(processed, extensions=_MD_EXTENSIONS)
-    body_html = _sanitize_emojis_for_export(body_html)
+    body_html = _sanitize_emojis_for_export(render_export_body(md_text, theme))
     page = _build_html_page(body_html, theme, has_mermaid=False)
     style_css = EXPORT_STYLES.get(export_style, EXPORT_STYLES['Classic'])
-    return page.replace('</head>', f'<style>{style_css}</style></head>')
+    return page.replace('</head>', f'<style>{style_css} .math-block {{ text-align:center; }} .math-image {{ object-fit:contain; }} img {{ max-width:100%; }} </style></head>')
 
 
 def export_pdf(md_text: str, theme_name: str = 'Light', export_style: str = 'Classic') -> str | None:
@@ -598,6 +580,44 @@ def _append_node_to_paragraph(
     if tag == 'br':
         p.add_run().add_break()
         return
+    if tag == 'img':
+        # render_export_body has validated/normalized every user image; Mermaid
+        # and KaTeX images are produced locally after that validation boundary.
+        data = base64.b64decode(node['src'].split(',', 1)[1], validate=True)
+        run = p.add_run()
+        if 'math-image' in node.get('class', []):
+            width = min(float(node['width']) * .75, 396)
+            picture = run.add_picture(BytesIO(data), width=Pt(width))
+            descent = float(node.get('data-descent', '0')) * .75
+            if descent:
+                position = OxmlElement('w:position')
+                position.set(qn('w:val'), str(-round(descent * 2)))
+                run._r.get_or_add_rPr().append(position)
+        else:
+            from PIL import Image
+            with Image.open(BytesIO(data)) as image:
+                picture = run.add_picture(BytesIO(data), width=Pt(min(image.width * .75, 396)))
+        picture._inline.docPr.set('descr', node.get('alt', ''))
+        return
+    if tag == 'a' and node.get('href', '').startswith(('https://', 'http://', 'mailto:')):
+        hyperlink = OxmlElement('w:hyperlink')
+        hyperlink.set(qn('r:id'), p.part.relate_to(node['href'], RT.HYPERLINK, is_external=True))
+        first_run = len(p.runs)
+        for child in node.children:
+            _append_node_to_paragraph(p, child, theme, is_bold, is_italic, is_code, code_class)
+        for run in p.runs[first_run:]:
+            run.font.color.rgb = theme.docx_colors.link
+            run.font.underline = True
+            hyperlink.append(run._r)
+        p._p.append(hyperlink)
+        return
+    if tag == 'sup':
+        first_run = len(p.runs)
+        for child in node.children:
+            _append_node_to_paragraph(p, child, theme, is_bold, is_italic, is_code, code_class)
+        for run in p.runs[first_run:]:
+            run.font.superscript = True
+        return
     child_bold = is_bold or tag in ('strong', 'b')
     child_italic = is_italic or tag in ('em', 'i')
     child_code = is_code or tag in ('code', 'kbd', 'samp')
@@ -613,6 +633,13 @@ def _append_node_to_paragraph(
             is_code=child_code,
             code_class=child_class or code_class,
         )
+    if tag == 'a':
+        href = node.get('href', '')
+        if href and not href.startswith('#') and href != node.get_text():
+            # Unsupported/relative links stay inspectable text, never an
+            # external Word relationship that can open local files or scripts.
+            run = p.add_run(f' ({href})')
+            _set_cjk_font(run)
 
 
 def export_word(md_text: str, theme_name: str = 'Light', export_style: str = 'Classic') -> str | None:
@@ -652,25 +679,12 @@ def export_word(md_text: str, theme_name: str = 'Light', export_style: str = 'Cl
         rPr.insert(0, rFonts)
     rFonts.set(qn('w:eastAsia'), 'Noto Sans CJK TC')
 
-    # Keep rendered diagram bytes in this request, without temporary image files.
-    mermaid_images: dict[str, bytes] = {}
-
-    def _mermaid_word_replacer(match: re.Match) -> str:
-        code = match.group(1).strip()
-        png_data = render_mermaid_png(code, theme)
-        placeholder_id = f'MERMAID_IMG_PLACEHOLDER_{len(mermaid_images)}'
-        if png_data:
-            mermaid_images[placeholder_id] = png_data
-            return f'<p class="mermaid-img-p">{placeholder_id}</p>'
-        return f'<pre class="code-block">[Mermaid diagram could not be rendered]\n{html.escape(code)}</pre>'
-
-    processed_md = _MERMAID_BLOCK_RE.sub(_mermaid_word_replacer, md_text)
-
-    # Convert Markdown to HTML with Pygments codehilite
-    body_html = md.markdown(processed_md, extensions=_MD_EXTENSIONS)
-    body_html = body_html.replace('✅', '✓').replace('❌', '✗')
-
+    body_html = render_export_body(md_text, theme, math_color=f'#{theme.docx_colors.body}').replace('✅', '✓').replace('❌', '✗')
     soup = BeautifulSoup(body_html, 'html.parser')
+    # Python Markdown emits endnotes in a wrapper; keep their numbered content
+    # as ordinary Word blocks rather than dropping the wrapper's children.
+    for footnotes in soup.select('div.footnote'):
+        footnotes.unwrap()
 
     def append_list(element, depth=0):
         # Give each list its own numbering instance, including ordered starts.
@@ -747,17 +761,15 @@ def export_word(md_text: str, theme_name: str = 'Light', export_style: str = 'Cl
 
         # Paragraph
         if tag == 'p':
-            p_text = element.get_text().strip()
-            if p_text in mermaid_images:
-                p = doc.add_paragraph()
-                p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                run = p.add_run()
-                run.add_picture(BytesIO(mermaid_images[p_text]), width=Inches(5.5))
-                continue
-
             p = doc.add_paragraph()
+            if set(element.get('class', [])) & {'mermaid-img', 'math-block'}:
+                p.alignment = WD_ALIGN_PARAGRAPH.CENTER
             for child in element.children:
                 _append_node_to_paragraph(p, child, theme)
+            continue
+
+        if tag == 'img':
+            _append_node_to_paragraph(doc.add_paragraph(), element, theme)
             continue
 
         # Lists (ul / ol)
@@ -840,7 +852,12 @@ def export_word(md_text: str, theme_name: str = 'Light', export_style: str = 'Cl
         # Horizontal rule
         if tag == 'hr':
             p = doc.add_paragraph()
-            p.add_run('─' * 50)
+            borders = OxmlElement('w:pBdr')
+            line = OxmlElement('w:bottom')
+            for name, value in [('val', 'single'), ('sz', '6'), ('color', str(theme.docx_colors.body))]:
+                line.set(qn(f'w:{name}'), value)
+            borders.append(line)
+            p._p.get_or_add_pPr().append(borders)
             continue
 
     tmp_dir = tempfile.mkdtemp(dir=EXPORT_DIR, prefix='word_')

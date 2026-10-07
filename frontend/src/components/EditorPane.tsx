@@ -195,7 +195,7 @@ export const EditorPane = forwardRef<EditorHandle, EditorPaneProps>(function Edi
             return true
           },
           keydown: (event, view) => {
-            if (modeRef.current !== 'markdown' || event.isComposing) return false
+            if (modeRef.current !== 'markdown' || event.isComposing || event.keyCode === 229) return false
             if (event.key !== '/' || event.metaKey || event.ctrlKey || event.altKey) return false
             const selection = view.state.selection.main
             const line = view.state.doc.lineAt(selection.head)

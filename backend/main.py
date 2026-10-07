@@ -127,7 +127,7 @@ async def _export_response(
     except FatalURLFetchingError as exc:
         raise HTTPException(
             status_code=422,
-            detail="PDF export could not load a resource. Use embedded images and styles instead of external or local file references.",
+            detail="Export could not load an image or resource. Use embedded PNG, JPEG, GIF, WebP, or BMP images within the size limits; external and local file references are not supported.",
         ) from exc
     except HTTPException:
         raise

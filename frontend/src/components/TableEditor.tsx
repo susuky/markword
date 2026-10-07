@@ -37,7 +37,7 @@ export function TableEditor({ initial, existing, onApply, onClose }: {
   }
 
   const navigate = (event: KeyboardEvent<HTMLTextAreaElement>, row: number, column: number) => {
-    if (event.nativeEvent.isComposing || event.altKey || event.ctrlKey || event.metaKey) return
+    if (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229 || event.altKey || event.ctrlKey || event.metaKey) return
     let nextRow = row
     let nextColumn = column
     if (event.key === 'Tab') {

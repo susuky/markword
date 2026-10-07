@@ -263,7 +263,7 @@ test('project archives and revisions restore the document mode with the source',
   await page.keyboard.press('Escape')
   await page.getByRole('button', { name: 'Export', exact: true }).click()
   const pending = page.waitForEvent('download')
-  await page.getByRole('button', { name: 'Project ZIP Document and all local assets', exact: true }).click()
+  await page.getByRole('button', { name: 'Project ZIP Document and referenced local assets', exact: true }).click()
   const archive = await pending
   const archivePath = (await archive.path())!
   await page.getByRole('combobox', { name: 'Document mode' }).selectOption('markdown')

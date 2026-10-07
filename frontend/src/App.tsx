@@ -310,6 +310,18 @@ export default function App() {
       showNotice(t('Your document changed while opening this file. Your edits are kept; open the file again when you are ready.'))
       return false
     }
+    const backUpBeforeReplacing = async () => {
+      if (!canReplaceDocument()) return false
+      const current = currentDocumentRef.current
+      persistence.update(current.markdown, { theme: current.theme, mode: current.mode })
+      try {
+        await persistence.snapshot('pre-open')
+      } catch {
+        showNotice(t('Could not back up the current document. It has not been replaced. Download a backup and try again.'))
+        return false
+      }
+      return canReplaceDocument()
+    }
     try {
       const picked = inputFile ? null : await pickLocalFile(t('Documents and projects'))
       const file = inputFile ?? picked?.file
@@ -320,7 +332,7 @@ export default function App() {
         try {
           const project = await importProjectArchive(file)
           await refreshAssets()
-          if (!canReplaceDocument()) return
+          if (!await backUpBeforeReplacing()) return
           changeMarkdown(project.markdown)
           changeMode(project.mode)
           setLinkedFile(null)
@@ -356,7 +368,7 @@ export default function App() {
           const { importWordDocument } = await import('./wordImport')
           const converted = await importWordDocument(file)
           await refreshAssets()
-          if (!canReplaceDocument()) return
+          if (!await backUpBeforeReplacing()) return
           changeMarkdown(converted.markdown)
           changeMode('markdown')
           setLinkedFile(null)
@@ -377,7 +389,7 @@ export default function App() {
       }
       try {
         const content = await file.text()
-        if (!canReplaceDocument()) return
+        if (!await backUpBeforeReplacing()) return
         const nextMode = /\.(mmd|mermaid)$/i.test(file.name) ? 'mermaid' : /\.txt$/i.test(file.name) ? 'text' : 'markdown'
         changeMarkdown(content)
         changeMode(nextMode)
@@ -395,7 +407,7 @@ export default function App() {
       fileBusyRef.current = false
       setFileBusy(null)
     }
-  }, [assetBusy, changeMarkdown, changeMode, hydrated, refreshAssets, showNotice, t])
+  }, [assetBusy, changeMarkdown, changeMode, hydrated, persistence, refreshAssets, showNotice, t])
 
   const handleDroppedFiles = useCallback(async (files: readonly File[]) => {
     const documentFile = files.find((file) => /\.(?:md|markdown|txt|mmd|mermaid|docx|doc|zip)$/i.test(file.name))
@@ -448,20 +460,24 @@ export default function App() {
     }
   }, [clientExporting, exportStyle, locale, markdown, mode, previewTypography.mermaidFontSize, showNotice, t, theme])
 
-  const downloadProject = useCallback(async () => {
+  const downloadProject = useCallback(async (scope: 'all' | 'document' = 'document') => {
     if (clientExporting) return
     setClientExporting('project')
     try {
       const title = documentTitle(markdown)
-      const archive = await createProjectArchive(markdown, title, assets, mode)
+      const archive = await createProjectArchive(markdown, title, assets, mode, scope)
       downloadBlob(archive, 'application/zip', `${title}.markword.zip`)
-      showNotice(t('Project ZIP downloaded'))
+      const available = new Set(assets.map((asset) => asset.path))
+      const missingCount = [...referencedAssets].filter((path) => !available.has(path)).length
+      showNotice(scope === 'all' && missingCount
+        ? t('ZIP downloaded with {count} missing assets listed in the archive.', { count: missingCount })
+        : t('Project ZIP downloaded'))
     } catch (error) {
       showNotice(error instanceof Error ? error.message : t('Could not create project ZIP'))
     } finally {
       setClientExporting(null)
     }
-  }, [assets, clientExporting, markdown, mode, showNotice, t])
+  }, [assets, clientExporting, markdown, mode, referencedAssets, showNotice, t])
 
   const downloadLocalAsset = useCallback((asset: StoredAsset) => {
     downloadBlob(asset.blob, asset.type || 'application/octet-stream', asset.name)
@@ -572,7 +588,8 @@ export default function App() {
     { id: 'save-md', label: canSaveLocalFile ? t('Save file') : t('Download {format}', { format: t(DOCUMENT_MODES[mode].label) }), description: t('Keep the editable source'), keywords: 'file save 儲存', run: () => void saveFile() },
     ...(canSaveLocalFile ? [{ id: 'save-as', label: t('Save as…'), description: t('Choose a file name and location'), keywords: 'save copy 另存新檔', run: () => void saveFile(true) }] : []),
     { id: 'download-source', label: t('Download source'), description: t('Keep the editable source'), keywords: 'download export 匯出 下載', run: downloadSource },
-    { id: 'save-project', label: t('Download project ZIP'), description: t('Document and all local assets'), keywords: 'export zip backup 匯出 備份', run: () => void downloadProject() },
+    { id: 'save-project', label: t('Download project ZIP'), description: t('Document and referenced local assets'), keywords: 'export zip share 匯出 分享', run: () => void downloadProject() },
+    { id: 'save-asset-library', label: t('Download document and asset library ZIP'), description: t('Current document and all local assets; revisions not included'), keywords: 'export zip backup library 匯出 備份 資產庫', run: () => void downloadProject('all') },
     { id: 'save-html', label: t('Download portable HTML'), description: t('Embedded styles and local assets for offline reading'), keywords: 'export self contained 匯出', run: () => void downloadHtml() },
     { id: 'search', label: t('Search document'), run: () => editorRef.current?.search() },
     { id: 'insert-heading', label: t('Insert: Heading 2'), description: t('## Heading'), keywords: '/ heading 標題', run: () => editorRef.current?.insert(`\n${t('## Heading')}\n`, 4) },
@@ -641,7 +658,7 @@ export default function App() {
           <button className="toolbar-button open-trigger" type="button" disabled={Boolean(fileBusy) || importingWord} onClick={() => void loadFile()} aria-label={t(importingWord ? 'Converting Word…' : 'Open document or project')} title={t('Open document or project')}><FolderOpen size={17} aria-hidden="true" /><span>{t(importingWord ? 'Converting Word…' : 'Open')}</span></button>
           <button className="toolbar-button save-trigger" type="button" disabled={Boolean(fileBusy) || assetBusy} onClick={() => void saveFile()} aria-label={t(canSaveLocalFile ? 'Save file' : 'Download source')} title={t(canSaveLocalFile ? 'Save file' : 'Download source')}><Save size={17} aria-hidden="true" /><span>{t(fileBusy === 'saving' ? 'Saving…' : canSaveLocalFile ? 'Save' : 'Download')}</span></button>
           <button className="toolbar-button language-toggle" type="button" onClick={() => setLocale(locale === 'en' ? 'zh-TW' : 'en')} title={t(locale === 'en' ? 'Switch to Traditional Chinese' : 'Switch to English')} aria-label={t(locale === 'en' ? 'Switch to Traditional Chinese' : 'Switch to English')}><Languages size={17} aria-hidden="true" /><span>{locale === 'en' ? t('Traditional Chinese') : 'EN'}</span></button>
-          <ExportMenu mode={mode} disabled={!markdown.trim()} exporting={exporting} clientExporting={clientExporting} exportStyle={exportStyle} onStyleChange={setExportStyle} hasAssets={referencedAssets.size > 0} onSource={downloadSource} onSaveAs={canSaveLocalFile ? () => void saveFile(true) : undefined} onProject={() => void downloadProject()} onHtml={() => void downloadHtml()} onExport={(format) => void handleExport(format)} />
+          <ExportMenu mode={mode} disabled={!markdown.trim()} exporting={exporting} clientExporting={clientExporting} exportStyle={exportStyle} onStyleChange={setExportStyle} hasAssets={referencedAssets.size > 0} onSource={downloadSource} onSaveAs={canSaveLocalFile ? () => void saveFile(true) : undefined} onProject={(scope) => void downloadProject(scope)} onHtml={() => void downloadHtml()} onExport={(format) => void handleExport(format)} />
         </nav>
       </header>
 
@@ -724,7 +741,7 @@ export default function App() {
         onClose={() => setAssetsOpen(false)}
         onDelete={(asset) => void removeLocalAsset(asset)}
         onDownload={downloadLocalAsset}
-        onExportProject={() => void downloadProject()}
+        onExportProject={() => void downloadProject('all')}
         onInsert={(asset) => { insertAssets([asset]); setAssetsOpen(false) }}
       />
       {revisionsOpen ? (
@@ -762,7 +779,7 @@ export default function App() {
           <div>
             <button type="button" disabled={updateBusy} onClick={() => setUpdateAvailable(false)}>{t('Later')}</button>
             <button type="button" onClick={downloadSource}>{t('Download source')}</button>
-            <button type="button" disabled={Boolean(clientExporting) || assetBusy || Boolean(fileBusy)} onClick={() => void downloadProject()}>{t('Download project ZIP')}</button>
+            <button type="button" disabled={Boolean(clientExporting) || assetBusy || Boolean(fileBusy)} onClick={() => void downloadProject('all')}>{t('Download document and asset library ZIP')}</button>
             <button type="button" className="file-error-panel__primary" disabled={updateBusy || Boolean(fileBusy) || assetBusy || Boolean(clientExporting)} onClick={() => void saveAndUpdate()}>{t(updateBusy ? 'Saving…' : 'Save and update')}</button>
           </div>
         </section>

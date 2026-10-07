@@ -38,6 +38,7 @@ RUN groupadd --system markword \
 COPY --chown=markword:markword . .
 COPY --chown=markword:markword --from=frontend-build /build/frontend/dist ./frontend/dist
 COPY --chown=markword:markword --from=frontend-build /build/frontend/node_modules/mermaid/dist/mermaid.min.js ./frontend/node_modules/mermaid/dist/mermaid.min.js
+COPY --chown=markword:markword --from=frontend-build /build/frontend/node_modules/katex/dist ./frontend/node_modules/katex/dist
 
 RUN mkdir -p /app/exports \
     && chown -R markword:markword /app/exports
