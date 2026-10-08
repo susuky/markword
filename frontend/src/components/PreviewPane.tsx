@@ -191,18 +191,30 @@ const PreviewPaneComponent = forwardRef<PreviewHandle, PreviewPaneProps>(functio
     }
 
     const cache = mermaidSvgCacheRef.current
+    const renderPreview = (block: HTMLElement, source: string) => {
+      block.innerHTML = source
+      const svg = block.querySelector<SVGSVGElement>('svg')
+      if (!svg) return
+      normalizeMermaidLabelWidths(svg)
+      configureMermaidPreview(block, svg, mermaidFontSize)
+      const media = mermaidMedia(svg, block, theme, t('Diagram preview'))
+      const image = document.createElement('img')
+      image.className = 'mermaid-image'
+      image.src = media.src
+      image.alt = [...svg.querySelectorAll('title, desc, text, foreignObject')]
+        .map((label) => label.textContent?.trim()).filter(Boolean).join('；') || media.label
+      image.width = Math.round(media.width)
+      image.height = Math.round(media.height)
+      image.dataset.mermaidFilename = media.filename
+      block.replaceChildren(image)
+    }
     const pending: Array<{ block: HTMLElement; cacheKey: string; source: string }> = []
     for (const [index, block] of blocks.entries()) {
       const source = decodeURIComponent(block.dataset.mermaidSource || '')
       const cacheKey = `${theme}\u0000${mermaidFontSize}\u0000${index}\u0000${source}`
       const cachedSvg = cache.get(cacheKey)
       if (cachedSvg) {
-        block.innerHTML = cachedSvg
-        const svg = block.querySelector<SVGSVGElement>('svg')
-        if (svg) {
-          normalizeMermaidLabelWidths(svg)
-          configureMermaidPreview(block, svg, mermaidFontSize)
-        }
+        renderPreview(block, cachedSvg)
         block.classList.add('is-rendered')
       } else {
         pending.push({ block, cacheKey, source })
@@ -220,13 +232,8 @@ const PreviewPaneComponent = forwardRef<PreviewHandle, PreviewPaneProps>(functio
           try {
             const svg = await renderMermaidSvg(source, theme, mermaidFontSize)
             if (cancelled) return
-            block.innerHTML = svg
-            const renderedSvg = block.querySelector<SVGSVGElement>('svg')
-            if (renderedSvg) {
-              normalizeMermaidLabelWidths(renderedSvg)
-              configureMermaidPreview(block, renderedSvg, mermaidFontSize)
-            }
-            cache.set(cacheKey, block.innerHTML)
+            renderPreview(block, svg)
+            cache.set(cacheKey, svg)
             if (cache.size > MERMAID_SVG_CACHE_LIMIT) {
               const oldestKey = cache.keys().next().value
               if (oldestKey) cache.delete(oldestKey)
@@ -345,7 +352,7 @@ const PreviewPaneComponent = forwardRef<PreviewHandle, PreviewPaneProps>(functio
   useEffect(() => {
     const content = contentRef.current
     if (!content) return
-    content.querySelectorAll<HTMLImageElement>('img').forEach((image) => {
+    content.querySelectorAll<HTMLImageElement>('img:not(.mermaid-image)').forEach((image) => {
       const label = image.alt.trim()
         ? t('Open image preview: {label}', { label: image.alt.trim() })
         : t('Open image preview')
@@ -401,24 +408,23 @@ const PreviewPaneComponent = forwardRef<PreviewHandle, PreviewPaneProps>(functio
     const content = contentRef.current
     if (!content) return false
 
+    const block = target.closest<HTMLElement>(`.mermaid-block.is-rendered[${IMAGE_PREVIEW_TRIGGER}]`)
     const image = target.closest<HTMLImageElement>(`img[${IMAGE_PREVIEW_TRIGGER}]`)
+      ?? block?.querySelector<HTMLImageElement>('.mermaid-image')
     if (image && content.contains(image)) {
       if (image.classList.contains('is-missing') || !image.complete || image.naturalWidth <= 0) return false
       setLightboxMedia({
         src: image.currentSrc || image.src,
         label: image.alt.trim() || t('Image preview'),
-        filename: imageFilename(image),
+        filename: image.dataset.mermaidFilename || imageFilename(image),
         width: image.naturalWidth || image.getBoundingClientRect().width,
         height: image.naturalHeight || image.getBoundingClientRect().height,
+        background: block ? THEME_META[theme].code : undefined,
       })
       return true
     }
 
-    const block = target.closest<HTMLElement>(`.mermaid-block.is-rendered[${IMAGE_PREVIEW_TRIGGER}]`)
-    const svg = block?.querySelector<SVGSVGElement>('svg')
-    if (!block || !svg || !content.contains(block)) return false
-    setLightboxMedia(mermaidMedia(svg, block, theme, t('Diagram preview')))
-    return true
+    return false
   }, [t, theme])
 
   const handleClick = async (event: React.MouseEvent<HTMLElement>) => {

@@ -80,9 +80,9 @@ test('portable HTML restores exact Markdown, formulas, diagrams, and attachments
     await expect.poll(() => source(restored)).toBe(markdown)
     await expect(restored.getByRole('combobox', { name: 'Document mode' })).toHaveValue('markdown')
     await expect(restored.locator('.markdown-body .katex')).toHaveCount(1)
-    await expect(restored.locator('.markdown-body .mermaid-block svg')).toHaveCount(1)
-    await expect(restored.locator('.markdown-body img')).toHaveCount(2)
-    for (const image of await restored.locator('.markdown-body img').all()) await expect(image).toHaveClass(/is-resolved/)
+    await expect(restored.locator('.markdown-body .mermaid-image')).toHaveCount(1)
+    await expect(restored.locator('.markdown-body img[data-asset-path]')).toHaveCount(2)
+    for (const image of await restored.locator('.markdown-body img[data-asset-path]').all()) await expect(image).toHaveClass(/is-resolved/)
     await expect(restored.locator('.toast')).toContainText('Restored editable content')
     const assets = await restored.evaluate(async () => {
       const module = '/src/storage.ts'
@@ -98,7 +98,7 @@ test('portable HTML restores exact Markdown, formulas, diagrams, and attachments
     .replace('[Attachment](./assets/notes.txt)', '[Attachment](./assets/notes-2.txt)')
     .replace('@[audio](./assets/voice.wav)', '@[audio](./assets/voice-2.wav)')
     .replace('[^photo]: ![Footnote image](./assets/photo.png)', '[^photo]: ![Footnote image](./assets/photo-2.png)'))
-  for (const image of await page.locator('.markdown-body img').all()) await expect(image).toHaveClass(/is-resolved/)
+  for (const image of await page.locator('.markdown-body img[data-asset-path]').all()) await expect(image).toHaveClass(/is-resolved/)
   await page.getByRole('button', { name: 'Manage local assets', exact: true }).click()
   await expect(page.locator('.asset-item')).toHaveCount(6)
 })

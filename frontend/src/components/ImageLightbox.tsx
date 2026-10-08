@@ -151,7 +151,6 @@ export function ImageLightbox({ media, onClose }: ImageLightboxProps) {
     const lightbox = lightboxRef.current
     if (!lightbox) return
     const handleWheel = (event: WheelEvent) => {
-      if (!event.ctrlKey && !event.metaKey) return
       event.preventDefault()
       event.stopPropagation()
       if (event.deltaY === 0) return
@@ -166,7 +165,8 @@ export function ImageLightbox({ media, onClose }: ImageLightboxProps) {
 
   const handlePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
     const canvas = canvasRef.current
-    if (!canvas || event.button !== 0 || zoom <= 1) return
+    const stage = stageRef.current
+    if (!canvas || !stage || event.button !== 0 || zoom <= 1 || event.target === canvas) return
     dragRef.current = {
       pointerId: event.pointerId,
       x: event.clientX,
@@ -174,7 +174,7 @@ export function ImageLightbox({ media, onClose }: ImageLightboxProps) {
       left: canvas.scrollLeft,
       top: canvas.scrollTop,
     }
-    canvas.setPointerCapture(event.pointerId)
+    stage.setPointerCapture(event.pointerId)
     canvas.classList.add('is-dragging')
     event.preventDefault()
   }
@@ -189,8 +189,9 @@ export function ImageLightbox({ media, onClose }: ImageLightboxProps) {
 
   const stopDragging = (event: ReactPointerEvent<HTMLDivElement>) => {
     const canvas = canvasRef.current
-    if (!canvas || dragRef.current?.pointerId !== event.pointerId) return
-    if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId)
+    const stage = stageRef.current
+    if (!canvas || !stage || dragRef.current?.pointerId !== event.pointerId) return
+    if (stage.hasPointerCapture(event.pointerId)) stage.releasePointerCapture(event.pointerId)
     dragRef.current = null
     canvas.classList.remove('is-dragging')
   }
@@ -224,6 +225,9 @@ export function ImageLightbox({ media, onClose }: ImageLightboxProps) {
       <div
         ref={canvasRef}
         className={`image-lightbox__canvas ${zoom > 1 ? 'can-pan' : ''}`}
+        onClick={(event) => {
+          if (event.target === event.currentTarget) onClose()
+        }}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={stopDragging}

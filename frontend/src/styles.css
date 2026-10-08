@@ -204,14 +204,15 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .markdown-body .local-media.is-missing::before { content: attr(data-missing-label); display: block; color: var(--md-muted); font-size: 12px; }
 .markdown-body hr { margin: 2em 0; border: 0; border-top: 1px solid var(--md-border); }
 .mermaid-block { display: grid; min-height: 170px; align-items: center; justify-items: safe center; margin: 1.35em 0; padding: 20px; overflow: auto; overscroll-behavior: contain; border: 1px solid var(--md-border); border-radius: 8px; background: var(--md-code); scrollbar-width: thin; }
-.mermaid-block svg { display: block; color: var(--md-text); background: transparent; }
+.mermaid-block svg, .mermaid-block .mermaid-image { display: block; color: var(--md-text); background: transparent; }
+.mermaid-block .mermaid-image { object-fit: contain; }
 .mermaid-block svg text { fill: var(--md-text); }
 .mermaid-block svg .edgeLabel, .mermaid-block svg .labelBkg { color: var(--md-text); background-color: var(--md-code) !important; fill: var(--md-code) !important; }
 .mermaid-block svg .flowchart-link, .mermaid-block svg .messageLine0, .mermaid-block svg .messageLine1 { stroke: var(--md-muted); }
 .mermaid-loading { color: var(--md-muted); font-size: 13px; }
 .mermaid-fallback { display: none; width: 100%; }
 .mermaid-block.has-error .mermaid-fallback { display: block; }
-.mermaid-block.is-rendered svg { width: var(--mermaid-preview-width, 100%); max-width: var(--mermaid-preview-max-width, 100%); max-height: var(--mermaid-preview-max-height, 360px); }
+.mermaid-block.is-rendered svg, .mermaid-block.is-rendered .mermaid-image { width: var(--mermaid-preview-width, 100%); max-width: var(--mermaid-preview-max-width, 100%); max-height: var(--mermaid-preview-max-height, 360px); }
 
 .image-lightbox {
   position: fixed;
@@ -246,7 +247,6 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   max-height: none;
   transform-origin: top left;
   user-select: none;
-  pointer-events: none;
   object-fit: contain;
 }
 .image-lightbox__close,
