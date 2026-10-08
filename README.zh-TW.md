@@ -29,6 +29,17 @@ docker compose up --build -d
 
 不使用 Docker 時，請參閱[本機安裝與部署](docs/development.md)。
 
+### 完整版與 Pages 版
+
+| 功能 | 本機完整版 | Pages 版 |
+| --- | --- | --- |
+| 編輯、預覽、圖表與公式 | 支援 | 支援 |
+| 瀏覽器草稿、版本記錄與附件 | 支援 | 支援 |
+| Markdown、可攜 HTML 與專案 ZIP | 支援 | 支援 |
+| 直接匯出 PDF／Word | 支援 | 不提供 |
+
+Pages 版可以先下載可攜 HTML，再透過瀏覽器列印成 PDF；需要直接匯出 PDF 或 Word 時，請使用本機完整版。Pages 的設定與發布方式請參閱[部署文件](docs/development.md#github-pages-建置)。
+
 ## 簡易用法
 
 1. **開啟文件**：點選「開啟」，或將文件拖入畫面；也可以直接編寫新內容。HTML／Word 會轉成 Markdown，複雜版面可能改變，請檢查轉換結果。
@@ -64,6 +75,10 @@ docker compose up --build -d
 ## 進一步了解
 
 本機開發、部署設定、API 與匯出限制請參閱[開發與部署文件](docs/development.md)。
+
+## 問題回報與功能建議
+
+本專案只透過 [GitHub Issues](https://github.com/susuky/markword/issues) 接受問題回報與功能建議，不接受外部 Pull request。是否修正、何時處理及是否採納建議，由維護者決定；程式碼由維護者維護與提交。回報方式請參閱[問題回報指南](CONTRIBUTING.md)。
 
 ## 權利聲明
 

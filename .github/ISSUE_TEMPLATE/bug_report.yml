@@ -1,0 +1,30 @@
+name: 問題回報
+description: 回報編輯、匯入、保存、匯出或畫面問題。
+body:
+  - type: input
+    id: environment
+    attributes:
+      label: 使用環境
+      description: 請填寫版本或 commit、作業系統、瀏覽器，以及本機完整版或 Pages 版。
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 重現步驟
+      description: 列出操作步驟；若需範例文件，請移除私人內容。
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 預期結果
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: 實際結果
+      description: 可附上截圖或錯誤訊息。
+    validations:
+      required: true

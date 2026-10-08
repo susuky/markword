@@ -1,0 +1,17 @@
+name: 功能建議
+description: 說明使用情境與希望改善的地方。
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: 使用情境與困難
+      description: 你正在完成什麼工作？目前哪個步驟不順利？
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 希望的改善
+      description: 說明期待的操作或結果，以及目前採用的替代方式。
+    validations:
+      required: true

@@ -29,6 +29,17 @@ Once the build finishes, open [http://localhost:27860](http://localhost:27860). 
 
 For installation without Docker, see the [local installation and deployment guide](docs/development.md) (Traditional Chinese).
 
+### Full edition and Pages edition
+
+| Feature | Local full edition | Pages edition |
+| --- | --- | --- |
+| Editing, preview, diagrams, and math | Supported | Supported |
+| Browser drafts, revisions, and attachments | Supported | Supported |
+| Markdown, portable HTML, and project ZIP | Supported | Supported |
+| Direct PDF / Word export | Supported | Unavailable |
+
+In the Pages edition, download portable HTML and use your browser to print it as PDF. Use the local full edition for direct PDF or Word export. See the [deployment guide](docs/development.md#github-pages-建置) for Pages configuration and publishing.
+
 ## Basic usage
 
 1. **Open a document**: click **Open**, drop a document into the workspace, or start writing. HTML and Word files convert to Markdown; review the result because complex layouts may change.
@@ -64,6 +75,10 @@ Importing and editing happen in the browser. PDF/Word export sends the document 
 ## Learn more
 
 See the [development and deployment guide](docs/development.md) (Traditional Chinese) for local development, configuration, API details, and export limits.
+
+## Bug reports and feature suggestions
+
+This project accepts bug reports and feature suggestions through [GitHub Issues](https://github.com/susuky/markword/issues) only. External pull requests are not accepted. The maintainer decides whether and when to address reports or adopt suggestions, and maintains and commits the code. See the [reporting guide](CONTRIBUTING.md) (Traditional Chinese) for details.
 
 ## Copyright
 

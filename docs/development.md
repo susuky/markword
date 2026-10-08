@@ -132,7 +132,7 @@ uv run uvicorn backend.main:app --host 127.0.0.1 --port 27860
 
 ### GitHub Pages 建置
 
-`.github/workflows/deploy-pages.yml` 目前只有手動觸發，且建置工作設定為略過，不會部署。若要啟用，需移除 `build` 的停用條件，設定 **Settings → Pages → Build and deployment → GitHub Actions**，並確認 workflow 已啟用；可按需恢復推送觸發。
+`.github/workflows/deploy-pages.yml` 提供手動發布，不會因推送程式而自動部署。先在 **Settings → Pages → Build and deployment → Source** 選擇 **GitHub Actions**，再到 **Actions → Deploy GitHub Pages → Run workflow** 選擇要發布的分支。部署網址以 workflow 的 `github-pages` environment 顯示結果為準；尚未成功部署前，不代表已有可用的線上版本。
 
 Pages 使用獨立的 `pages` build mode；一般的 `npm run build` 與 FastAPI 完整版部署不受影響。本機可用以下指令驗證 Pages 產物：
 
@@ -141,6 +141,10 @@ cd frontend
 npm ci
 npm run build:pages
 ```
+
+產物位於 `frontend/dist-pages`，使用 `/markword/` 作為網站路徑。本機預覽可執行 `npm run preview -- --mode pages`，再開啟 Vite 顯示網址下的 `/markword/`；若部署到其他儲存庫名稱或自訂網域根目錄，請同步調整 `frontend/vite.config.ts` 的 Pages `base`。
+
+Pages 版在瀏覽器內處理編輯、匯入、草稿、版本記錄、附件與文字統計，可下載 Markdown、專案 ZIP 及可攜 HTML。不提供直接匯出 PDF／Word；PDF 可由可攜 HTML 透過瀏覽器列印，直接 PDF／Word 匯出請使用本機完整版。
 
 ### 測試與檢查
 
@@ -156,7 +160,7 @@ npm run test:ui
 
 介面測試會視需要啟動本機預覽，驗證草稿復原、版本還原、下載、鍵盤操作與手機版面；需先備妥 Playwright Chromium 瀏覽器（`npx playwright install chromium`）。
 
-若 `5173` 已被其他專案使用，可設定 `MARKWORD_TEST_PORT=5183` 執行測試。使用既有 Chromium 時，可用 `PLAYWRIGHT_CHROMIUM_EXECUTABLE` 指定執行檔。`.github/workflows/test.yml` 會在 pull request 與 `main` 推送時執行後端測試、兩種前端建置、lint 與 Playwright 測試。
+若 `5173` 已被其他專案使用，可設定 `MARKWORD_TEST_PORT=5183` 執行測試。使用既有 Chromium 時，可用 `PLAYWRIGHT_CHROMIUM_EXECUTABLE` 指定執行檔。`.github/workflows/test.yml` 會在 `main` 推送或手動觸發時執行後端測試、兩種前端建置、lint 與 Playwright 測試。
 
 ## 匯出處理與資源限制
 

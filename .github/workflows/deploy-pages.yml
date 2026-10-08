@@ -14,8 +14,6 @@ concurrency:
 
 jobs:
   build:
-    # 暫停 Pages 部署；待儲存庫具備 Pages 發布資格後再移除此條件。
-    if: ${{ false }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -23,7 +21,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
           cache-dependency-path: frontend/package-lock.json
       - name: Install dependencies
