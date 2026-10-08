@@ -118,7 +118,7 @@ export function ExportMenu({ mode, disabled, exporting, clientExporting, exportS
           <button type="button" onClick={() => { close(); onSource() }}><FileDown size={18} aria-hidden="true" /><span><strong>{t(DOCUMENT_MODES[mode].label)}</strong><small>{t('Keep the editable source')}</small></span></button>
           <button type="button" onClick={() => { close(); onProject('document') }}><Archive size={18} aria-hidden="true" /><span><strong>{t('Project ZIP')}</strong><small>{t('Document and referenced local assets')}</small></span></button>
           <button type="button" onClick={() => { close(); onProject('all') }}><Archive size={18} aria-hidden="true" /><span><strong>{t('Document + asset library ZIP')}</strong><small>{t('Current document and all local assets; revisions not included')}</small></span></button>
-          <button type="button" onClick={() => { close(); onHtml() }}><Code2 size={18} aria-hidden="true" /><span><strong>{t('Portable HTML')}</strong><small>{t('Embeds the {style} layout and local assets', { style: t(EXPORT_STYLES[exportStyle].label) })}</small></span></button>
+          <button type="button" onClick={() => { close(); onHtml() }}><Code2 size={18} aria-hidden="true" /><span><strong>{t('Portable HTML')}</strong><small>{t('Embeds the {style} layout, editable source and local assets', { style: t(EXPORT_STYLES[exportStyle].label) })}</small></span></button>
         </div>
         <div className="export-menu__section">
           <span>{t('Document formats')}</span>

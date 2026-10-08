@@ -83,14 +83,15 @@ function collectHeadings(markdown: string): OutlineHeading[] {
   return headings
 }
 
-function portableHtml(markdown: string, theme: ThemeName, exportStyle: ExportStyleName, locale: Locale, renderedHtml: string, mathCss: string) {
+function portableHtml(markdown: string, mode: DocumentMode, theme: ThemeName, exportStyle: ExportStyleName, locale: Locale, renderedHtml: string, mathCss: string) {
   const colors = THEME_META[theme]
   const title = documentTitle(markdown).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
+  const source = JSON.stringify({ version: 1, mode, markdown }).replaceAll('<', '\\u003c')
   return `<!doctype html>
 <html lang="${locale === 'zh-TW' ? 'zh-Hant' : 'en'}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${title}</title><style>
 :root{color-scheme:${colors.dark ? 'dark' : 'light'}}*{box-sizing:border-box}body{margin:0;background:${colors.background};color:${colors.text};font-family:"Noto Sans TC","Microsoft JhengHei",system-ui,sans-serif;line-height:1.78}.document{width:min(100% - 40px,880px);margin:auto;padding:48px 0 80px}h1,h2{border-bottom:1px solid ${colors.border};padding-bottom:.3em}h1{font-size:2.25rem}h2{font-size:1.55rem;margin-top:1.5em}h3{font-size:1.2rem;margin-top:1.4em}a{color:${colors.accent}}code{background:${colors.code};padding:.14em .35em;border-radius:4px}pre{overflow:auto;background:${colors.code};border:1px solid ${colors.border};border-radius:8px;padding:16px}pre code{padding:0}.copy-code,.mermaid-loading{display:none}.mermaid-fallback{display:block}.mermaid-block{border:1px solid ${colors.border};border-radius:8px;padding:16px}blockquote{margin:1.2em 0;padding:.6em 1em;border-left:3px solid ${colors.accent};color:${colors.muted};background:${colors.code}}table{width:100%;border-collapse:collapse}th,td{border:1px solid ${colors.border};padding:8px 11px;text-align:left}th{background:${colors.code}}img,svg,video{max-width:100%;height:auto}audio{width:100%}.local-media{margin:1.25em 0}.local-media figcaption{margin-top:.4em;color:${colors.muted};font-size:.82em}@media print{.document{width:auto;padding:0}}
-</style><style>${EXPORT_STYLES[exportStyle].css}</style><style>${mathCss}</style></head><body><main class="document">${renderedHtml}</main></body></html>`
+</style><style>${EXPORT_STYLES[exportStyle].css}</style><style>${mathCss}</style></head><body><main class="document">${renderedHtml}</main><script type="application/json" id="markword-source">${source}</script></body></html>`
 }
 
 export default function App() {
@@ -351,12 +352,39 @@ export default function App() {
         showNotice(t('Save this Word file as .docx, then try again.'))
         return
       }
-      if (!/\.(md|markdown|txt|mmd|mermaid|docx)$/i.test(file.name)) {
-        showNotice(t('Please choose a Markdown, text, Mermaid, Word (.docx), or project ZIP file'))
+      if (!/\.(md|markdown|txt|mmd|mermaid|docx|html|htm)$/i.test(file.name)) {
+        showNotice(t('Please choose a Markdown, text, Mermaid, Word (.docx), HTML, or project ZIP file'))
         return
       }
       if (file.size > MAX_LOCAL_FILE_BYTES) {
         showNotice(t('This file is larger than 15 MiB. Please choose a smaller file.'))
+        return
+      }
+      if (/\.html?$/i.test(file.name)) {
+        setAssetBusy(true)
+        showNotice(t('Converting HTML…'))
+        try {
+          const { importHtmlDocument } = await import('./htmlImport')
+          const converted = await importHtmlDocument(file)
+          await refreshAssets()
+          if (!await backUpBeforeReplacing()) return
+          changeMarkdown(converted.markdown)
+          changeMode(converted.mode)
+          setLinkedFile(null)
+          setFileSaveFailed(false)
+          setActiveLine(1)
+          setMobileView('editor')
+          editorRef.current?.jumpToLine(1)
+          showNotice(t(converted.restoredSource
+            ? 'Restored editable content from {file}'
+            : converted.hasWarnings
+              ? 'HTML converted. Some formatting or images may need adjustment; please review the result.'
+              : 'Converted {file} to Markdown', { file: file.name }))
+        } catch {
+          showNotice(t('Could not import this HTML file. It may be empty, damaged, or missing embedded attachments. Your current document is unchanged.'))
+        } finally {
+          setAssetBusy(false)
+        }
         return
       }
       if (/\.docx$/i.test(file.name)) {
@@ -410,7 +438,7 @@ export default function App() {
   }, [assetBusy, changeMarkdown, changeMode, hydrated, persistence, refreshAssets, showNotice, t])
 
   const handleDroppedFiles = useCallback(async (files: readonly File[]) => {
-    const documentFile = files.find((file) => /\.(?:md|markdown|txt|mmd|mermaid|docx|doc|zip)$/i.test(file.name))
+    const documentFile = files.find((file) => /\.(?:md|markdown|txt|mmd|mermaid|docx|doc|html|htm|zip)$/i.test(file.name))
     const assetFiles = files.filter((file) => file !== documentFile)
     if (documentFile) await loadFile(documentFile)
     if (assetFiles.length) await handleAssetFiles(assetFiles, !documentFile)
@@ -451,7 +479,7 @@ export default function App() {
     try {
       const { renderHtmlSnapshot } = await import('./htmlExport')
       const snapshot = await renderHtmlSnapshot(markdown, mode, theme, previewTypography.mermaidFontSize)
-      downloadBlob(portableHtml(markdown, theme, exportStyle, locale, snapshot.html, snapshot.css), 'text/html;charset=utf-8', `${documentTitle(markdown)}.html`)
+      downloadBlob(portableHtml(markdown, mode, theme, exportStyle, locale, snapshot.html, snapshot.css), 'text/html;charset=utf-8', `${documentTitle(markdown)}.html`)
       showNotice(t('Portable HTML downloaded'))
     } catch (error) {
       showNotice(error instanceof Error ? error.message : t('Could not create portable HTML'))
@@ -582,7 +610,7 @@ export default function App() {
 
   const commandActions = useMemo<CommandAction[]>(() => [
     { id: 'commands', label: t('Open command palette'), run: () => setCommandOpen(true) },
-    { id: 'open', label: t('Open document or project'), description: t('Open Markdown, text, Mermaid, Word, or a Markword ZIP'), keywords: 'file upload import word docx project 匯入 轉換 檔案 專案', run: () => void loadFile() },
+    { id: 'open', label: t('Open document or project'), description: t('Open Markdown, text, Mermaid, Word, HTML, or a Markword ZIP'), keywords: 'file upload import word docx html project 匯入 轉換 檔案 專案', run: () => void loadFile() },
     { id: 'assets', label: t('Manage local assets'), description: t('Images, video, audio, and attachments'), keywords: 'asset media image video attachment 圖片 影片 附件', run: () => setAssetsOpen(true) },
     { id: 'insert-asset', label: t('Insert: Local asset'), description: t('Import files from this device'), keywords: '/ asset media image video attachment 圖片 影片 附件', run: () => assetInputRef.current?.click() },
     { id: 'save-md', label: canSaveLocalFile ? t('Save file') : t('Download {format}', { format: t(DOCUMENT_MODES[mode].label) }), description: t('Keep the editable source'), keywords: 'file save 儲存', run: () => void saveFile() },
@@ -590,7 +618,7 @@ export default function App() {
     { id: 'download-source', label: t('Download source'), description: t('Keep the editable source'), keywords: 'download export 匯出 下載', run: downloadSource },
     { id: 'save-project', label: t('Download project ZIP'), description: t('Document and referenced local assets'), keywords: 'export zip share 匯出 分享', run: () => void downloadProject() },
     { id: 'save-asset-library', label: t('Download document and asset library ZIP'), description: t('Current document and all local assets; revisions not included'), keywords: 'export zip backup library 匯出 備份 資產庫', run: () => void downloadProject('all') },
-    { id: 'save-html', label: t('Download portable HTML'), description: t('Embedded styles and local assets for offline reading'), keywords: 'export self contained 匯出', run: () => void downloadHtml() },
+    { id: 'save-html', label: t('Download portable HTML'), description: t('Read offline or reopen with editable source and local assets'), keywords: 'export self contained 匯出', run: () => void downloadHtml() },
     { id: 'search', label: t('Search document'), run: () => editorRef.current?.search() },
     { id: 'insert-heading', label: t('Insert: Heading 2'), description: t('## Heading'), keywords: '/ heading 標題', run: () => editorRef.current?.insert(`\n${t('## Heading')}\n`, 4) },
     ...(mode === 'markdown' ? [{ id: 'insert-table', label: t('Insert: Table'), description: t('Edit cells, rows, and columns'), keywords: '/ table 表格', run: () => editorRef.current?.editTable() }] : []),
@@ -641,7 +669,7 @@ export default function App() {
 
   return (
     <main className={`app-shell productivity-shell ${focusMode ? 'is-focus-mode' : ''} ${typewriterMode ? 'is-typewriter-mode' : ''}`}>
-      <input ref={fileInputRef} className="visually-hidden-file" type="file" disabled={importingWord} accept=".md,.markdown,.txt,.mmd,.mermaid,.docx,.zip,text/plain,text/markdown,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/zip" onChange={(event) => {
+      <input ref={fileInputRef} className="visually-hidden-file" type="file" disabled={importingWord} accept=".md,.markdown,.txt,.mmd,.mermaid,.docx,.html,.htm,.zip,text/plain,text/markdown,text/html,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/zip" onChange={(event) => {
         const file = event.target.files?.[0]
         if (file) void loadFile(file)
         event.currentTarget.value = ''
@@ -716,7 +744,7 @@ export default function App() {
           <PreviewPane ref={previewRef} mode={mode} markdown={deferredMarkdown} theme={theme} markdownFontSize={previewTypography.markdownFontSize} mermaidFontSize={previewTypography.mermaidFontSize} assetVersion={assetVersion} onScrollLine={handlePreviewScroll} onLayout={handlePreviewLayout} onSourceLine={jumpToLine} onEditTable={editPreviewTable} />
         </section>
 
-        {dragActive ? <div className="drop-target" aria-hidden="true"><Paperclip size={34} /><strong>{t('Drop to open or insert files')}</strong><span>{t('Markdown, text, Mermaid, Word (.docx), project ZIP, and media')}</span></div> : null}
+        {dragActive ? <div className="drop-target" aria-hidden="true"><Paperclip size={34} /><strong>{t('Drop to open or insert files')}</strong><span>{t('Markdown, text, Mermaid, Word (.docx), HTML, project ZIP, and media')}</span></div> : null}
         {statsOpen ? <StatsPopover stats={stats} available={available} staticDeployment={IS_STATIC_DEPLOYMENT} onClose={() => setStatsOpen(false)} onClear={() => { if (window.confirm(t('Clear this document? Download a copy first if you want to keep it.'))) changeMarkdown('') }} /> : null}
       </section>
 

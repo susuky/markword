@@ -110,6 +110,7 @@ test('a conflicting update keeps both tab copies and offers a project backup on 
 
 const slowFiles = [
   { name: 'Slow.md', mimeType: 'text/markdown', buffer: Buffer.from('# Imported source') },
+  { name: 'Slow.html', mimeType: 'text/html', buffer: Buffer.from('<h1>Imported source</h1>') },
   { name: 'Slow.zip', mimeType: 'application/zip', buffer: Buffer.from(zipSync({ 'document.md': strToU8('# Imported source') })) },
   { name: 'Slow.docx', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', buffer: Buffer.from(zipSync({
     '[Content_Types].xml': strToU8('<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>'),

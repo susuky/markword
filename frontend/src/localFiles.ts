@@ -40,6 +40,7 @@ export async function pickLocalFile(description: string) {
       multiple: false,
       types: [{ description, accept: {
         'text/plain': ['.md', '.markdown', '.txt', '.mmd', '.mermaid'],
+        'text/html': ['.html', '.htm'],
         'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['.docx'],
         'application/zip': ['.zip'],
       } }],

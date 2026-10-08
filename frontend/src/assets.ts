@@ -176,13 +176,7 @@ interface AssetReference {
   referenceTitle?: string
 }
 
-function localAssetReferences(markdown: string): AssetReference[] {
-  // Markdown escapes cannot encode letters; percent URLs and HTML entities can.
-  // Skip parsing prose only when neither a literal nor encoded assets/ is possible.
-  if (!/assets|[%&]/.test(markdown)) return []
-  const references: AssetReference[] = []
-  const definitions = new Map<string, { path: string | null; title: string }>()
-  const pending: Array<{ label: string; from: number; to: number; image: boolean }> = []
+function parseAssetMarkdown(markdown: string) {
   let tree = markdownLanguage.parser.parse(markdown)
   if (markdown.includes('[^')) {
     // The editor's CommonMark parser treats a short footnote as a link
@@ -198,6 +192,17 @@ function localAssetReferences(markdown: string): AssetReference[] {
     } })
     if (footnotes !== markdown) tree = markdownLanguage.parser.parse(footnotes)
   }
+  return tree
+}
+
+function localAssetReferences(markdown: string): AssetReference[] {
+  // Markdown escapes cannot encode letters; percent URLs and HTML entities can.
+  // Skip parsing prose only when neither a literal nor encoded assets/ is possible.
+  if (!/assets|[%&]/.test(markdown)) return []
+  const references: AssetReference[] = []
+  const definitions = new Map<string, { path: string | null; title: string }>()
+  const pending: Array<{ label: string; from: number; to: number; image: boolean }> = []
+  const tree = parseAssetMarkdown(markdown)
   // URL nodes preserve exact source ranges, including escaped parentheses and
   // angle brackets. Fenced/inline code has no link nodes and stays literal.
   tree.iterate({ enter({ node, name, from, to }) {
@@ -295,6 +300,7 @@ export async function inlineAssetsInHtml(html: string): Promise<string> {
       if (element instanceof HTMLAnchorElement) element.href = dataUrl
       else if (element instanceof HTMLImageElement || element instanceof HTMLVideoElement || element instanceof HTMLAudioElement) element.src = dataUrl
       element.classList.remove('is-loading', 'is-missing', 'is-resolved')
+      element.dataset.markwordAssetPath = path!
     }
     element.removeAttribute('data-asset-path')
   })
@@ -383,6 +389,22 @@ export async function createProjectArchive(markdown: string, title: string, asse
   return new Blob([archive], { type: PROJECT_ARCHIVE_MIME })
 }
 
+export function remapAssetPaths(markdown: string, replacements: ReadonlyMap<string, string>): string {
+  if (!replacements.size) return markdown
+  // Exact URL ranges cover reference links and media without rewriting code.
+  const edits: Array<{ from: number; to: number; path: string }> = []
+  parseAssetMarkdown(markdown).iterate({ enter(node) {
+    if (node.name !== 'URL') return
+    const original = normalizeAssetPath(unescapeAll(markdown.slice(node.from, node.to)))
+    const replacement = original && replacements.get(original)
+    if (replacement && replacement !== original) edits.push({ from: node.from, to: node.to, path: replacement })
+  } })
+  for (const { from, to, path } of edits.sort((a, b) => b.from - a.from)) {
+    markdown = markdown.slice(0, from) + assetMarkdownUrl(path) + markdown.slice(to)
+  }
+  return markdown
+}
+
 export async function importProjectArchive(file: File): Promise<ProjectArchive> {
   if (file.size > MAX_PROJECT_ARCHIVE_BYTES) throw new Error(translate('Project archive is larger than 512 MB'))
   const [fflate, archive] = await Promise.all([
@@ -451,18 +473,7 @@ export async function importProjectArchive(file: File): Promise<ProjectArchive> 
   let markdown = fflate.strFromU8(entries[documentName])
   const mode = normalizeDocumentMode(manifest?.mode)
   if (replacements.size && mode === 'markdown') {
-    // Reuse the editor parser's exact URL ranges: reference links, angle
-    // brackets and media work, while code examples and labels remain literal.
-    const edits: Array<{ from: number; to: number; path: string }> = []
-    markdownLanguage.parser.parse(markdown).iterate({ enter(node) {
-      if (node.name !== 'URL') return
-      const original = normalizeAssetPath(unescapeAll(markdown.slice(node.from, node.to)))
-      const path = original ? replacements.get(original) : undefined
-      if (path) edits.push({ from: node.from, to: node.to, path })
-    } })
-    edits.reverse().forEach(({ from, to, path }) => {
-      markdown = markdown.slice(0, from) + assetMarkdownUrl(path) + markdown.slice(to)
-    })
+    markdown = remapAssetPaths(markdown, replacements)
   }
   await putAssets(importedAssets)
   return { markdown, mode, documentName, assets: importedAssets }

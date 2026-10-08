@@ -41,7 +41,7 @@ docker compose down
 - Clickable document outline, preview-to-source navigation, and a synchronized scrolling toggle
 - Light, Paper, Sage, Dark, Ocean, Nord, Dracula, and Midnight themes
 - Syntax highlighting, Mermaid, KaTeX, task lists, and footnotes
-- Open or drag `.md` files or Markword project ZIPs, then download Markdown or portable HTML
+- Open or drag Markdown, HTML (`.html`/`.htm`), Word, or Markword project ZIP files, then download Markdown or portable HTML
 - IndexedDB local asset library for imported, pasted, or dropped images, video, audio, and attachments
 - CodeMirror search and folding, command palette, quick inserts, focus mode, and typewriter mode
 - IndexedDB draft recovery, automatic five-minute revisions, manual revisions, backups before opening files, and non-destructive restore
@@ -60,6 +60,8 @@ docker compose down
 - `?`: show keyboard shortcuts. `Ctrl/Cmd+Shift+F`: toggle focus mode.
 - Use the left outline to jump to headings; double-click preview blocks to return to source.
 - Open or drag local Markdown/Markword project ZIP files from the toolbar. Import assets from the Assets panel, or paste and drop them directly into the editor.
+- HTML files convert in the browser, preserving headings, paragraphs, emphasis, lists, task checkboxes, links, code, basic tables, and embedded images. Layout, interactive elements, and merged cells may change. Image URLs remain references; adjacent image files need to be imported separately. HTML files are limited to 15 MiB.
+- Newly exported portable HTML includes the original source and document mode. Reopening restores that source and embedded local attachments, remapping filename collisions. Changes made only to the rendered HTML do not update its saved source. Older HTML without source data uses normal HTML conversion.
 - The Export menu contains Markdown, project ZIP, HTML, PDF, and Word. HTML/PDF can use Classic, Editorial, Report, or Compact layouts.
 - Project ZIP includes only the current document and its referenced local assets. Document + asset library ZIP includes all local assets; neither includes revision history or other documents.
 - PDF and Word support local PNG, JPEG, GIF, WebP, and BMP images, task checkboxes, footnotes, and formulas. Formulas are rendered as PNGs with LaTeX alternative text, not native Word equations. Word footnotes use superscript references and numbered paragraphs at the end.
@@ -84,7 +86,7 @@ docker compose down
 
 Markword uses a single-working-draft model intended for editing one document at a time on your own computer:
 
-- Opening or dropping a text, Markdown, Mermaid, Word, or project ZIP file saves a pre-open revision before replacing the workspace. Failed conversion, failed backup, or edits made during backup preserve the current document. Opening and Word conversion run in the browser.
+- Opening or dropping a text, Markdown, Mermaid, HTML, Word, or project ZIP file saves a pre-open revision before replacing the workspace. Failed conversion, failed backup, or edits made during backup preserve the current document. Opening and HTML/Word conversion run in the browser. Converted HTML/Word documents require a new save target.
 - The current content is written to IndexedDB about 350 ms after editing. While content keeps changing, a local revision is created every five minutes, with up to 120 retained. The current content is saved before restoring an older revision.
 - Markdown changes regenerate preview blocks with source line ranges. Tables, code, images, Mermaid, and KaTeX trigger layout remeasurement, so synchronized scrolling does not depend on a fixed document or line height.
 - The browser does not watch the source file for external disk changes. Reopen or drop the file again, and use Download Markdown to save workspace content back to disk.
