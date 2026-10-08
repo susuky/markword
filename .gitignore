@@ -157,3 +157,7 @@ frontend/.vite/
 
 # OS / editor metadata
 .DS_Store
+
+# Local UX audit output
+/ux-audit-*.md
+/ux-audit-*-evidence/
