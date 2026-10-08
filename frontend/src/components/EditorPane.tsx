@@ -5,10 +5,12 @@ import { openSearchPanel } from '@codemirror/search'
 import { Compartment, EditorSelection, EditorState, Prec, Transaction } from '@codemirror/state'
 import { EditorView, keymap } from '@codemirror/view'
 import { basicSetup } from 'codemirror'
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react'
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState, type CSSProperties } from 'react'
 import { useI18n } from '../i18n'
 import { continueMarkdownLine, removeMarkdownMarker, renumberAfterDeletion } from '../editorCommands'
-import type { DocumentMode } from '../types'
+import type { DocumentMode, ThemeName } from '../types'
+import { livePreview } from '../livePreview'
+import '../livePreview.css'
 import { tableAtPosition, tableMarkdown, type TableEdit } from '../tableEditing'
 import { TableEditor } from './TableEditor'
 
@@ -48,18 +50,28 @@ interface EditorPaneProps {
   onChange: (value: string) => void
   onScrollLine: (line: number, atEnd: boolean) => void
   typewriter?: boolean
+  liveEditing?: boolean
+  theme?: ThemeName
+  markdownFontSize?: number
+  mermaidFontSize?: number
+  assetVersion?: number
   onSlashCommand?: () => void
   onPasteFiles?: (files: File[]) => void
 }
 
 export const EditorPane = forwardRef<EditorHandle, EditorPaneProps>(function EditorPane(
-  { value, mode, onChange, onScrollLine, typewriter = false, onSlashCommand, onPasteFiles },
+  {
+    value, mode, onChange, onScrollLine, typewriter = false,
+    liveEditing = false, theme = 'Light', markdownFontSize = 16, mermaidFontSize = 14,
+    assetVersion = 0, onSlashCommand, onPasteFiles,
+  },
   ref,
 ) {
-  const { t } = useI18n()
+  const { locale, t } = useI18n()
   const hostRef = useRef<HTMLDivElement>(null)
   const viewRef = useRef<EditorView | null>(null)
   const languageRef = useRef(new Compartment())
+  const presentationRef = useRef(new Compartment())
   const modeRef = useRef(mode)
   modeRef.current = mode
   const externalValueRef = useRef(value)
@@ -158,6 +170,7 @@ export const EditorPane = forwardRef<EditorHandle, EditorPaneProps>(function Edi
       extensions: [
         basicSetup,
         languageRef.current.of(modeExtensions(modeRef.current)),
+        presentationRef.current.of([]),
         EditorView.lineWrapping,
         EditorView.theme({
           '&': { height: '100%', fontSize: '15px' },
@@ -172,7 +185,7 @@ export const EditorPane = forwardRef<EditorHandle, EditorPaneProps>(function Edi
           '.cm-gutters': { backgroundColor: 'var(--surface)', color: '#76877e', borderRight: 'none' },
           '&.cm-focused': { outline: 'none' },
           '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection': {
-            backgroundColor: '#c2e3d7 !important',
+            backgroundColor: 'var(--editor-selection-color, #c2e3d7) !important',
           },
         }),
         EditorView.updateListener.of((update) => {
@@ -228,8 +241,15 @@ export const EditorPane = forwardRef<EditorHandle, EditorPaneProps>(function Edi
   }, [mode])
 
   useEffect(() => {
-    viewRef.current?.contentDOM.setAttribute('aria-label', t('Source editor'))
-  }, [t])
+    const view = viewRef.current
+    if (!view) return
+    view.dispatch({ effects: presentationRef.current.reconfigure(liveEditing && mode === 'markdown'
+      ? livePreview({ theme, mermaidFontSize, initiallyFocused: view.hasFocus, onEditTable: editTable }) : []) })
+  }, [assetVersion, editTable, liveEditing, locale, mermaidFontSize, mode, theme])
+
+  useEffect(() => {
+    viewRef.current?.contentDOM.setAttribute('aria-label', t(liveEditing ? 'Live editor' : 'Source editor'))
+  }, [liveEditing, t])
 
   useEffect(() => {
     const view = viewRef.current
@@ -240,7 +260,7 @@ export const EditorPane = forwardRef<EditorHandle, EditorPaneProps>(function Edi
 
   return <>
     {tableError ? <p className="table-editor__error" role="alert">{tableError}</p> : null}
-    <div className="editor-host" ref={hostRef} aria-label={t('Source editor')} />
+    <div className={liveEditing ? `editor-host editor-host--live markdown-body theme-${theme.toLowerCase()}` : 'editor-host'} ref={hostRef} aria-label={t(liveEditing ? 'Live editor' : 'Source editor')} style={liveEditing ? { '--markdown-font-size': `${markdownFontSize}px` } as CSSProperties : undefined} />
     {tableEdit ? <TableEditor initial={tableEdit.data} existing={tableEdit.existing} onClose={() => setTableEdit(null)} onApply={(data) => {
       const view = viewRef.current
       if (!view || view.state.doc.toString() !== tableEdit.source) return false

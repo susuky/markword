@@ -73,6 +73,13 @@ const source = (page: Page) => page.locator('.editor-host .cm-line').allTextCont
 const readFile = (page: Page, name = 'original.md') => page.evaluate((filename) => window.fileHarness.read(filename), name)
 const openFile = (page: Page) => page.getByRole('button', { name: 'Open document or project', exact: true }).click()
 
+async function expectSavedFile(page: Page, content: string, name = 'original.md') {
+  // Wait for close() before reading: a concurrent write can invalidate the File snapshot.
+  await expect(page.locator('.file-save-status')).toContainText(name)
+  await expect(page.locator('.file-save-status')).toContainText('Saved to file')
+  expect(await readFile(page, name)).toBe(content)
+}
+
 test('open and save update the same file and distinguish file state from browser drafts', async ({ page }) => {
   await filePickers(page)
   await page.goto('/')
@@ -82,11 +89,10 @@ test('open and save update the same file and distinguish file state from browser
   await expect(page.locator('.file-save-status')).toContainText('File has unsaved changes')
   await expect(page.locator('.save-status')).toHaveText('Saved in this browser')
   await page.keyboard.press('Control+s')
-  await expect.poll(() => readFile(page)).toBe('# Edited\n\nFirst edit.')
-  await expect(page.locator('.file-save-status')).toContainText('Saved to file')
+  await expectSavedFile(page, '# Edited\n\nFirst edit.')
   await editor(page).fill('Second edit')
   await page.getByRole('button', { name: 'Save file', exact: true }).click()
-  await expect.poll(() => readFile(page)).toBe('Second edit')
+  await expectSavedFile(page, 'Second edit')
   expect(await page.evaluate(() => window.fileHarness.saveCalls)).toEqual([])
 })
 
@@ -102,22 +108,22 @@ test('cancel, first save, save as, format changes and empty-file saves preserve 
   await expect.poll(() => source(page)).toBe('# New document\n\n文字內容')
   await page.evaluate(() => { window.fileHarness.cancelSave = false })
   await page.keyboard.press('Control+s')
-  await expect.poll(() => readFile(page, 'copy.md')).toBe('# New document\n\n文字內容')
+  await expectSavedFile(page, '# New document\n\n文字內容', 'copy.md')
   expect(await page.evaluate(() => window.fileHarness.saveCalls)).toEqual(['New document.md', 'New document.md'])
   await editor(page).fill('Another copy')
   await page.evaluate(() => { window.fileHarness.saveName = 'another.md' })
   await page.getByRole('button', { name: 'Export', exact: true }).click()
   await page.getByRole('button', { name: 'Save as… Choose a file name and location', exact: true }).click()
-  await expect.poll(() => readFile(page, 'another.md')).toBe('Another copy')
+  await expectSavedFile(page, 'Another copy', 'another.md')
   expect(await readFile(page, 'copy.md')).toBe('# New document\n\n文字內容')
   await page.getByRole('combobox', { name: 'Document mode' }).selectOption('text')
   await page.evaluate(() => { window.fileHarness.saveName = 'plain.txt' })
   await page.keyboard.press('Control+s')
-  await expect.poll(() => readFile(page, 'plain.txt')).toBe('Another copy')
+  await expectSavedFile(page, 'Another copy', 'plain.txt')
   expect((await page.evaluate(() => window.fileHarness.saveCalls)).at(-1)).toBe('markword-document.txt')
   await editor(page).fill('')
   await page.keyboard.press('Control+s')
-  await expect.poll(() => readFile(page, 'plain.txt')).toBe('')
+  await expectSavedFile(page, '', 'plain.txt')
   expect(await readFile(page, 'another.md')).toBe('Another copy')
 })
 
@@ -134,7 +140,7 @@ test('external edits are not overwritten and save as provides a recovery path', 
   expect(await readFile(page)).toBe('Changed by another editor')
   await expect.poll(() => source(page)).toBe('My unsaved edit')
   await page.getByRole('button', { name: 'Save as…', exact: true }).click()
-  await expect.poll(() => readFile(page, 'copy.md')).toBe('My unsaved edit')
+  await expectSavedFile(page, 'My unsaved edit', 'copy.md')
   expect(await readFile(page)).toBe('Changed by another editor')
   await expect(page.locator('.file-save-status')).toContainText('copy.md')
 })
@@ -179,11 +185,10 @@ test('edits during a pending write stay dirty and repeated saves do not race', a
   await page.keyboard.press('Control+s')
   expect(await page.evaluate(() => window.fileHarness.writes)).toBe(1)
   await page.evaluate(() => { window.fileHarness.holdClose = false; window.fileHarness.release?.() })
-  await expect.poll(() => readFile(page)).toBe('First edit')
   await expect(page.locator('.file-save-status')).toContainText('File has unsaved changes')
+  expect(await readFile(page)).toBe('First edit')
   await page.keyboard.press('Control+s')
-  await expect.poll(() => readFile(page)).toBe('Newer edit while saving')
-  await expect(page.locator('.file-save-status')).toContainText('Saved to file')
+  await expectSavedFile(page, 'Newer edit while saving')
 })
 
 test('cancelled opening retains the file link and importing another document detaches it', async ({ page }) => {
@@ -199,7 +204,7 @@ test('cancelled opening retains the file link and importing another document det
   await expect.poll(() => source(page)).toBe('Imported document')
   await expect(page.locator('.file-save-status')).toHaveCount(0)
   await page.keyboard.press('Control+s')
-  await expect.poll(() => readFile(page, 'copy.md')).toBe('Imported document')
+  await expectSavedFile(page, 'Imported document', 'copy.md')
   expect(await readFile(page)).toContain('Saved on disk.')
 })
 

@@ -1,7 +1,7 @@
 import {
   AlignCenter, ArrowLeftRight, BarChart3, CheckCircle2, Circle, Command,
   Eye, FileText, FolderOpen, HelpCircle, History, Languages, Link2,
-  ListTree, Maximize2, Paperclip, Save, Search, Unlink2, AlertCircle, Table2,
+  ListTree, Maximize2, Paperclip, Save, Search, Unlink2, AlertCircle, SquarePen, Table2,
 } from 'lucide-react'
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import { exportDocument } from './api'
@@ -123,6 +123,8 @@ export default function App() {
   const [typewriterMode, setTypewriterMode] = useState(false)
   const [syncEnabled, setSyncEnabled] = useState(() => loadPreference('sync-enabled', true))
   const [mobileView, setMobileView] = useState<'editor' | 'preview'>('editor')
+  const [liveEditingPreferred, setLiveEditingPreferred] = useState(() => loadPreference<unknown>('live-editing', false) === true)
+  const liveEditing = mode === 'markdown' && liveEditingPreferred
   const [dragActive, setDragActive] = useState(false)
   const [revisionsOpen, setRevisionsOpen] = useState(false)
   const [assetsOpen, setAssetsOpen] = useState(false)
@@ -218,7 +220,8 @@ export default function App() {
     savePreference('sync-enabled', syncEnabled)
     savePreference('export-style', exportStyle)
     savePreference('preview-typography', previewTypography)
-  }, [exportStyle, outlineCollapsed, previewTypography, split, syncEnabled, theme])
+    savePreference('live-editing', liveEditingPreferred)
+  }, [exportStyle, liveEditingPreferred, outlineCollapsed, previewTypography, split, syncEnabled, theme])
 
   const setMarkdownFontSize = useCallback((size: number) => {
     setPreviewTypography((current) => normalizePreviewTypography({ ...current, markdownFontSize: size }))
@@ -620,6 +623,7 @@ export default function App() {
     { id: 'save-asset-library', label: t('Download document and asset library ZIP'), description: t('Current document and all local assets; revisions not included'), keywords: 'export zip backup library 匯出 備份 資產庫', run: () => void downloadProject('all') },
     { id: 'save-html', label: t('Download portable HTML'), description: t('Read offline or reopen with editable source and local assets'), keywords: 'export self contained 匯出', run: () => void downloadHtml() },
     { id: 'search', label: t('Search document'), run: () => editorRef.current?.search() },
+    ...(mode === 'markdown' ? [{ id: 'live-editing', label: t(liveEditing ? 'Show split view' : 'Edit and preview in one place'), keywords: 'live notion wysiwyg 即時 編輯 預覽 雙欄', run: () => { setMobileView('editor'); setLiveEditingPreferred((enabled) => !enabled) } }] : []),
     { id: 'insert-heading', label: t('Insert: Heading 2'), description: t('## Heading'), keywords: '/ heading 標題', run: () => editorRef.current?.insert(`\n${t('## Heading')}\n`, 4) },
     ...(mode === 'markdown' ? [{ id: 'insert-table', label: t('Insert: Table'), description: t('Edit cells, rows, and columns'), keywords: '/ table 表格', run: () => editorRef.current?.editTable() }] : []),
     { id: 'insert-code', label: t('Insert: Code block'), description: t('Fenced code block'), keywords: '/ code 程式碼', run: () => editorRef.current?.insert('\n```text\n\n```\n', 9) },
@@ -632,7 +636,7 @@ export default function App() {
     { id: 'snapshot', label: t('Create current revision'), description: t('Save to local revision history'), run: () => void createManualSnapshot() },
     { id: 'revisions', label: t('Open revision history'), description: t('Preview, download, or restore an older revision'), run: () => setRevisionsOpen(true) },
     { id: 'shortcuts', label: t('Show keyboard shortcuts'), run: () => setHelpOpen(true) },
-  ].map((action) => ({ ...action, shortcut: formatShortcut(shortcuts[action.id]) })), [createManualSnapshot, downloadHtml, downloadSource, downloadProject, focusMode, loadFile, mode, saveFile, shortcuts, syncEnabled, t, typewriterMode])
+  ].map((action) => ({ ...action, shortcut: formatShortcut(shortcuts[action.id]) })), [createManualSnapshot, downloadHtml, downloadSource, downloadProject, focusMode, liveEditing, loadFile, mode, saveFile, shortcuts, syncEnabled, t, typewriterMode])
 
   useEffect(() => {
     if (!hydrated) return
@@ -668,7 +672,7 @@ export default function App() {
   }
 
   return (
-    <main className={`app-shell productivity-shell ${focusMode ? 'is-focus-mode' : ''} ${typewriterMode ? 'is-typewriter-mode' : ''}`}>
+    <main className={`app-shell productivity-shell ${focusMode ? 'is-focus-mode' : ''} ${typewriterMode ? 'is-typewriter-mode' : ''} ${liveEditing ? 'is-live-editing' : ''}`}>
       <input ref={fileInputRef} className="visually-hidden-file" type="file" disabled={importingWord} accept=".md,.markdown,.txt,.mmd,.mermaid,.docx,.html,.htm,.zip,text/plain,text/markdown,text/html,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/zip" onChange={(event) => {
         const file = event.target.files?.[0]
         if (file) void loadFile(file)
@@ -700,6 +704,7 @@ export default function App() {
           <button className="toolbar-button revision-trigger" type="button" onClick={() => setRevisionsOpen(true)} aria-label={t('Revision history')}><History size={17} aria-hidden="true" /><span>{t('Revision history')}</span></button>
         </div>
         <div className="workspace-toolbar__group">
+          {mode === 'markdown' ? <button className={`toolbar-button live-editing-trigger ${liveEditing ? 'is-active' : ''}`} type="button" onClick={() => { setMobileView('editor'); setLiveEditingPreferred((enabled) => !enabled) }} aria-pressed={liveEditing} aria-label={t('Live editing')} title={t(liveEditing ? 'Show split view' : 'Edit and preview in one place')}><SquarePen size={17} aria-hidden="true" /><span>{t('Live editing')}</span></button> : null}
           <button className="toolbar-button utility-command" type="button" onClick={() => setCommandOpen(true)} aria-label={t('Command palette')}><Command size={16} aria-hidden="true" /><span>{t('Find a command')}</span>{shortcuts.commands && <kbd>{formatShortcut(shortcuts.commands)}</kbd>}</button>
           <button className={`toolbar-button focus-trigger ${focusMode ? 'is-active' : ''}`} type="button" onClick={() => { setMobileView('editor'); setFocusMode((enabled) => !enabled) }} aria-pressed={focusMode} aria-label={t('Toggle focus mode')}><Maximize2 size={16} aria-hidden="true" /><span>{t('Focus')}</span></button>
         </div>
@@ -711,7 +716,7 @@ export default function App() {
       </div>
 
       <section
-        className={`workspace productivity-workspace ${mobileOutlineOpen ? 'has-mobile-outline' : ''} mobile-view-${mobileView} ${dragActive ? 'is-drag-active' : ''}`}
+        className={`workspace productivity-workspace ${mobileOutlineOpen ? 'has-mobile-outline' : ''} mobile-view-${mobileView} ${dragActive ? 'is-drag-active' : ''} ${liveEditing ? 'live-workspace' : ''}`}
         ref={workspaceRef}
         onDragEnter={(event) => { event.preventDefault(); setDragActive(true) }}
         onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'copy' }}
@@ -726,10 +731,29 @@ export default function App() {
         {mode === 'markdown' && mobileOutlineOpen ? <button className="outline-scrim" type="button" aria-label={t('Collapse document outline')} onClick={() => setMobileOutlineOpen(false)} /> : null}
         {mode === 'markdown' ? <OutlinePanel mobileOpen={mobileOutlineOpen} onMobileClose={() => setMobileOutlineOpen(false)} headings={headings} collapsed={outlineCollapsed} activeLine={activeLine} onCollapsedChange={setOutlineCollapsed} onJump={jumpToLine} /> : null}
         <section className="pane pane--editor" style={{ flex: `${split} 1 0` }}>
-          <header className="pane-header"><div className="pane-title"><FileText size={16} aria-hidden="true" />{t('Editor')}<select className="document-mode" aria-label={t('Document mode')} value={mode} onChange={(event) => changeMode(normalizeDocumentMode(event.target.value))}>{(Object.keys(DOCUMENT_MODES) as DocumentMode[]).map((value) => <option key={value} value={value}>{t(DOCUMENT_MODES[value].label)}</option>)}</select></div><div className="pane-tools">{mode === 'markdown' ? <button type="button" className="table-tool" onClick={() => editorRef.current?.editTable()} title={t('Insert or edit table')} aria-label={t('Insert or edit table')}><Table2 size={17} aria-hidden="true" /><span>{t('Table')}</span></button> : null}<button type="button" onClick={() => editorRef.current?.search()} title={t('Search document')} aria-label={t('Search document')}><Search size={17} aria-hidden="true" /></button><button type="button" className={typewriterMode ? 'is-active' : ''} aria-pressed={typewriterMode} onClick={() => setTypewriterMode((enabled) => !enabled)} title={t('Typewriter mode')} aria-label={t('Typewriter mode')}><AlignCenter size={17} aria-hidden="true" /></button></div></header>
-          <EditorPane ref={editorRef} mode={mode} value={markdown} onChange={changeMarkdown} onScrollLine={handleEditorScroll} typewriter={typewriterMode} onSlashCommand={() => setCommandOpen(true)} onPasteFiles={(files) => void handleAssetFiles(files)} />
+          <header className="pane-header">
+            <div className="pane-title">
+              <FileText size={16} aria-hidden="true" />{t(liveEditing ? 'Live editing' : 'Editor')}
+              <select className="document-mode" aria-label={t('Document mode')} value={mode} onChange={(event) => changeMode(normalizeDocumentMode(event.target.value))}>
+                {(Object.keys(DOCUMENT_MODES) as DocumentMode[]).map((value) => <option key={value} value={value}>{t(DOCUMENT_MODES[value].label)}</option>)}
+              </select>
+            </div>
+            <div className="editor-pane-actions">
+              {liveEditing ? <div className="preview-tools">
+                <PreviewSettings theme={theme} onThemeChange={setTheme} markdownSize={previewTypography.markdownFontSize} mermaidSize={previewTypography.mermaidFontSize} onMarkdownSizeChange={setMarkdownFontSize} onMermaidSizeChange={setMermaidFontSize} onReset={resetPreviewFontSizes} />
+              </div> : null}
+              <div className="pane-tools">
+                {mode === 'markdown' ? <button type="button" className="table-tool" onClick={() => editorRef.current?.editTable()} title={t('Insert or edit table')} aria-label={t('Insert or edit table')}><Table2 size={17} aria-hidden="true" /><span>{t('Table')}</span></button> : null}
+                <button type="button" onClick={() => editorRef.current?.search()} title={t('Search document')} aria-label={t('Search document')}><Search size={17} aria-hidden="true" /></button>
+                <button type="button" className={typewriterMode ? 'is-active' : ''} aria-pressed={typewriterMode} onClick={() => setTypewriterMode((enabled) => !enabled)} title={t('Typewriter mode')} aria-label={t('Typewriter mode')}><AlignCenter size={17} aria-hidden="true" /></button>
+              </div>
+            </div>
+          </header>
+          {liveEditing ? <p className="live-editing-hint">{t('Click a block to edit Markdown. Click outside to see its formatting.')}</p> : null}
+          <EditorPane ref={editorRef} mode={mode} value={markdown} onChange={changeMarkdown} onScrollLine={handleEditorScroll} typewriter={typewriterMode} liveEditing={liveEditing} theme={theme} markdownFontSize={previewTypography.markdownFontSize} mermaidFontSize={previewTypography.mermaidFontSize} assetVersion={assetVersion} onSlashCommand={() => setCommandOpen(true)} onPasteFiles={(files) => void handleAssetFiles(files)} />
         </section>
 
+        {!liveEditing ? <>
         <button className="splitter" type="button" onPointerDown={beginResize} onKeyDown={(event) => {
           if (!['ArrowLeft', 'ArrowRight', 'Home'].includes(event.key)) return
           event.preventDefault()
@@ -743,6 +767,7 @@ export default function App() {
           </div></header>
           <PreviewPane ref={previewRef} mode={mode} markdown={deferredMarkdown} theme={theme} markdownFontSize={previewTypography.markdownFontSize} mermaidFontSize={previewTypography.mermaidFontSize} assetVersion={assetVersion} onScrollLine={handlePreviewScroll} onLayout={handlePreviewLayout} onSourceLine={jumpToLine} onEditTable={editPreviewTable} />
         </section>
+        </> : null}
 
         {dragActive ? <div className="drop-target" aria-hidden="true"><Paperclip size={34} /><strong>{t('Drop to open or insert files')}</strong><span>{t('Markdown, text, Mermaid, Word (.docx), HTML, project ZIP, and media')}</span></div> : null}
         {statsOpen ? <StatsPopover stats={stats} available={available} staticDeployment={IS_STATIC_DEPLOYMENT} onClose={() => setStatsOpen(false)} onClear={() => { if (window.confirm(t('Clear this document? Download a copy first if you want to keep it.'))) changeMarkdown('') }} /> : null}

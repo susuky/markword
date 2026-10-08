@@ -276,7 +276,7 @@ md.block.ruler.before('reference', 'markword_footnote_definition', footnoteDefin
 
 function annotateSourceRanges(tokens: Token[]) {
   for (const token of tokens) {
-    if (token.map && (token.nesting === 1 || token.type === 'fence' || token.type === 'code_block')) {
+    if (token.map && (token.nesting === 1 || token.type === 'fence' || token.type === 'code_block' || token.type === 'hr')) {
       token.attrSet('data-source-start', String(token.map[0] + 1))
       token.attrSet('data-source-end', String(Math.max(token.map[0] + 1, token.map[1])))
     }

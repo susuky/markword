@@ -1,5 +1,5 @@
 import { Columns3, Plus, Rows3, Trash2, X } from 'lucide-react'
-import { useEffect, useRef, useState, type ClipboardEvent, type KeyboardEvent } from 'react'
+import { useLayoutEffect, useRef, useState, type ClipboardEvent, type KeyboardEvent } from 'react'
 import { useI18n } from '../i18n'
 import { clipboardTable, MAX_TABLE_CELLS, TABLE_SIZE_ERROR, type TableAlignment, type TableData } from '../tableEditing'
 import { Modal } from './Modal'
@@ -17,9 +17,8 @@ export function TableEditor({ initial, existing, onApply, onClose }: {
   const gridRef = useRef<HTMLTableElement>(null)
   const width = data.alignments.length
 
-  useEffect(() => {
-    const frame = requestAnimationFrame(() => gridRef.current?.querySelector('textarea')?.focus())
-    return () => cancelAnimationFrame(frame)
+  useLayoutEffect(() => {
+    gridRef.current?.querySelector('textarea')?.focus()
   }, [])
 
   const focusCell = (row: number, column: number) => {

@@ -1,23 +1,23 @@
 # Markword
 
-PDF／Word 已改為本機 Mermaid 渲染，且 PDF 只接受內嵌資源。安裝、離線處理範圍與限制請參閱[本機匯出說明](README.zh-TW.md#本機匯出與資源限制)。
-
-匯入解壓限制、同名資產保留、多分頁衝突保護與新版匯出行為，以[繁體中文使用說明](README.zh-TW.md#使用-markword)為準。Word 使用固定版型，僅接受 `style: Classic`；四種成品版型適用於 HTML／PDF。
-
 **English** | [繁體中文](README.zh-TW.md)
 
+Markword is a browser-based Markdown editor for notes, documents, and reports. Read and edit in one place or use a synchronized split preview, then export your work as Markdown, HTML, PDF, or Word.
 
-Markword is a Markdown editor and document statistics workspace built with FastAPI and React/Vite. It includes synchronized editing and preview, Mermaid, syntax highlighting, themes, local draft recovery, and PDF/Word export.
+![Markword writing workspace](assets/markword_preview.png)
 
-This repository is available for viewing and evaluation. Deployment and development instructions below are for users with prior written permission.
+## Features
+
+- **Write and preview**: single-pane live editing, synchronized split preview, document outline, and search.
+- **Rich content**: code highlighting, Mermaid diagrams, math, task lists, and a visual table editor.
+- **Bring your documents**: open Markdown, text, Mermaid, HTML, Word (`.docx`), or Markword project ZIP files; paste or drop images and attachments.
+- **Save and recover**: automatic browser drafts, revision history, and project backups with attachments.
+- **Export and share**: Markdown, portable HTML, PDF, and Word, with four HTML/PDF layouts.
+- **Make it comfortable**: eight themes, focus mode, word counts, mobile layouts, and English/Traditional Chinese interfaces.
 
 ## Get started
 
-For authorized evaluation, build the current source with Docker Compose or follow the local development steps below.
-
-### Build and deploy from source with Docker Compose
-
-Requirements: Git, Docker, and Docker Compose.
+You need Git, Docker, and Docker Compose. This repository is available for viewing and evaluation only; obtain the author's prior written permission before running or deploying it.
 
 ```bash
 git clone https://github.com/susuky/markword.git
@@ -25,224 +25,45 @@ cd markword
 docker compose up --build -d
 ```
 
-Open `http://localhost:27860`. Check or stop the service with:
+Once the build finishes, open [http://localhost:27860](http://localhost:27860). The first start downloads and installs the required packages. Run `docker compose down` to stop the service.
 
-```bash
-docker compose logs -f markword
-docker compose down
-```
+For installation without Docker, see the [local installation and deployment guide](docs/development.md) (Traditional Chinese).
 
-![Markword React editor with live preview](assets/markword_preview.png)
+## Basic usage
 
-## Features
+1. **Open a document**: click **Open**, drop a document into the workspace, or start writing. HTML and Word files convert to Markdown; review the result because complex layouts may change.
+2. **Choose your view**: split view shows source and preview together. Click **Live editing** for a single pane; click a block to edit its Markdown source and leave it to see the formatting again. Click the button again to return to split view.
+3. **Add content**: paste or drop images, use the edit button beside a table to change cells, rows, and columns, or type `/` on an empty line for quick inserts.
+4. **Save and export**: use **Save** or `Ctrl/Cmd+S` to save the source. Open **Export** to choose a sharing or backup format.
 
-- Live totals for characters, Chinese characters, English words, digits, full-width punctuation, and lines
-- Live Markdown preview with two-way synchronized editor/preview scrolling
-- Clickable document outline, preview-to-source navigation, and a synchronized scrolling toggle
-- Light, Paper, Sage, Dark, Ocean, Nord, Dracula, and Midnight themes
-- Syntax highlighting, Mermaid, KaTeX, task lists, and footnotes
-- Open or drag Markdown, HTML (`.html`/`.htm`), Word, or Markword project ZIP files, then download Markdown or portable HTML
-- IndexedDB local asset library for imported, pasted, or dropped images, video, audio, and attachments
-- CodeMirror search and folding, command palette, quick inserts, focus mode, and typewriter mode
-- IndexedDB draft recovery, automatic five-minute revisions, manual revisions, backups before opening files, and non-destructive restore
-- Mobile editor/preview tabs and an installable offline PWA app shell
-- Complete English and Traditional Chinese interfaces with a remembered language preference
-- Unified Markdown, portable HTML, PDF, and Word (`.docx`) export menu
-- Classic, Editorial, Report, and Compact HTML/PDF document layouts
-- One FastAPI process serves both the API and production frontend assets
+Browsers with direct file saving can update an opened file or let you choose a new location. Other browsers download the source instead.
 
-## Using Markword
+### Choose an export format
 
-### Editor controls
+| Format | Use it for |
+| --- | --- |
+| Markdown / text / Mermaid | Editable source; local attachments are separate |
+| Project ZIP | Back up the current document and its referenced local attachments, then reopen them for editing |
+| Portable HTML | Share an offline-readable document with its source and referenced local attachments |
+| PDF / Word | Print or deliver a document; Word uses a fixed layout |
 
-- `Ctrl/Cmd+K`: open the command palette. Type `/` on an empty line for quick insert commands.
-- `Ctrl/Cmd+F`: search and replace. `Ctrl/Cmd+S`: download the current Markdown file.
-- `?`: show keyboard shortcuts. `Ctrl/Cmd+Shift+F`: toggle focus mode.
-- Use the left outline to jump to headings; double-click preview blocks to return to source.
-- Open or drag local Markdown/Markword project ZIP files from the toolbar. Import assets from the Assets panel, or paste and drop them directly into the editor.
-- HTML files convert in the browser, preserving headings, paragraphs, emphasis, lists, task checkboxes, links, code, basic tables, and embedded images. Layout, interactive elements, and merged cells may change. Image URLs remain references; adjacent image files need to be imported separately. HTML files are limited to 15 MiB.
-- Newly exported portable HTML includes the original source and document mode. Reopening restores that source and embedded local attachments, remapping filename collisions. Changes made only to the rendered HTML do not update its saved source. Older HTML without source data uses normal HTML conversion.
-- The Export menu contains Markdown, project ZIP, HTML, PDF, and Word. HTML/PDF can use Classic, Editorial, Report, or Compact layouts.
-- Project ZIP includes only the current document and its referenced local assets. Document + asset library ZIP includes all local assets; neither includes revision history or other documents.
-- PDF and Word support local PNG, JPEG, GIF, WebP, and BMP images, task checkboxes, footnotes, and formulas. Formulas are rendered as PNGs with LaTeX alternative text, not native Word equations. Word footnotes use superscript references and numbered paragraphs at the end.
-- Themes apply to preview, HTML, PDF, Word, and Mermaid. Portable HTML embeds rendered Mermaid SVG and local assets.
-- Drafts live in browser IndexedDB. Markword creates an automatic local revision every five minutes after changes, retaining up to 120 revisions and backing up the current content before restore.
-- The PWA caches only the editor/preview app shell and static assets. PDF and Word are still generated by the local FastAPI service.
-- Use the language button in the header to switch between English and Traditional Chinese. The preference is saved locally without changing document content.
+### Useful shortcuts
 
-### Local assets and backups
+| Shortcut | Action |
+| --- | --- |
+| `Ctrl/Cmd+S` | Save the document |
+| `Ctrl/Cmd+F` | Search and replace |
+| `Ctrl/Cmd+K` | Open the command palette |
 
-- Assets are stored as Blobs in browser IndexedDB. Importing and editing do not upload them; PDF/Word export sends supported images referenced by the document to the connected Markword API. Each local asset is limited to 200 MiB and project contents to 500 MiB.
-- Images use standard relative Markdown such as `![photo](./assets/photo.png)`. Video and audio use `@[video](./assets/demo.mp4)` and `@[audio](./assets/voice.mp3)`.
-- A project ZIP contains the current document, referenced `assets/`, and `markword.json`, and can be reopened through Open. Inline links, reference links, images, and media count as references; code examples do not.
-- Document + asset library ZIP contains the current document and the entire asset library. If referenced files are missing, it preserves available files and lists missing paths in `markword.json` as `missingAssets`, with a warning after download. The document-only ZIP instead reports the missing assets and stops.
-- ZIPs do not contain revision history or other documents. Download other documents you need separately before clearing site data.
-- Portable HTML converts referenced local assets to data URLs. Large videos can make the HTML substantially larger; prefer project ZIP for those documents.
-- PDF/Word images are limited to 3 MiB each, 8,192 pixels on either side, and 16 million pixels. The request including embedded images is still limited to 5 million characters. GIF/WebP use the first frame; use portable HTML or project ZIP for SVG, AVIF, video, audio, and other attachments.
-- Mermaid diagrams and KaTeX formulas are rendered using local packages and offline Chromium. At most 200 formulas of up to 10,000 characters each are rendered; invalid or over-limit formulas keep their source with a notice. Neither export format loads remote or local-file images.
-- Browser quota and retention vary by browser and device. Export a project ZIP before clearing site data, changing origins, or moving to another device.
+### Drafts and backups
 
-### Document loading and persistence
+Drafts, revision history, and imported attachments stay in the current browser. An automatically saved draft is separate from your computer file. Export a project ZIP before changing devices or clearing site data; ZIPs do not include revision history or other documents.
 
-Markword uses a single-working-draft model intended for editing one document at a time on your own computer:
+Importing and editing happen in the browser. PDF/Word export sends the document and supported local images to the Markword service you are using. Run Markword on your own computer to keep that processing there.
 
-- Opening or dropping a text, Markdown, Mermaid, HTML, Word, or project ZIP file saves a pre-open revision before replacing the workspace. Failed conversion, failed backup, or edits made during backup preserve the current document. Opening and HTML/Word conversion run in the browser. Converted HTML/Word documents require a new save target.
-- The current content is written to IndexedDB about 350 ms after editing. While content keeps changing, a local revision is created every five minutes, with up to 120 retained. The current content is saved before restoring an older revision.
-- Markdown changes regenerate preview blocks with source line ranges. Tables, code, images, Mermaid, and KaTeX trigger layout remeasurement, so synchronized scrolling does not depend on a fixed document or line height.
-- The browser does not watch the source file for external disk changes. Reopen or drop the file again, and use Download Markdown to save workspace content back to disk.
-- Revision history, the working draft, and local assets exist only in that browser. Download the documents and assets you need before clearing site data or changing browsers; project ZIPs do not include revision history. Markword is not a multi-document database.
+## Learn more
 
-README screenshots use generic sample Markdown. User documents and browser IndexedDB data are not part of this repository.
-
-## Deployment reference
-
-### Configuration
-
-| Variable | Default | Purpose |
-| --- | --- | --- |
-| `MARKWORD_FRONTEND_DIR` | `frontend/dist` | Production frontend directory |
-| `MARKWORD_EXPORT_DIR` | `exports` | PDF/Word export directory |
-| `MARKWORD_CORS_ORIGINS` | Vite localhost origins | Comma-separated CORS allowlist |
-| `MARKWORD_HOST` | `127.0.0.1` | `python app.py` 與 `python -m backend.main` 的監聽位址 |
-| `MARKWORD_PORT` | `27860` | Port used by `python app.py` |
-
-### systemd deployment
-
-The example assumes `/opt/markword` and a `markword` service account. On Debian/Ubuntu, install Node.js, Python, `uv`, and the fonts/libraries required by WeasyPrint, then create the account and writable export directory:
-
-```bash
-sudo apt install fonts-noto-cjk libcairo2 libpango-1.0-0 libpangoft2-1.0-0 shared-mime-info
-sudo useradd --system --home-dir /opt/markword --shell /usr/sbin/nologin markword
-sudo chown -R markword:markword /opt/markword
-sudo install -d -o markword -g markword /opt/markword/exports
-```
-
-Skip `useradd` if the account already exists. Build the frontend and create the Python environment:
-
-```bash
-cd /opt/markword/frontend
-sudo -u markword npm install
-sudo -u markword npm run build
-cd /opt/markword
-sudo -u markword uv venv
-sudo -u markword uv pip install -r requirements.txt
-sudo /opt/markword/.venv/bin/python -m playwright install-deps chromium
-sudo -u markword /opt/markword/.venv/bin/python -m playwright install chromium
-sudo install -m 0644 markword.service.example /etc/systemd/system/markword.service
-```
-
-Adjust `/etc/systemd/system/markword.service` for different paths or accounts, then enable it:
-
-```bash
-sudo systemctl daemon-reload
-sudo systemctl enable --now markword
-sudo systemctl status markword
-```
-
-For updates, rebuild the frontend, update Python dependencies, and restart:
-
-```bash
-cd /opt/markword/frontend && sudo -u markword npm install && sudo -u markword npm run build
-cd /opt/markword && sudo -u markword uv pip install -r requirements.txt
-sudo -u markword /opt/markword/.venv/bin/python -m playwright install chromium
-sudo systemctl restart markword
-```
-
-預設啟動方式與 Docker Compose 只讓本機連線。API 沒有內建登入驗證；若自行改成區網監聽或透過反向代理公開，需另行加入存取驗證與請求／資源限制。
-
-## Development
-
-Requirements: Python 3.10+, Node.js 20+, and npm. Python dependencies can be installed with `uv` or `pip`.
-
-### Project structure
-
-```text
-backend/             FastAPI API, statistics, and export logic
-frontend/            React + TypeScript + Vite frontend
-frontend/dist/       Production output from npm run build (not committed)
-exports/             Generated exports (not committed)
-Dockerfile           Multi-stage production image
-docker-compose.yml   Single-host container deployment example
-```
-
-### Local development
-
-Install backend dependencies and start FastAPI:
-
-```bash
-uv venv
-uv pip install -r requirements.txt
-uv run python -m playwright install --with-deps chromium
-npm --prefix frontend ci
-uv run uvicorn backend.main:app --reload --host 127.0.0.1 --port 27860
-```
-
-Start the frontend in another terminal:
-
-```bash
-cd frontend
-npm install
-npm run dev
-```
-
-Open the URL printed by Vite (normally `http://localhost:5173`). Vite proxies `/api` requests to `http://127.0.0.1:27860`, so no development CORS setup is needed.
-
-For API-only testing, open `http://127.0.0.1:27860/docs`.
-
-### Local production build
-
-Build the frontend, then let FastAPI serve both the API and static assets:
-
-```bash
-cd frontend
-npm install
-npm run build
-cd ..
-uv run uvicorn backend.main:app --host 127.0.0.1 --port 27860
-```
-
-Open `http://localhost:27860`. Rebuild the frontend before redeploying frontend changes.
-
-Export also requires `frontend/node_modules/mermaid/dist/mermaid.min.js`, the JavaScript, CSS and fonts in `frontend/node_modules/katex/dist/`, and Playwright Chromium. The Docker build includes them; manual deployments must retain them alongside `frontend/dist`.
-
-### API
-
-| Method | Path | Purpose |
-| --- | --- | --- |
-| `GET` | `/api/health` | Service health |
-| `POST` | `/api/analyze` | Text statistics |
-| `GET` | `/api/themes` | Preview themes |
-| `POST` | `/api/export/pdf` | Export PDF using `theme` and `style` |
-| `POST` | `/api/export/docx` | 依 `theme` 匯出固定版型 Word，`style` 僅接受 `Classic` |
-
-The complete request/response schema is available at `/docs`. `python app.py` remains available for existing launch scripts, but new deployments should target `backend.main:app` directly.
-
-### GitHub Pages build
-
-GitHub Pages 發布目前停用：GitHub Actions 中的 Pages workflow 已手動停用；`.github/workflows/deploy-pages.yml` 也已停用推送觸發與建置工作。恢復方式請參閱[繁體中文建置說明](README.zh-TW.md#github-pages-建置)；靜態版建置與 CI 檢查仍保留。
-
-Pages uses a dedicated `pages` build mode. The normal `npm run build` and full FastAPI deployment remain unchanged. Build the Pages edition locally with:
-
-```bash
-cd frontend
-npm ci
-npm run build:pages
-```
-
-### Tests and checks
-
-```bash
-pytest
-cd frontend
-npm run lint
-npm run build
-npm run build:pages
-npm run test:ui
-```
-
-The UI checks start a local preview when needed and exercise draft recovery, revision restore, downloads, keyboard controls, and the mobile layout. They require the Playwright Chromium browser (`npx playwright install chromium`).
-
-Screenshots from the previous Gradio UI remain in `assets/` only for migration comparison.
+See the [development and deployment guide](docs/development.md) (Traditional Chinese) for local development, configuration, API details, and export limits.
 
 ## Copyright
 
