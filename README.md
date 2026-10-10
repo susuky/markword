@@ -2,19 +2,19 @@
 
 **English** | [繁體中文](README.zh-TW.md)
 
-Markword is a browser-based Markdown editor for notes, documents, and reports. Read and edit in one place or use a synchronized split preview, then export your work as Markdown, HTML, PDF, or Word.
+Markword is a browser-based Markdown and HTML editor. Write Markdown directly in an editable preview, add content with a block menu, or keep the source beside your document. The separate HTML workspace lets you open a page and change its text and links without writing HTML.
 
 ![Markword writing workspace](assets/markword_preview.png)
 
 ## Features
 
-- **Write and preview**: single-pane live editing, synchronized split preview, document outline, and search.
-- **Edit HTML directly**: a separate HTML workspace with click-to-edit text, link editing, synchronized source, and HTML downloads.
-- **Rich content**: code highlighting, Mermaid diagrams, math, task lists, and a visual table editor.
-- **Bring your documents**: open Markdown, text, Mermaid, HTML, Word (`.docx`), or Markword project ZIP files; paste or drop images and attachments.
-- **Save and recover**: automatic browser drafts, revision history, and project backups with attachments.
-- **Export and share**: Markdown, portable HTML, PDF, and Word, with four HTML/PDF layouts.
-- **Make it comfortable**: eight themes, focus mode, word counts, mobile layouts, and English/Traditional Chinese interfaces.
+- **Single-page writing**: edit text in place, press Enter to keep writing, and use `/` or **Add content** for headings, lists, quotes, code, tables, and dividers.
+- **Source and preview together**: switch to split editing with synchronized scrolling, a document outline, and search. Both views edit the same document and share undo/redo.
+- **HTML editing**: open or paste HTML, click to change text and links, and download the edited page with its original styles.
+- **Rich content**: editable code blocks with syntax highlighting, task checkboxes, a table editor, Mermaid diagrams, and math.
+- **Import and export**: open Markdown, text, Mermaid, HTML, Word (`.docx`), and project ZIP files. Export Markdown, portable HTML, or project ZIP; the full edition also exports PDF and Word.
+- **Drafts and backups**: automatic browser drafts, Markdown revision history, and project backups with referenced attachments.
+- **Workspace controls**: a collapsible toolbar, eight preview themes, focus mode, word counts, mobile layouts, and English/Traditional Chinese interfaces.
 
 ## Get started
 
@@ -34,7 +34,7 @@ For installation without Docker, see the [local installation and deployment guid
 
 | Feature | Local full edition | Pages edition |
 | --- | --- | --- |
-| Editing, preview, diagrams, and math | Supported | Supported |
+| Single-page / split editing, diagrams, and math | Supported | Supported |
 | HTML source and visual text editing | Supported | Supported |
 | Browser drafts, revisions, and attachments | Supported | Supported |
 | Markdown, portable HTML, and project ZIP | Supported | Supported |
@@ -42,30 +42,49 @@ For installation without Docker, see the [local installation and deployment guid
 
 In the Pages edition, download portable HTML and use your browser to print it as PDF. Use the local full edition for direct PDF or Word export. See the [deployment guide](docs/development.md#github-pages-建置) for Pages configuration and publishing.
 
-## Basic usage
+## Writing and editing
 
-1. **Open a document**: click **Open**, drop a document into the workspace, or start writing. HTML and Word files convert to Markdown; review the result because complex layouts may change.
-2. **Choose your view**: split view shows source and preview together. Click **Single-page editing** to work directly in the preview, or **Split editing** to bring the source back. The toolbar button in the top header collapses or expands the workspace tools; your choice is remembered.
-3. **Add content**: paste or drop images, use the edit button beside a table to change cells, rows, and columns, or type `/` on an empty line for quick inserts.
-4. **Save and export**: use **Save** or `Ctrl/Cmd+S` to save the source. Open **Export** to choose a sharing or backup format.
+### Markdown: single-page or split editing
 
-Browsers with direct file saving can update an opened file or let you choose a new location. Other browsers download the source instead.
+Click **Open**, drop a document into the workspace, or start writing. In this workspace, HTML and Word files convert to Markdown; review the result because complex layouts may change.
 
-### Edit Markdown without writing markup
+The preview is editable by default. On desktop, click **Single-page editing** to hide the source, or **Split editing** to bring it back. On mobile, use the **Editor** and **Preview** tabs. The toolbar button beside **Export** collapses or expands the workspace tools and remembers your choice.
 
-The preview is editable by default, including writing from an empty document. Enter creates a paragraph or continues a list; Enter on an empty item exits the list. Press `/` on an empty line or use **Add content** to insert paragraphs, three heading levels, bulleted/numbered/task lists, quotes, code, tables, and dividers. The plus beside a block inserts after it; the page footer adds more content. Select links to change their addresses, toggle task checkboxes, or use **Edit table** for tables. Use the **Preview editing tools** menu for undo or redo, and **Single-page editing** to hide the source on desktop; switch between **Editor** and **Preview** on mobile. Changes share the existing source, browser draft, downloads, and undo/redo history.
+![Single-page writing with the Add content menu](assets/markword-block-editor.png)
 
-Code blocks support direct editing, multiline input, and paste. Press Escape or Ctrl/Cmd+Enter to finish; syntax highlighting returns when you leave the block. Blocks containing formulas, footnote references, or media still use the source editor. A visual edit regenerates that block's Markdown, so list indentation, emphasis markers, or reference-link notation may change; other source blocks stay untouched.
+| To… | In the preview… |
+| --- | --- |
+| Write or change text | Click a paragraph or heading and type; empty documents are editable too |
+| Continue writing | Press `Enter` for a new paragraph or list item; press `Enter` on an empty item to leave the list |
+| Insert a block | Type `/` on an empty line or click **+** above the preview to open **Add content** |
+| Insert between blocks | Use the **+** beside a block to insert after it; **Add content** at the bottom continues the document |
+| Edit code | Click the code block; type or paste multiple lines, then press `Escape` or `Ctrl/Cmd+Enter` to finish |
+| Edit links, tasks, or tables | Select a link to change its address, toggle a checkbox, or choose **Edit table** to change cells, rows, and columns |
+| Undo or redo | Open the **…** preview tools menu |
+
+The block menu includes paragraphs, three heading levels, bulleted/numbered/task lists, quotes, code, tables, and dividers. Paste or drop images and attachments into the workspace to add them.
+
+Edits update the same source and browser draft. Code highlighting returns when you leave a code block. Blocks containing formulas, footnote references, or media still use the source editor. Editing a block in the preview may normalize its Markdown, including list indentation, emphasis markers, or reference links; other blocks keep their original source.
 
 ### Edit HTML without writing markup
 
-Choose **HTML editor** from the document mode menu, or append `#/html` to the app URL. Open an `.html`/`.htm` file or use **Paste HTML**, then click text in the preview to edit it. Press Enter to finish, or select a link to change its address. The source stays in sync and can be hidden on desktop; mobile provides preview and source tabs. Use **Undo**, **Redo**, and **Download** (`Ctrl/Cmd+S`) as needed.
+Choose **HTML editor** from the **Markdown** menu above the source pane in split view, or append `#/html` to the app URL. This workspace has its own browser draft, separate from Markdown.
 
-The HTML workspace has its own browser draft, separate from Markdown. Download a copy before clearing browser data. Original styles and scripts remain in the downloaded file, but page scripts do not run in the editing preview. This version edits static text and existing links; it does not offer layout dragging, image replacement, or dynamic chart editing. Use embedded assets or full URLs for resources stored outside the HTML file. Visual edits may normalize markup whitespace and quoting.
+1. **Open a page**: choose an `.html`/`.htm` file, or use **Paste HTML** for a complete page or fragment, including HTML from an AI conversation.
+2. **Edit the preview**: click text and type, then press `Enter` to finish. Select a link to change its address. The source stays in sync; hide it on desktop or switch tabs on mobile.
+3. **Download your changes**: use **Undo** or **Redo** as needed, then **Download** or `Ctrl/Cmd+S` to save an HTML file.
+
+![HTML source beside a directly editable page](assets/markword-html-editor.png)
+
+Original styles and scripts remain in the downloaded file, but page scripts do not run in the editing preview. You can edit static text and existing links; layout dragging, image replacement, and dynamic chart editing are not supported.
+
+Relative-path resources are not imported with the HTML file; use embedded assets or full URLs. Visual edits may normalize markup whitespace and quoting.
 
 Opening HTML in the Markdown workspace still converts it to Markdown. Switch to the HTML editor first to keep the page as HTML.
 
-### Choose an export format
+## Saving and exporting
+
+In the Markdown workspace, use **Save** or `Ctrl/Cmd+S` to save the source. Browsers with direct file saving can update an opened file or let you choose a new location; other browsers download it. Use **Export** for the formats below.
 
 | Format | Use it for |
 | --- | --- |
@@ -78,13 +97,16 @@ Opening HTML in the Markdown workspace still converts it to Markdown. Switch to 
 
 | Shortcut | Action |
 | --- | --- |
-| `Ctrl/Cmd+S` | Save the document |
-| `Ctrl/Cmd+F` | Search and replace |
-| `Ctrl/Cmd+K` | Open the command palette |
+| `Ctrl/Cmd+S` | Save Markdown source or download the current HTML page |
+| `Ctrl/Cmd+F` | Search and replace in the Markdown workspace |
+| `Ctrl/Cmd+K` | Open the Markdown workspace command palette |
 
 ### Drafts and backups
 
-Drafts, revision history, and imported attachments stay in the current browser. An automatically saved draft is separate from your computer file. Export a project ZIP before changing devices or clearing site data; ZIPs do not include revision history or other documents.
+Drafts stay in the current browser; saving a draft does not update a file on your computer. Before changing devices or clearing site data:
+
+- **Markdown**: export a project ZIP to keep the current document and its referenced local attachments. ZIPs do not include revision history or other documents.
+- **HTML**: download the page from the HTML editor. Its separate draft is not included in a Markdown project ZIP.
 
 Importing and editing happen in the browser. PDF/Word export sends the document and supported local images to the Markword service you are using. Run Markword on your own computer to keep that processing there.
 
