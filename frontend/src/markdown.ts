@@ -27,7 +27,7 @@ const MAX_HIGHLIGHT_CACHE_CHARS = 1_000_000
 const MAX_HIGHLIGHT_CACHE_ENTRIES = 100
 let highlightCacheChars = 0
 
-function highlightCode(code: string, language: string) {
+export function highlightCode(code: string, language: string) {
   const key = JSON.stringify([language, code])
   const cached = highlightCache.get(key)
   if (cached !== undefined) return cached
@@ -111,7 +111,7 @@ md.core.ruler.push('markword_task_lists', (state) => {
     const itemOpen = state.tokens[index - 2]
     if (itemOpen.type !== 'list_item_open') continue
     const text = inline.children?.find((child) => child.type === 'text')
-    const match = text?.content.match(/^\[([ xX])\]\s+/)
+    const match = text?.content.match(/^\[([ xX])\](?:\s+|$)/)
     if (!text || !match) continue
     text.content = text.content.slice(match[0].length)
     const checkbox = new state.Token('task_checkbox', '', 0)

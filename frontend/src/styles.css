@@ -25,7 +25,7 @@ button svg { flex-shrink: 0; }
 button:disabled { cursor: not-allowed; opacity: .55; }
 button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
 
-.app-shell { display: grid; grid-template-rows: var(--header-height) 56px minmax(0, 1fr) var(--status-height); width: 100%; height: 100dvh; background: var(--surface); }
+.app-shell { display: grid; --workspace-toolbar-height: 56px; grid-template-rows: var(--header-height) var(--workspace-toolbar-height) minmax(0, 1fr) var(--status-height); width: 100%; height: 100dvh; background: var(--surface); }
 .app-header { display: flex; align-items: center; gap: 24px; padding: 0 24px; border-bottom: 1px solid var(--border); }
 .brand { display: flex; flex: 0 0 192px; align-items: center; gap: 12px; font-size: 22px; font-weight: 750; letter-spacing: -.7px; }
 .brand img { flex: none; }
@@ -41,6 +41,9 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .toolbar-button.export-trigger { min-width: 106px; border-color: var(--accent); color: white; background: var(--accent); }
 .toolbar-button.export-trigger:hover:not(:disabled) { background: #105b52; border-color: #105b52; }
 .workspace-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 20px; border-bottom: 1px solid var(--border); background: #fbfcfb; }
+.app-shell.is-toolbar-collapsed { --workspace-toolbar-height: 0px; }
+.is-toolbar-collapsed .workspace-toolbar { visibility: hidden; overflow: hidden; border: 0; }
+.editor-pane-actions { display: flex; align-items: center; gap: 8px; }
 .workspace-toolbar__group { min-width: 0; gap: 4px; }
 .utility-command kbd { margin-left: 14px; padding: 3px 5px; border: 1px solid var(--border); border-radius: 4px; color: var(--muted); background: var(--surface); font: 11px/1.2 ui-monospace, monospace; }
 .focus-trigger { border-left-color: var(--border); border-radius: 0 6px 6px 0; }
@@ -360,7 +363,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 }
 @media (max-width: 900px) {
   :root { --header-height: 68px; --status-height: 48px; }
-  .app-shell { grid-template-rows: var(--header-height) 52px 48px minmax(0, 1fr) var(--status-height); }
+  .app-shell { --workspace-toolbar-height: 52px; grid-template-rows: var(--header-height) var(--workspace-toolbar-height) 48px minmax(0, 1fr) var(--status-height); }
   .app-header { gap: 8px; padding-inline: 12px; }
   .brand { flex-basis: auto; gap: 9px; font-size: 19px; }
   .brand img { width: 32px; height: 32px; }
@@ -368,6 +371,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   .document-heading { display: none; }
   .header-actions { gap: 4px; }
   .header-actions .toolbar-button { min-width: 44px; min-height: 44px; padding-inline: 10px; }
+  .view-mode-trigger { display: none; }
   .open-trigger span, .save-trigger span, .language-toggle span { display: none; }
   .header-actions .export-trigger { min-width: 44px; padding-inline: 12px; }
   .export-trigger > svg:last-child { display: none; }
@@ -398,7 +402,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   .status-bar .file-save-status__name { max-width: 84px; }
   .save-status > span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .theme-menu, .font-size-menu, .export-menu { position: fixed; top: 76px; right: 8px; max-width: calc(100vw - 16px); max-height: calc(100dvh - 92px); }
-  .theme-menu, .font-size-menu { top: 180px; max-height: calc(100dvh - 196px); }
+  .theme-menu, .font-size-menu { top: calc(var(--header-height) + var(--workspace-toolbar-height) + 110px); max-height: calc(100dvh - var(--header-height) - var(--workspace-toolbar-height) - 126px); }
   .stats-popover { left: 8px; width: calc(100% - 16px); max-height: calc(100% - 24px); overflow: auto; }
   .image-lightbox__canvas { padding: 62px 14px 88px; }
   .image-lightbox__close { top: 10px; right: 10px; }
@@ -411,6 +415,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   .save-status { font-size: 10px; }
 }
 @media (max-width: 430px) {
+  .brand > span { display: none; }
   .header-actions .export-trigger span { display: none; }
 }
 @media (prefers-reduced-motion: reduce) {

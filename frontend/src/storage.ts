@@ -19,7 +19,7 @@ export type PersistenceStatus = 'idle' | 'saving' | 'saved' | 'error' | 'conflic
 export type AssetKind = 'image' | 'video' | 'audio' | 'file'
 
 export interface StoredDraft {
-  id: typeof CURRENT_DRAFT_ID
+  id: string
   version?: number
   content: string
   metadata: DraftMetadata
@@ -143,11 +143,11 @@ function createRevisionId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2)}`
 }
 
-export async function getCurrentDraft(): Promise<StoredDraft | null> {
+export async function getCurrentDraft(id = CURRENT_DRAFT_ID): Promise<StoredDraft | null> {
   const database = await openDatabase()
   const transaction = database.transaction(DRAFT_STORE, 'readonly')
   const result = await requestResult(
-    transaction.objectStore(DRAFT_STORE).get(CURRENT_DRAFT_ID) as IDBRequest<StoredDraft | undefined>,
+    transaction.objectStore(DRAFT_STORE).get(id) as IDBRequest<StoredDraft | undefined>,
   )
   await transactionComplete(transaction)
   return result ?? null
@@ -156,18 +156,19 @@ export async function getCurrentDraft(): Promise<StoredDraft | null> {
 export async function loadCurrentDraft(
   fallbackContent = '',
   fallbackMetadata: DraftMetadata = {},
+  id = CURRENT_DRAFT_ID,
 ): Promise<StoredDraft> {
-  const stored = await getCurrentDraft()
+  const stored = await getCurrentDraft(id)
   if (stored) return stored
 
-  const legacyContent = localStorage.getItem(LEGACY_DOCUMENT_KEY)
+  const legacyContent = id === CURRENT_DRAFT_ID ? localStorage.getItem(LEGACY_DOCUMENT_KEY) : null
   let draft: StoredDraft
   try {
-    draft = await saveCurrentDraft(legacyContent ?? fallbackContent, fallbackMetadata, null)
+    draft = await saveCurrentDraft(legacyContent ?? fallbackContent, fallbackMetadata, null, id)
   } catch (error) {
     if (!(error instanceof DraftConflictError)) throw error
     // Two tabs may initialize an empty database at the same time.
-    const current = await getCurrentDraft()
+    const current = await getCurrentDraft(id)
     if (!current) throw error
     draft = current
   }
@@ -179,12 +180,13 @@ export async function saveCurrentDraft(
   content: string,
   metadata: DraftMetadata,
   expectedVersion: number | null,
+  id = CURRENT_DRAFT_ID,
 ): Promise<StoredDraft> {
   const database = await openDatabase()
   const transaction = database.transaction(DRAFT_STORE, 'readwrite')
   const complete = transactionComplete(transaction)
   const store = transaction.objectStore(DRAFT_STORE)
-  const previous = await requestResult(store.get(CURRENT_DRAFT_ID) as IDBRequest<StoredDraft | undefined>)
+  const previous = await requestResult(store.get(id) as IDBRequest<StoredDraft | undefined>)
   // Read, compare and write in one transaction across all browser tabs.
   if ((previous ? previous.version ?? 0 : null) !== expectedVersion) {
     await complete
@@ -196,7 +198,7 @@ export async function saveCurrentDraft(
   }
   const now = Date.now()
   const draft: StoredDraft = {
-    id: CURRENT_DRAFT_ID,
+    id,
     version: (previous?.version ?? 0) + 1,
     content,
     metadata: cloneMetadata(metadata),

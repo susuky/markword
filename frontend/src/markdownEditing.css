@@ -1,0 +1,59 @@
+.pane--preview { position: relative; container: preview-pane / inline-size; }
+.pane--preview .markdown-body { padding-top: 28px; }
+.pane--preview .markdown-body--editing { min-height: 0; padding-bottom: 16px; }
+.pane--preview .markdown-body > :is(ul, ol):first-child > li:first-child,
+.pane--preview .markdown-body > :is(ul, ol):first-child > li:first-child > p:first-child { margin-top: 0; }
+.markdown-edit-controls > .menu-wrap > button > svg:last-child { display: none; }
+.markdown-edit-menu { position: absolute; z-index: 50; top: calc(100% + 8px); right: 0; width: 300px; max-width: calc(100vw - 32px); max-height: calc(100dvh - 240px); overflow-y: auto; padding: 8px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); box-shadow: 0 16px 48px rgb(24 48 36 / 14%); }
+.markdown-edit-menu > .toolbar-button { width: 100%; min-height: 40px; justify-content: flex-start; }
+.markdown-edit-help { display: grid; gap: 8px; margin-top: 8px; padding: 12px 8px 4px; border-top: 1px solid var(--border); }
+.markdown-edit-help p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.6; }
+.markdown-body--editing [data-markdown-edit-text] { cursor: text; white-space: pre-wrap; }
+.markdown-body--editing [data-markdown-edit-text]:empty { display: inline-block; min-width: 2em; min-height: 1em; }
+.markdown-body--editing [data-markdown-edit-text]:empty::before { content: attr(data-placeholder); color: var(--md-muted); font-size: 16px; font-weight: 400; pointer-events: none; }
+.markdown-block-add { position: absolute; z-index: 12; left: 8px; display: grid; place-items: center; width: 28px; height: 28px; padding: 0; color: var(--muted); background: var(--surface); border: 1px solid var(--border); border-radius: 5px; cursor: pointer; }
+.markdown-block-menu { position: absolute; z-index: 60; top: 64px; right: 16px; width: 264px; max-width: calc(100% - 32px); max-height: calc(100% - 80px); overflow-y: auto; padding: 8px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); box-shadow: 0 12px 32px rgb(24 48 36 / 14%); }
+.markdown-block-menu-heading { display: flex; align-items: center; justify-content: space-between; padding: 4px 4px 8px 8px; color: var(--text); font-size: 13px; }
+.markdown-block-menu button { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 38px; padding: 8px 12px; border: 0; border-radius: 6px; color: var(--text); background: transparent; text-align: left; font: inherit; font-size: 14px; cursor: pointer; }
+.markdown-block-menu button:hover, .markdown-block-menu button:focus-visible { background: var(--accent-soft); color: var(--accent); }
+.markdown-block-menu-heading button { width: 32px; min-height: 32px; padding: 8px; }
+.markdown-block-menu .markdown-block-delete { border-top: 1px solid var(--border); margin-top: 8px; border-radius: 0; color: #9b331e; }
+.markdown-append { width: min(100%, 880px); margin: 0 auto; padding: 0 44px 64px; }
+.markdown-append button { display: flex; align-items: center; gap: 8px; min-height: 44px; width: 100%; padding: 8px 0; border: 0; background: transparent; color: inherit; font: inherit; font-size: 14px; cursor: text; text-align: left; }
+.markdown-append button:hover { color: var(--accent); }
+.markdown-append kbd { margin-left: auto; }
+.markdown-body--editing [data-markdown-edit-text]:hover { outline: 1px dashed currentColor; outline-offset: 3px; }
+.markdown-body--editing [data-markdown-edit-text]:focus { outline: 2px solid currentColor; outline-offset: 3px; }
+.markdown-body--editing input:not(:disabled) { cursor: pointer; }
+.markdown-body--editing pre > code[data-markdown-edit-code] { display: block; min-height: 1.55em; padding-right: 56px; white-space: pre; outline: none; cursor: text; }
+.markdown-body--editing pre > code[data-markdown-edit-code][hidden] { display: none; }
+.markdown-body--editing textarea[data-markdown-code-input] { display: block; width: 100%; min-height: 1.55em; padding: 0 56px 0 0; border: 0; border-radius: 0; outline: none; resize: none; overflow-y: hidden; color: var(--md-text); background: transparent; font: .9em/1.55 "JetBrains Mono", monospace; tab-size: 4; }
+.markdown-body--editing pre:focus-within { outline: 2px solid var(--md-accent); outline-offset: 2px; }
+.markdown-link-form { position: absolute; z-index: 30; bottom: 16px; right: 16px; width: min(420px, calc(100% - 32px)); display: grid; gap: 8px; padding: 16px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); box-shadow: 0 16px 48px rgb(24 48 36 / 14%); }
+.markdown-link-form label { font-size: 13px; }
+.markdown-link-form > div { display: flex; flex-wrap: wrap; gap: 4px; }
+.markdown-link-form input { flex: 1 0 100%; min-width: 0; width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; color: #263c36; background: white; font-size: 16px; }
+.markdown-link-form p { margin: 0; color: #9b331e; font-size: 13px; }
+@media (min-width: 901px) {
+  .is-visual-only:not(.is-focus-mode) .pane--editor, .is-visual-only:not(.is-focus-mode) .splitter { display: none; }
+  .is-visual-only .pane--preview { flex: 1 !important; }
+}
+@container preview-pane (max-width: 520px) {
+  .preview-header .preview-tools > .menu-wrap > button > span,
+  .preview-header .preview-tools > .menu-wrap > button > svg:last-child { display: none; }
+  .preview-header .preview-tools { gap: 2px; }
+  .preview-header .markdown-edit-menu { position: fixed; top: calc(var(--header-height) + var(--workspace-toolbar-height) + 64px); right: 16px; }
+}
+@container preview-pane (max-width: 360px) {
+  .pane--preview .preview-header .pane-title { font-size: 0; gap: 0; }
+}
+@media (max-width: 374px) {
+  .workspace-toolbar .outline-trigger span, .workspace-toolbar .asset-trigger span { display: none; }
+}
+@media (max-width: 900px) {
+  .markdown-block-menu button { min-height: 44px; }
+  .markdown-block-add { display: none; }
+  .markdown-append { padding-inline: 24px; }
+  .markdown-edit-menu > .toolbar-button, .markdown-link-form .toolbar-button { min-height: 44px; }
+  .preview-header .markdown-edit-menu { top: calc(var(--header-height) + var(--workspace-toolbar-height) + 110px); }
+}

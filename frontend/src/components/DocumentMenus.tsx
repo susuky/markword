@@ -8,7 +8,7 @@ import { DEFAULT_PREVIEW_TYPOGRAPHY, MARKDOWN_FONT_SIZE_RANGE, MERMAID_FONT_SIZE
 import type { DocumentMode, ExportStyleName, ThemeName } from '../types'
 import { FontSizeMenu } from './FontSizeMenu'
 
-function ToolbarMenu({ label, trigger, children, disabled = false, primary = false }: {
+export function ToolbarMenu({ label, trigger, children, disabled = false, primary = false }: {
   label: string
   trigger: ReactNode
   children: (close: () => void) => ReactNode

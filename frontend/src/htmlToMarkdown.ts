@@ -1,7 +1,11 @@
 import TurndownService from 'turndown'
 
-export function htmlToMarkdown(body: HTMLElement | DocumentFragment): string {
+export function htmlToMarkdown(body: HTMLElement | DocumentFragment, literalText = false): string {
   const converter = new TurndownService({ headingStyle: 'atx', bulletListMarker: '-', codeBlockStyle: 'fenced' })
+  if (literalText) {
+    const escape = converter.escape.bind(converter)
+    converter.escape = (text) => escape(text).replace(/[$~]/g, '\\$&')
+  }
   converter.addRule('strikethrough', {
     filter: (node) => ['DEL', 'S', 'STRIKE'].includes(node.nodeName),
     replacement: (content) => `~~${content}~~`,

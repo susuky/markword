@@ -1,7 +1,7 @@
 import {
   AlignCenter, ArrowLeftRight, BarChart3, CheckCircle2, Circle, Command,
-  Eye, FileText, FolderOpen, HelpCircle, History, Languages, Link2,
-  ListTree, Maximize2, Paperclip, Save, Search, Unlink2, AlertCircle, SquarePen, Table2,
+  Ellipsis, Eye, FileText, FolderOpen, HelpCircle, History, Languages, Link2,
+  ListTree, Maximize2, Paperclip, Save, Search, Unlink2, AlertCircle, Table2, PanelsTopLeft, PanelTopClose, PanelTopOpen, Undo2, Redo2, Plus,
 } from 'lucide-react'
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import { exportDocument } from './api'
@@ -16,7 +16,7 @@ import {
 import { AssetPanel } from './components/AssetPanel'
 import { CommandPalette, type CommandAction } from './components/CommandPalette'
 import { EditorPane, type EditorHandle } from './components/EditorPane'
-import { ExportMenu, PreviewSettings } from './components/DocumentMenus'
+import { ExportMenu, PreviewSettings, ToolbarMenu } from './components/DocumentMenus'
 import { Modal } from './components/Modal'
 import { OutlinePanel, type OutlineHeading } from './components/OutlinePanel'
 import { PreviewPane, type PreviewHandle } from './components/PreviewPane'
@@ -29,6 +29,7 @@ import { useDebouncedStats } from './hooks/useDebouncedStats'
 import { useI18n, type Locale } from './i18n'
 import { canOpenLocalFile, canSaveLocalFile, FileChangedError, pickLocalFile, writeLocalFile, type LinkedFile } from './localFiles'
 import './productivity.css'
+import './markdownEditing.css'
 import { SAMPLE_MARKDOWN } from './sample'
 import { DEFAULT_SHORTCUTS, formatShortcut, normalizeShortcuts, shortcutFromEvent, type ShortcutMap } from './shortcuts'
 import {
@@ -123,8 +124,15 @@ export default function App() {
   const [typewriterMode, setTypewriterMode] = useState(false)
   const [syncEnabled, setSyncEnabled] = useState(() => loadPreference('sync-enabled', true))
   const [mobileView, setMobileView] = useState<'editor' | 'preview'>('editor')
-  const [liveEditingPreferred, setLiveEditingPreferred] = useState(() => loadPreference<unknown>('live-editing', false) === true)
-  const liveEditing = mode === 'markdown' && liveEditingPreferred
+  const visualEditing = mode === 'markdown'
+  const [showVisualSource, setShowVisualSource] = useState(() => loadPreference<unknown>('show-source', !loadPreference('live-editing', false)) !== false)
+  const [toolbarCollapsed, setToolbarCollapsed] = useState(() => loadPreference('toolbar-collapsed', false))
+  const toggleSource = useCallback(() => { setShowVisualSource((shown) => !shown); setMobileView('preview') }, [])
+  const runInSource = useCallback((action: () => void) => {
+    setShowVisualSource(true)
+    setMobileView('editor')
+    requestAnimationFrame(action)
+  }, [])
   const [dragActive, setDragActive] = useState(false)
   const [revisionsOpen, setRevisionsOpen] = useState(false)
   const [assetsOpen, setAssetsOpen] = useState(false)
@@ -169,6 +177,12 @@ export default function App() {
     if (content !== currentDocumentRef.current.markdown) documentVersionRef.current += 1
     currentDocumentRef.current.markdown = content
     setMarkdown(content)
+  }, [])
+
+  const changeVisualMarkdown = useCallback((next: string, previous: string, target: Element) => {
+    if (previous !== currentDocumentRef.current.markdown) return false
+    editorRef.current?.replaceFromPreview(next, target)
+    return true
   }, [])
 
   const changeMode = useCallback((nextMode: DocumentMode) => {
@@ -220,8 +234,9 @@ export default function App() {
     savePreference('sync-enabled', syncEnabled)
     savePreference('export-style', exportStyle)
     savePreference('preview-typography', previewTypography)
-    savePreference('live-editing', liveEditingPreferred)
-  }, [exportStyle, liveEditingPreferred, outlineCollapsed, previewTypography, split, syncEnabled, theme])
+    savePreference('show-source', showVisualSource)
+    savePreference('toolbar-collapsed', toolbarCollapsed)
+  }, [exportStyle, outlineCollapsed, previewTypography, showVisualSource, split, syncEnabled, theme, toolbarCollapsed])
 
   const setMarkdownFontSize = useCallback((size: number) => {
     setPreviewTypography((current) => normalizePreviewTypography({ ...current, markdownFontSize: size }))
@@ -547,6 +562,7 @@ export default function App() {
   }, [syncEnabled])
 
   const jumpToLine = useCallback((line: number) => {
+    setShowVisualSource(true)
     setMobileView('editor')
     setMobileOutlineOpen(false)
     setActiveLine(line)
@@ -555,7 +571,6 @@ export default function App() {
   }, [syncEnabled])
 
   const editPreviewTable = useCallback((line: number) => {
-    setMobileView('editor')
     editorRef.current?.editTable(line)
   }, [])
 
@@ -622,21 +637,21 @@ export default function App() {
     { id: 'save-project', label: t('Download project ZIP'), description: t('Document and referenced local assets'), keywords: 'export zip share 匯出 分享', run: () => void downloadProject() },
     { id: 'save-asset-library', label: t('Download document and asset library ZIP'), description: t('Current document and all local assets; revisions not included'), keywords: 'export zip backup library 匯出 備份 資產庫', run: () => void downloadProject('all') },
     { id: 'save-html', label: t('Download portable HTML'), description: t('Read offline or reopen with editable source and local assets'), keywords: 'export self contained 匯出', run: () => void downloadHtml() },
-    { id: 'search', label: t('Search document'), run: () => editorRef.current?.search() },
-    ...(mode === 'markdown' ? [{ id: 'live-editing', label: t(liveEditing ? 'Show split view' : 'Edit and preview in one place'), keywords: 'live notion wysiwyg 即時 編輯 預覽 雙欄', run: () => { setMobileView('editor'); setLiveEditingPreferred((enabled) => !enabled) } }] : []),
-    { id: 'insert-heading', label: t('Insert: Heading 2'), description: t('## Heading'), keywords: '/ heading 標題', run: () => editorRef.current?.insert(`\n${t('## Heading')}\n`, 4) },
+    { id: 'search', label: t('Search document'), run: () => runInSource(() => editorRef.current?.search()) },
+    ...(mode === 'markdown' ? [{ id: 'live-editing', label: t(showVisualSource ? 'Single-page editing' : 'Split editing'), keywords: 'single split source 單頁 雙欄 原始碼', run: toggleSource }] : []),
+    { id: 'insert-heading', label: t('Insert: Heading 2'), description: t('## Heading'), keywords: '/ heading 標題', run: () => runInSource(() => editorRef.current?.insert(`\n${t('## Heading')}\n`, 4)) },
     ...(mode === 'markdown' ? [{ id: 'insert-table', label: t('Insert: Table'), description: t('Edit cells, rows, and columns'), keywords: '/ table 表格', run: () => editorRef.current?.editTable() }] : []),
-    { id: 'insert-code', label: t('Insert: Code block'), description: t('Fenced code block'), keywords: '/ code 程式碼', run: () => editorRef.current?.insert('\n```text\n\n```\n', 9) },
-    { id: 'insert-mermaid', label: t('Insert: Mermaid diagram'), description: t('Basic flowchart'), keywords: '/ diagram 圖表', run: () => editorRef.current?.insert(mode === 'mermaid' ? `flowchart TD\n  A[${t('Start')}] --> B[${t('Done')}]\n` : `\n\`\`\`mermaid\ngraph TD\n  A[${t('Start')}] --> B[${t('Done')}]\n\`\`\`\n`) },
+    { id: 'insert-code', label: t('Insert: Code block'), description: t('Fenced code block'), keywords: '/ code 程式碼', run: () => runInSource(() => editorRef.current?.insert('\n```text\n\n```\n', 9)) },
+    { id: 'insert-mermaid', label: t('Insert: Mermaid diagram'), description: t('Basic flowchart'), keywords: '/ diagram 圖表', run: () => runInSource(() => editorRef.current?.insert(mode === 'mermaid' ? `flowchart TD\n  A[${t('Start')}] --> B[${t('Done')}]\n` : `\n\`\`\`mermaid\ngraph TD\n  A[${t('Start')}] --> B[${t('Done')}]\n\`\`\`\n`)) },
     { id: 'focus', label: t(focusMode ? 'Exit focus mode' : 'Enter focus mode'), run: () => setFocusMode((enabled) => !enabled) },
     { id: 'typewriter', label: t(typewriterMode ? 'Disable typewriter mode' : 'Enable typewriter mode'), run: () => setTypewriterMode((enabled) => !enabled) },
     { id: 'sync', label: t(syncEnabled ? 'Disable synchronized scrolling' : 'Enable synchronized scrolling'), run: () => setSyncEnabled((enabled) => !enabled) },
-    { id: 'fold', label: t('Fold all sections'), run: () => editorRef.current?.foldAll() },
-    { id: 'unfold', label: t('Unfold all sections'), run: () => editorRef.current?.unfoldAll() },
+    { id: 'fold', label: t('Fold all sections'), run: () => runInSource(() => editorRef.current?.foldAll()) },
+    { id: 'unfold', label: t('Unfold all sections'), run: () => runInSource(() => editorRef.current?.unfoldAll()) },
     { id: 'snapshot', label: t('Create current revision'), description: t('Save to local revision history'), run: () => void createManualSnapshot() },
     { id: 'revisions', label: t('Open revision history'), description: t('Preview, download, or restore an older revision'), run: () => setRevisionsOpen(true) },
     { id: 'shortcuts', label: t('Show keyboard shortcuts'), run: () => setHelpOpen(true) },
-  ].map((action) => ({ ...action, shortcut: formatShortcut(shortcuts[action.id]) })), [createManualSnapshot, downloadHtml, downloadSource, downloadProject, focusMode, liveEditing, loadFile, mode, saveFile, shortcuts, syncEnabled, t, typewriterMode])
+  ].map((action) => ({ ...action, shortcut: formatShortcut(shortcuts[action.id]) })), [createManualSnapshot, downloadHtml, downloadSource, downloadProject, focusMode, loadFile, mode, runInSource, saveFile, shortcuts, showVisualSource, syncEnabled, t, toggleSource, typewriterMode])
 
   useEffect(() => {
     if (!hydrated) return
@@ -645,7 +660,7 @@ export default function App() {
       const target = event.target as HTMLElement | null
       if (target?.closest('dialog[open], [role="dialog"]')) return
       const shortcut = shortcutFromEvent(event)
-      const isTyping = Boolean(target?.closest('input, select, textarea, [contenteditable="true"], .cm-editor'))
+      const isTyping = Boolean(target?.closest('input, select, textarea, [contenteditable], .cm-editor'))
       if (shortcut === '?' && isTyping) return
       const action = shortcut && commandActions.find((command) => shortcuts[command.id] === shortcut)
       if (action) {
@@ -672,7 +687,7 @@ export default function App() {
   }
 
   return (
-    <main className={`app-shell productivity-shell ${focusMode ? 'is-focus-mode' : ''} ${typewriterMode ? 'is-typewriter-mode' : ''} ${liveEditing ? 'is-live-editing' : ''}`}>
+    <main className={`app-shell productivity-shell ${focusMode ? 'is-focus-mode' : ''} ${typewriterMode ? 'is-typewriter-mode' : ''} ${toolbarCollapsed ? 'is-toolbar-collapsed' : ''} ${visualEditing && !showVisualSource ? 'is-visual-only' : ''}`}>
       <input ref={fileInputRef} className="visually-hidden-file" type="file" disabled={importingWord} accept=".md,.markdown,.txt,.mmd,.mermaid,.docx,.html,.htm,.zip,text/plain,text/markdown,text/html,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/zip" onChange={(event) => {
         const file = event.target.files?.[0]
         if (file) void loadFile(file)
@@ -690,11 +705,12 @@ export default function App() {
           <button className="toolbar-button open-trigger" type="button" disabled={Boolean(fileBusy) || importingWord} onClick={() => void loadFile()} aria-label={t(importingWord ? 'Converting Word…' : 'Open document or project')} title={t('Open document or project')}><FolderOpen size={17} aria-hidden="true" /><span>{t(importingWord ? 'Converting Word…' : 'Open')}</span></button>
           <button className="toolbar-button save-trigger" type="button" disabled={Boolean(fileBusy) || assetBusy} onClick={() => void saveFile()} aria-label={t(canSaveLocalFile ? 'Save file' : 'Download source')} title={t(canSaveLocalFile ? 'Save file' : 'Download source')}><Save size={17} aria-hidden="true" /><span>{t(fileBusy === 'saving' ? 'Saving…' : canSaveLocalFile ? 'Save' : 'Download')}</span></button>
           <button className="toolbar-button language-toggle" type="button" onClick={() => setLocale(locale === 'en' ? 'zh-TW' : 'en')} title={t(locale === 'en' ? 'Switch to Traditional Chinese' : 'Switch to English')} aria-label={t(locale === 'en' ? 'Switch to Traditional Chinese' : 'Switch to English')}><Languages size={17} aria-hidden="true" /><span>{locale === 'en' ? t('Traditional Chinese') : 'EN'}</span></button>
+          <button className="toolbar-button workspace-toolbar-toggle" type="button" aria-label={t(toolbarCollapsed ? 'Show toolbar' : 'Hide toolbar')} title={t(toolbarCollapsed ? 'Show toolbar' : 'Hide toolbar')} aria-controls="workspace-tools" aria-expanded={!toolbarCollapsed} onClick={() => setToolbarCollapsed((collapsed) => !collapsed)}>{toolbarCollapsed ? <PanelTopOpen size={17} aria-hidden="true" /> : <PanelTopClose size={17} aria-hidden="true" />}</button>
           <ExportMenu mode={mode} disabled={!markdown.trim()} exporting={exporting} clientExporting={clientExporting} exportStyle={exportStyle} onStyleChange={setExportStyle} hasAssets={referencedAssets.size > 0} onSource={downloadSource} onSaveAs={canSaveLocalFile ? () => void saveFile(true) : undefined} onProject={(scope) => void downloadProject(scope)} onHtml={() => void downloadHtml()} onExport={(format) => void handleExport(format)} />
         </nav>
       </header>
 
-      <nav className="workspace-toolbar" aria-label={t('Workspace tools')}>
+      <nav id="workspace-tools" className="workspace-toolbar" aria-label={t('Workspace tools')}>
         <div className="workspace-toolbar__group">
           {mode === 'markdown' ? <button className="toolbar-button outline-trigger" type="button" aria-label={t('Document outline')} aria-controls="document-outline" aria-expanded={window.matchMedia('(max-width: 900px)').matches ? mobileOutlineOpen : !outlineCollapsed} onClick={() => {
             if (window.matchMedia('(max-width: 900px)').matches) setMobileOutlineOpen((open) => !open)
@@ -704,7 +720,7 @@ export default function App() {
           <button className="toolbar-button revision-trigger" type="button" onClick={() => setRevisionsOpen(true)} aria-label={t('Revision history')}><History size={17} aria-hidden="true" /><span>{t('Revision history')}</span></button>
         </div>
         <div className="workspace-toolbar__group">
-          {mode === 'markdown' ? <button className={`toolbar-button live-editing-trigger ${liveEditing ? 'is-active' : ''}`} type="button" onClick={() => { setMobileView('editor'); setLiveEditingPreferred((enabled) => !enabled) }} aria-pressed={liveEditing} aria-label={t('Live editing')} title={t(liveEditing ? 'Show split view' : 'Edit and preview in one place')}><SquarePen size={17} aria-hidden="true" /><span>{t('Live editing')}</span></button> : null}
+          {visualEditing ? <button className={`toolbar-button view-mode-trigger ${!showVisualSource ? 'is-active' : ''}`} type="button" onClick={toggleSource} aria-pressed={!showVisualSource} aria-label={t(showVisualSource ? 'Single-page editing' : 'Split editing')} title={t(showVisualSource ? 'Single-page editing' : 'Split editing')}><PanelsTopLeft size={17} aria-hidden="true" /><span>{t(showVisualSource ? 'Single-page editing' : 'Split editing')}</span></button> : null}
           <button className="toolbar-button utility-command" type="button" onClick={() => setCommandOpen(true)} aria-label={t('Command palette')}><Command size={16} aria-hidden="true" /><span>{t('Find a command')}</span>{shortcuts.commands && <kbd>{formatShortcut(shortcuts.commands)}</kbd>}</button>
           <button className={`toolbar-button focus-trigger ${focusMode ? 'is-active' : ''}`} type="button" onClick={() => { setMobileView('editor'); setFocusMode((enabled) => !enabled) }} aria-pressed={focusMode} aria-label={t('Toggle focus mode')}><Maximize2 size={16} aria-hidden="true" /><span>{t('Focus')}</span></button>
         </div>
@@ -716,7 +732,7 @@ export default function App() {
       </div>
 
       <section
-        className={`workspace productivity-workspace ${mobileOutlineOpen ? 'has-mobile-outline' : ''} mobile-view-${mobileView} ${dragActive ? 'is-drag-active' : ''} ${liveEditing ? 'live-workspace' : ''}`}
+        className={`workspace productivity-workspace ${mobileOutlineOpen ? 'has-mobile-outline' : ''} mobile-view-${mobileView} ${dragActive ? 'is-drag-active' : ''}`}
         ref={workspaceRef}
         onDragEnter={(event) => { event.preventDefault(); setDragActive(true) }}
         onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'copy' }}
@@ -729,19 +745,27 @@ export default function App() {
         }}
       >
         {mode === 'markdown' && mobileOutlineOpen ? <button className="outline-scrim" type="button" aria-label={t('Collapse document outline')} onClick={() => setMobileOutlineOpen(false)} /> : null}
-        {mode === 'markdown' ? <OutlinePanel mobileOpen={mobileOutlineOpen} onMobileClose={() => setMobileOutlineOpen(false)} headings={headings} collapsed={outlineCollapsed} activeLine={activeLine} onCollapsedChange={setOutlineCollapsed} onJump={jumpToLine} /> : null}
+        {mode === 'markdown' ? <OutlinePanel mobileOpen={mobileOutlineOpen} onMobileClose={() => setMobileOutlineOpen(false)} headings={headings} collapsed={outlineCollapsed} activeLine={activeLine} onCollapsedChange={setOutlineCollapsed} onJump={(line) => {
+          if (visualEditing && !showVisualSource) {
+            setMobileOutlineOpen(false)
+            setMobileView('preview')
+            setActiveLine(line)
+            previewRef.current?.scrollToLine(line)
+          } else jumpToLine(line)
+        }} /> : null}
         <section className="pane pane--editor" style={{ flex: `${split} 1 0` }}>
           <header className="pane-header">
             <div className="pane-title">
-              <FileText size={16} aria-hidden="true" />{t(liveEditing ? 'Live editing' : 'Editor')}
-              <select className="document-mode" aria-label={t('Document mode')} value={mode} onChange={(event) => changeMode(normalizeDocumentMode(event.target.value))}>
+              <FileText size={16} aria-hidden="true" />{t('Editor')}
+              <select className="document-mode" aria-label={t('Document mode')} value={mode} onChange={(event) => {
+                if (event.target.value === 'html-page') window.location.hash = '/html'
+                else changeMode(normalizeDocumentMode(event.target.value))
+              }}>
                 {(Object.keys(DOCUMENT_MODES) as DocumentMode[]).map((value) => <option key={value} value={value}>{t(DOCUMENT_MODES[value].label)}</option>)}
+                <option value="html-page">{t('HTML editor')}</option>
               </select>
             </div>
             <div className="editor-pane-actions">
-              {liveEditing ? <div className="preview-tools">
-                <PreviewSettings theme={theme} onThemeChange={setTheme} markdownSize={previewTypography.markdownFontSize} mermaidSize={previewTypography.mermaidFontSize} onMarkdownSizeChange={setMarkdownFontSize} onMermaidSizeChange={setMermaidFontSize} onReset={resetPreviewFontSizes} />
-              </div> : null}
               <div className="pane-tools">
                 {mode === 'markdown' ? <button type="button" className="table-tool" onClick={() => editorRef.current?.editTable()} title={t('Insert or edit table')} aria-label={t('Insert or edit table')}><Table2 size={17} aria-hidden="true" /><span>{t('Table')}</span></button> : null}
                 <button type="button" onClick={() => editorRef.current?.search()} title={t('Search document')} aria-label={t('Search document')}><Search size={17} aria-hidden="true" /></button>
@@ -749,11 +773,9 @@ export default function App() {
               </div>
             </div>
           </header>
-          {liveEditing ? <p className="live-editing-hint">{t('Click a block to edit Markdown. Click outside to see its formatting.')}</p> : null}
-          <EditorPane ref={editorRef} mode={mode} value={markdown} onChange={changeMarkdown} onScrollLine={handleEditorScroll} typewriter={typewriterMode} liveEditing={liveEditing} theme={theme} markdownFontSize={previewTypography.markdownFontSize} mermaidFontSize={previewTypography.mermaidFontSize} assetVersion={assetVersion} onSlashCommand={() => setCommandOpen(true)} onPasteFiles={(files) => void handleAssetFiles(files)} />
+          <EditorPane ref={editorRef} mode={mode} value={markdown} onChange={changeMarkdown} onScrollLine={handleEditorScroll} typewriter={typewriterMode} onSlashCommand={() => setCommandOpen(true)} onPasteFiles={(files) => void handleAssetFiles(files)} />
         </section>
 
-        {!liveEditing ? <>
         <button className="splitter" type="button" onPointerDown={beginResize} onKeyDown={(event) => {
           if (!['ArrowLeft', 'ArrowRight', 'Home'].includes(event.key)) return
           event.preventDefault()
@@ -762,12 +784,21 @@ export default function App() {
 
         <section className="pane pane--preview" style={{ flex: `${100 - split} 1 0` }}>
           <header className="pane-header preview-header"><div className="pane-title"><Eye size={16} aria-hidden="true" />{t('Preview')}</div><div className="preview-tools">
+            {visualEditing ? <button className="toolbar-button" type="button" aria-label={t('Add content')} title={t('Add content')} onClick={() => previewRef.current?.addBlock()}><Plus size={17} aria-hidden="true" /></button> : null}
+            {visualEditing ? <div className="markdown-edit-controls">
+              <ToolbarMenu label={t('Preview editing tools')} trigger={<Ellipsis size={17} aria-hidden="true" />}>
+                {(close) => <div className="markdown-edit-menu" role="dialog" aria-label={t('Preview editing tools')}>
+                  <button type="button" className="toolbar-button" onClick={() => { editorRef.current?.undo(); close() }}><Undo2 size={17} aria-hidden="true" />{t('Undo')}</button>
+                  <button type="button" className="toolbar-button" onClick={() => { editorRef.current?.redo(); close() }}><Redo2 size={17} aria-hidden="true" />{t('Redo')}</button>
+                  <div className="markdown-edit-help"><p>{t('Enter creates a paragraph or list item. Press / on an empty line to add a block.')}</p><p>{t('Click code to edit. Enter adds a line; Esc finishes editing.')}</p><p>{t('Edit tables with “Edit table”. Use the source for formulas and media.')}</p></div>
+                </div>}
+              </ToolbarMenu>
+            </div> : null}
             <PreviewSettings theme={theme} onThemeChange={setTheme} markdownSize={previewTypography.markdownFontSize} mermaidSize={previewTypography.mermaidFontSize} onMarkdownSizeChange={setMarkdownFontSize} onMermaidSizeChange={setMermaidFontSize} onReset={resetPreviewFontSizes} />
             <button className={`toolbar-button sync-toggle ${syncEnabled ? 'is-active' : ''}`} type="button" aria-label={t('Toggle synchronized scrolling')} title={t(syncEnabled ? 'Disable synchronized scrolling' : 'Enable synchronized scrolling')} aria-pressed={syncEnabled} onClick={() => setSyncEnabled((enabled) => !enabled)}>{syncEnabled ? <Link2 size={17} aria-hidden="true" /> : <Unlink2 size={17} aria-hidden="true" />}</button>
           </div></header>
-          <PreviewPane ref={previewRef} mode={mode} markdown={deferredMarkdown} theme={theme} markdownFontSize={previewTypography.markdownFontSize} mermaidFontSize={previewTypography.mermaidFontSize} assetVersion={assetVersion} onScrollLine={handlePreviewScroll} onLayout={handlePreviewLayout} onSourceLine={jumpToLine} onEditTable={editPreviewTable} />
+          <PreviewPane ref={previewRef} mode={mode} markdown={visualEditing ? markdown : deferredMarkdown} theme={theme} markdownFontSize={previewTypography.markdownFontSize} mermaidFontSize={previewTypography.mermaidFontSize} assetVersion={assetVersion} onScrollLine={handlePreviewScroll} onLayout={handlePreviewLayout} onSourceLine={jumpToLine} onEditTable={editPreviewTable} editing={visualEditing} onVisualChange={changeVisualMarkdown} onUndo={() => editorRef.current?.undo()} onRedo={() => editorRef.current?.redo()} />
         </section>
-        </> : null}
 
         {dragActive ? <div className="drop-target" aria-hidden="true"><Paperclip size={34} /><strong>{t('Drop to open or insert files')}</strong><span>{t('Markdown, text, Mermaid, Word (.docx), HTML, project ZIP, and media')}</span></div> : null}
         {statsOpen ? <StatsPopover stats={stats} available={available} staticDeployment={IS_STATIC_DEPLOYMENT} onClose={() => setStatsOpen(false)} onClear={() => { if (window.confirm(t('Clear this document? Download a copy first if you want to keep it.'))) changeMarkdown('') }} /> : null}
