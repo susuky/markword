@@ -132,7 +132,7 @@ uv run uvicorn backend.main:app --host 127.0.0.1 --port 27860
 
 ### GitHub Pages 建置
 
-`.github/workflows/deploy-pages.yml` 提供手動發布，不會因推送程式而自動部署。先在 **Settings → Pages → Build and deployment → Source** 選擇 **GitHub Actions**，再到 **Actions → Deploy GitHub Pages → Run workflow** 選擇要發布的分支。部署網址以 workflow 的 `github-pages` environment 顯示結果為準；尚未成功部署前，不代表已有可用的線上版本。
+`.github/workflows/deploy-pages.yml` 會在推送到 `main` 時自動建置並發布網站，也保留手動發布入口。先在 **Settings → Pages → Build and deployment → Source** 選擇 **GitHub Actions**；需要手動發布時，再到 **Actions → Deploy GitHub Pages → Run workflow** 選擇要發布的分支。部署網址以 workflow 的 `github-pages` environment 顯示結果為準；尚未成功部署前，不代表已有可用的線上版本。
 
 Pages 使用獨立的 `pages` build mode；一般的 `npm run build` 與 FastAPI 完整版部署不受影響。本機可用以下指令驗證 Pages 產物：
 
