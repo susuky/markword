@@ -112,11 +112,17 @@ export const EditorPane = forwardRef<EditorHandle, EditorPaneProps>(function Edi
   useImperativeHandle(ref, () => ({
     replaceFromPreview(value, target) {
       const view = viewRef.current
-      if (!view || value === view.state.doc.toString()) return
+      if (!view) return
+      const previous = view.state.doc.toString()
+      if (value === previous) return
+      // Keep unchanged positions mapped to themselves, including the scroll anchor.
+      let from = 0, to = previous.length, end = value.length
+      while (from < to && from < end && previous[from] === value[from]) from++
+      while (to > from && end > from && previous[to - 1] === value[end - 1]) { to--; end-- }
       const isolate = visualEditTargetRef.current !== target
       visualEditTargetRef.current = target
       view.dispatch({
-        changes: { from: 0, to: view.state.doc.length, insert: value },
+        changes: { from, to, insert: value.slice(from, end) },
         annotations: [Transaction.userEvent.of('input.preview'), ...(isolate ? [isolateHistory.of('before')] : [])],
       })
     },
@@ -206,7 +212,7 @@ export const EditorPane = forwardRef<EditorHandle, EditorPaneProps>(function Edi
             externalValueRef.current = nextValue
             onChangeRef.current(nextValue)
           }
-          if (typewriterRef.current && (update.docChanged || update.selectionSet)) {
+          if (typewriterRef.current && update.view.hasFocus && (update.docChanged || update.selectionSet)) {
             const position = update.state.selection.main.head
             update.view.dispatch({ effects: EditorView.scrollIntoView(position, { y: 'center' }) })
           }

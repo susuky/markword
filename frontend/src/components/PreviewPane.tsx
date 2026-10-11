@@ -50,6 +50,7 @@ interface PreviewPaneProps {
 
 interface PreviewFocus extends BlockChange {
   caret?: { field: number; from: number; to: number }
+  scrollTop?: number
 }
 
 const MERMAID_SVG_CACHE_LIMIT = 40
@@ -236,51 +237,18 @@ const PreviewPaneComponent = forwardRef<PreviewHandle, PreviewPaneProps>(functio
 
   useLayoutEffect(() => {
     renderingRef.current = rendering
-    if (contentRef.current) contentRef.current.innerHTML = rendering.html
-  }, [rendering])
-
-  useLayoutEffect(() => {
-    setLink(null)
-    setLinkError(false)
-    setInlineLink(null)
-    setInlineSelection(null)
-    if (!editing || !contentRef.current) return
-    const pending = pendingFocusRef.current
-    if (pending) {
-      const toggle = contentRef.current.querySelector<HTMLElement>(`details[data-source-start="${pending.line}"]`)
-      if (toggle) pending.line = Number(toggle.querySelector<HTMLElement>('summary')?.dataset.sourceStart) || pending.line + 1
-    }
-    if (pending && !pending.code && !pending.table && !pending.focusExisting) ensureWritingLine(contentRef.current, rendering.source, pending.line)
-    const model = prepareMarkdownEditing(contentRef.current, rendering.source, t('Code block'))
-    editingModelRef.current = model
-    contentRef.current.querySelectorAll<HTMLElement>('[data-markdown-edit-text]').forEach((field) => {
-      field.dataset.placeholder = t('Write something, or press / for blocks')
+    const content = contentRef.current
+    if (!content) return
+    // Local images reload after rebuilding; keep their space until the blob is ready.
+    const imageSizes = new Map(Array.from(content.querySelectorAll<HTMLImageElement>('img[data-asset-path]'))
+      .filter((image) => image.naturalWidth > 0)
+      .map((image) => [image.dataset.assetPath, { width: image.naturalWidth, height: image.naturalHeight }]))
+    content.innerHTML = rendering.html
+    content.querySelectorAll<HTMLImageElement>('img[data-asset-path]').forEach((image) => {
+      const size = imageSizes.get(image.dataset.assetPath)
+      if (size) { image.width = size.width; image.height = size.height }
     })
-    if (pending) {
-      pendingFocusRef.current = null
-      if (pending.table) onEditTable?.(pending.line)
-      else if (pending.code) {
-        const code = Array.from(contentRef.current.querySelectorAll<HTMLElement>('pre[data-source-start]')).find((el) => Number(el.dataset.sourceStart) === pending.line - 1)?.querySelector<HTMLElement>('[data-markdown-edit-code]')
-        if (code) beginCodeEdit(code)
-      } else if (pending.caret) {
-        const item = contentRef.current.querySelector<HTMLElement>(`li[data-source-start="${pending.line}"]`)
-        const field = item?.querySelectorAll<HTMLElement>('[data-markdown-edit-text]')[pending.caret.field]
-        if (field) {
-          restoreInlineSelection(field, pending.caret.from, pending.caret.to)
-          field.scrollIntoView({ block: 'nearest' })
-        } else focusPreviewBlock(contentRef.current, pending.line)
-      } else if (pending.focusExisting) focusPreviewBlock(contentRef.current, pending.line)
-      else focusWritingLine(contentRef.current, pending.line, pending.offset)
-    }
-    const inlineFocus = inlineFocusRef.current
-    if (inlineFocus) {
-      inlineFocusRef.current = null
-      const block = contentRef.current.querySelector<HTMLElement>(`[data-source-start="${inlineFocus.line}"]`)
-      const leaves = block ? [block, ...block.querySelectorAll<HTMLElement>('p, li, h1, h2, h3, h4, h5, h6, summary')].filter((element) => element.matches('p, li, h1, h2, h3, h4, h5, h6, summary')) : []
-      if (leaves[inlineFocus.leaf]) restoreInlineSelection(leaves[inlineFocus.leaf], inlineFocus.from, inlineFocus.to)
-    }
-    return () => { model.dispose(); editingModelRef.current = null }
-  }, [editing, rendering, t, onEditTable])
+  }, [rendering])
 
   useEffect(() => {
     if (!editing || mode !== 'markdown') return
@@ -314,7 +282,7 @@ const PreviewPaneComponent = forwardRef<PreviewHandle, PreviewPaneProps>(functio
   const applyBlockChange = (change: PreviewFocus | null, target: Element) => {
     if (!change || !changeRef.current?.(change.source, markdown, target)) return false
     emittedRef.current = null
-    pendingFocusRef.current = { ...change }
+    pendingFocusRef.current = { ...change, scrollTop: scrollRef.current?.scrollTop }
     setStructureVersion((version) => version + 1)
     setBlockMenu(null)
     return true
@@ -369,9 +337,9 @@ const PreviewPaneComponent = forwardRef<PreviewHandle, PreviewPaneProps>(functio
     if (layoutFrameRef.current !== null) return
     layoutFrameRef.current = window.requestAnimationFrame(() => {
       layoutFrameRef.current = null
-      onLayout()
+      if (!editing || !contentRef.current?.contains(document.activeElement)) onLayout()
     })
-  }, [onLayout])
+  }, [editing, onLayout])
 
   const readAnchors = useCallback(() => {
     if (geometryDirtyRef.current && contentRef.current) {
@@ -582,7 +550,7 @@ const PreviewPaneComponent = forwardRef<PreviewHandle, PreviewPaneProps>(functio
     })
   }, [rendering, t])
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!onEditTable || !contentRef.current) return
     const wrappers: HTMLElement[] = []
     contentRef.current.querySelectorAll<HTMLTableElement>('table[data-source-start]').forEach((table, index) => {
@@ -608,7 +576,7 @@ const PreviewPaneComponent = forwardRef<PreviewHandle, PreviewPaneProps>(functio
     })
   }, [rendering, invalidateGeometry, onEditTable, t])
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const content = contentRef.current
     if (!editing || !content) return
     const wrappers = protectedMarkdownBlocks(content).map((block) => {
@@ -633,6 +601,50 @@ const PreviewPaneComponent = forwardRef<PreviewHandle, PreviewPaneProps>(functio
       if (block) wrapper.replaceWith(block)
     })
   }, [editing, rendering, invalidateGeometry, t])
+
+  useLayoutEffect(() => {
+    setLink(null)
+    setLinkError(false)
+    setInlineLink(null)
+    setInlineSelection(null)
+    if (!editing || !contentRef.current) return
+    const pending = pendingFocusRef.current
+    if (pending) {
+      const toggle = contentRef.current.querySelector<HTMLElement>(`details[data-source-start="${pending.line}"]`)
+      if (toggle) pending.line = Number(toggle.querySelector<HTMLElement>('summary')?.dataset.sourceStart) || pending.line + 1
+    }
+    if (pending && !pending.code && !pending.table && !pending.focusExisting) ensureWritingLine(contentRef.current, rendering.source, pending.line)
+    const model = prepareMarkdownEditing(contentRef.current, rendering.source, t('Code block'))
+    editingModelRef.current = model
+    contentRef.current.querySelectorAll<HTMLElement>('[data-markdown-edit-text]').forEach((field) => {
+      field.dataset.placeholder = t('Write something, or press / for blocks')
+    })
+    if (pending) {
+      pendingFocusRef.current = null
+      if (scrollRef.current && pending.scrollTop !== undefined) scrollRef.current.scrollTop = pending.scrollTop
+      if (pending.table) onEditTable?.(pending.line)
+      else if (pending.code) {
+        const code = Array.from(contentRef.current.querySelectorAll<HTMLElement>('pre[data-source-start]')).find((el) => Number(el.dataset.sourceStart) === pending.line - 1)?.querySelector<HTMLElement>('[data-markdown-edit-code]')
+        if (code) beginCodeEdit(code)
+      } else if (pending.caret) {
+        const item = contentRef.current.querySelector<HTMLElement>(`li[data-source-start="${pending.line}"]`)
+        const field = item?.querySelectorAll<HTMLElement>('[data-markdown-edit-text]')[pending.caret.field]
+        if (field) {
+          restoreInlineSelection(field, pending.caret.from, pending.caret.to)
+          field.scrollIntoView({ block: 'nearest' })
+        } else focusPreviewBlock(contentRef.current, pending.line)
+      } else if (pending.focusExisting) focusPreviewBlock(contentRef.current, pending.line)
+      else focusWritingLine(contentRef.current, pending.line, pending.offset)
+    }
+    const inlineFocus = inlineFocusRef.current
+    if (inlineFocus) {
+      inlineFocusRef.current = null
+      const block = contentRef.current.querySelector<HTMLElement>(`[data-source-start="${inlineFocus.line}"]`)
+      const leaves = block ? [block, ...block.querySelectorAll<HTMLElement>('p, li, h1, h2, h3, h4, h5, h6, summary')].filter((element) => element.matches('p, li, h1, h2, h3, h4, h5, h6, summary')) : []
+      if (leaves[inlineFocus.leaf]) restoreInlineSelection(leaves[inlineFocus.leaf], inlineFocus.from, inlineFocus.to)
+    }
+    return () => { model.dispose(); editingModelRef.current = null }
+  }, [editing, rendering, t, onEditTable])
 
   useEffect(() => () => {
     if (layoutFrameRef.current !== null) window.cancelAnimationFrame(layoutFrameRef.current)
