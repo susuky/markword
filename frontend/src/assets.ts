@@ -7,6 +7,8 @@ import { normalizeReference, unescapeAll } from 'markdown-it/lib/common/utils.mj
 import {
   getAssetsByPaths,
   listAssets,
+  listWorkspaceDrafts,
+  listWorkspaceRevisions,
   putAssets,
   type AssetKind,
   type StoredAsset,
@@ -242,6 +244,12 @@ function localAssetReferences(markdown: string): AssetReference[] {
 
 export function referencedAssetPaths(markdown: string): Set<string> {
   return new Set(localAssetReferences(markdown).map(({ path }) => path))
+}
+
+export async function assetUsedElsewhere(path: string, currentDocumentId: string): Promise<boolean> {
+  const [drafts, revisions] = await Promise.all([listWorkspaceDrafts(), listWorkspaceRevisions()])
+  return [...drafts.filter((draft) => draft.id !== currentDocumentId), ...revisions]
+    .some((record) => normalizeDocumentMode(record.metadata.mode) === 'markdown' && referencedAssetPaths(record.content).has(path))
 }
 
 function requireReferencedAssets(paths: Iterable<string>, assets: ReadonlyMap<string, StoredAsset>): void {

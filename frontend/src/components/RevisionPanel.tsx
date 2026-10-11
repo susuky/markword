@@ -72,7 +72,7 @@ export function RevisionPanel({
 
   const refresh = useCallback(async () => {
     try {
-      const next = await listRevisions()
+      const next = await listRevisions(persistence.documentId)
       setRevisions(next)
       setSelectedId((current) => current && next.some((revision) => revision.id === current)
         ? current
@@ -80,7 +80,7 @@ export function RevisionPanel({
     } catch (error) {
       setMessage(error instanceof Error ? error.message : t('Could not read revisions'))
     }
-  }, [t])
+  }, [persistence, t])
 
   useEffect(() => {
     void refresh()
@@ -121,7 +121,7 @@ export function RevisionPanel({
     if (!selected || !window.confirm(t('Delete this revision? This action cannot be undone.'))) return
     setBusy(true)
     try {
-      await deleteRevision(selected.id)
+      await deleteRevision(selected.id, persistence.documentId)
       setMessage(t('Revision deleted'))
     } catch (error) {
       setMessage(error instanceof Error ? error.message : t('Could not delete revision'))
@@ -135,7 +135,7 @@ export function RevisionPanel({
       <header className="revision-panel__header">
         <div>
           <h2>{t('Revision history')}</h2>
-          <p>{t('Keep up to 120 local revisions')}</p>
+          <p>{t('Keep up to 120 local revisions per document')}</p>
         </div>
         {onClose ? <button type="button" className="revision-panel__close" onClick={onClose} aria-label={t('Close revision history')}>×</button> : null}
       </header>

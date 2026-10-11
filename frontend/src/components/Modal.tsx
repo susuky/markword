@@ -20,5 +20,12 @@ export function Modal({ label, onClose, className = '', children, closeOnBackdro
 
   return <dialog ref={ref} className={`productivity-overlay ${className}`} aria-label={label} onCancel={onClose} onMouseDown={(event) => {
     if (closeOnBackdrop && event.target === event.currentTarget) onClose()
+  }} onKeyDown={(event) => {
+    if (event.key !== 'Tab') return
+    const fields = Array.from(event.currentTarget.querySelectorAll<HTMLElement>('button, input, textarea, select, a[href], [tabindex]')).filter((element) => element.tabIndex >= 0 && !element.matches(':disabled') && element.getClientRects().length)
+    const target = event.shiftKey ? fields.at(-1) : fields[0]
+    if (fields.length && document.activeElement === (event.shiftKey ? fields[0] : fields.at(-1))) {
+      event.preventDefault(); target?.focus()
+    }
   }}>{children}</dialog>
 }

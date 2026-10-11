@@ -41,6 +41,7 @@ export interface EditorHandle {
   scrollToLine: (line: number) => void
   jumpToLine: (line: number) => void
   focus: () => void
+  cursorPosition: () => number | undefined
   search: () => void
   insert: (text: string, cursorOffset?: number) => void
   foldAll: () => void
@@ -145,6 +146,7 @@ export const EditorPane = forwardRef<EditorHandle, EditorPaneProps>(function Edi
     focus() {
       viewRef.current?.focus()
     },
+    cursorPosition() { return viewRef.current?.state.selection.main.head },
     search() {
       const view = viewRef.current
       if (!view) return

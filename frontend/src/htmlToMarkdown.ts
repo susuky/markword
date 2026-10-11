@@ -10,6 +10,18 @@ export function htmlToMarkdown(body: HTMLElement | DocumentFragment, literalText
     filter: (node) => ['DEL', 'S', 'STRIKE'].includes(node.nodeName),
     replacement: (content) => `~~${content}~~`,
   })
+  converter.addRule('toggle', {
+    filter: 'details',
+    replacement: (_content, node) => {
+      const element = node as HTMLElement
+      const summary = element.querySelector(':scope > summary')
+      const content = element.querySelector(':scope > .markdown-toggle-content')
+      const copy = element.cloneNode(true) as HTMLElement
+      copy.querySelector(':scope > summary')?.remove()
+      const body = converter.turndown(content?.innerHTML ?? copy.innerHTML)
+      return `\n\n<details${element.hasAttribute('open') ? ' open' : ''}>\n<summary>${converter.turndown(summary?.innerHTML ?? '').replace(/\n/g, ' ')}</summary>\n\n${body}\n\n</details>\n\n`
+    },
+  })
   converter.addRule('taskCheckbox', {
     filter: (node) => node.nodeName === 'INPUT' && (node as HTMLInputElement).type === 'checkbox',
     replacement: (_content, node) => (node as HTMLInputElement).checked ? '[x] ' : '[ ] ',

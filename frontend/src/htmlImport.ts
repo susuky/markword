@@ -1,6 +1,7 @@
 import DOMPurify from 'dompurify'
 import { assetMarkdownUrl, importLocalAssets, normalizeAssetPath, referencedAssetPaths, remapAssetPaths } from './assets'
 import { htmlToMarkdown } from './htmlToMarkdown'
+import { countMergedCells, type ImportWarning } from './importSummary'
 import type { DocumentMode } from './types'
 
 const MAX_HTML_BYTES = 15 * 1024 * 1024
@@ -46,14 +47,23 @@ export async function importHtmlDocument(file: File) {
     }
     const assets = files.length ? await importLocalAssets(files) : []
     const replacements = new Map([...paths].map((path, index) => [path, assets[index].path]))
-    return { markdown: remapAssetPaths(source.markdown, replacements), mode, restoredSource: true, hasWarnings: false }
+    return { markdown: remapAssetPaths(source.markdown, replacements), mode, restoredSource: true, warnings: [] as ImportWarning[] }
   }
 
   const images = Array.from(body.querySelectorAll('img'))
   if (images.length > 2000) throw new Error('Too many HTML images')
   const files: File[] = []
   const prefix = `html-import-${Date.now()}-${Math.random().toString(36).slice(2)}`
-  let hasWarnings = Boolean(document.querySelector('style, [style], [colspan], [rowspan], svg, math, iframe, form'))
+  const warnings: ImportWarning[] = []
+  if (document.querySelector('style, [style]')) warnings.push({ message: 'Page layout and styles do not carry over to Markdown. Check headings, spacing, and emphasis.', count: 1 })
+  const mergedCells = countMergedCells(body)
+  if (mergedCells) warnings.push({ message: 'Merged table cells: {count}. The merged layout could not be preserved; check the tables.', count: mergedCells })
+  const graphics = document.querySelectorAll('svg, math').length
+  if (graphics) warnings.push({ message: 'Diagrams and formulas: {count}. Check that their content was preserved.', count: graphics })
+  const interactive = document.querySelectorAll('iframe, object, embed, form').length
+  if (interactive) warnings.push({ message: 'Interactive sections not imported: {count}. Check that the document still contains the information you need.', count: interactive })
+  const missingImages: string[] = []
+  let remoteImages = 0
   for (const image of images) {
     const url = image.getAttribute('src') || ''
     if (/^data:image\//i.test(url)) {
@@ -62,13 +72,14 @@ export async function importHtmlDocument(file: File) {
       const extension = mime.split('/')[1].replace('+xml', '') || 'bin'
       files.push(await embeddedFile(url, `${file.name.replace(/\.html?$/i, '')}-image-${index + 1}.${extension}`))
       image.setAttribute('src', assetMarkdownUrl(`assets/${prefix}-${index}`))
-    } else if (!/^https?:\/\//i.test(url)) {
-      hasWarnings = true
-    }
+    } else if (/^https?:\/\//i.test(url)) remoteImages++
+    else missingImages.push((image.alt || url).slice(0, 200))
   }
   const markdown = htmlToMarkdown(body)
   if (!markdown.trim()) throw new Error('No convertible HTML content')
   const assets = files.length ? await importLocalAssets(files) : []
   const replacements = new Map(assets.map((asset, index) => [`assets/${prefix}-${index}`, asset.path]))
-  return { markdown: remapAssetPaths(markdown, replacements), mode: 'markdown' as const, restoredSource: false, hasWarnings }
+  if (missingImages.length) warnings.push({ message: 'Images with missing or relative paths: {count}. They were not saved as local attachments.', count: missingImages.length, details: missingImages.filter(Boolean).slice(0, 20) })
+  if (remoteImages) warnings.push({ message: 'Images using web addresses: {count}. They need a connection and were not saved as local attachments.', count: remoteImages })
+  return { markdown: remapAssetPaths(markdown, replacements), mode: 'markdown' as const, restoredSource: false, warnings }
 }

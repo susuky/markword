@@ -28,6 +28,9 @@ class ExportRequest(BaseModel):
     markdown: str = Field(min_length=1, max_length=MAX_TEXT_LENGTH)
     theme: str = "Light"
     style: str = Field(default="Classic", description="HTML/PDF layout; Word supports only Classic")
+    page_size: Literal['A4', 'Letter'] | None = None
+    margin_mm: float | None = Field(default=None, ge=10, le=40, allow_inf_nan=False)
+    font_size: float | None = Field(default=None, ge=12, le=24, allow_inf_nan=False)
 
     @field_validator("markdown")
     @classmethod

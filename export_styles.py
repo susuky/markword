@@ -1,5 +1,20 @@
 """Reusable document layouts layered on top of a Markword color theme."""
 
+import math
+
+
+def page_settings_css(page_size=None, margin_mm=None, font_size=None):
+    """Validate optional settings for both direct exports and API workers."""
+    if page_size is not None and page_size not in ('A4', 'Letter'):
+        raise ValueError('Paper size must be A4 or Letter')
+    if margin_mm is not None and (not math.isfinite(margin_mm) or not 10 <= margin_mm <= 40):
+        raise ValueError('Page margin must be between 10 and 40 mm')
+    if font_size is not None and (not math.isfinite(font_size) or not 12 <= font_size <= 24):
+        raise ValueError('Body font size must be between 12 and 24 px')
+    page = (f'size:{page_size};' if page_size else '') + (f'margin:{margin_mm}mm;' if margin_mm is not None else '')
+    font = f'html,body{{font-size:{font_size}px}}' if font_size is not None else ''
+    return (f'@page{{{page}}}' if page else '') + font
+
 EXPORT_STYLES: dict[str, str] = {
     "Classic": """
 @page { size: A4; margin: 18mm 17mm 20mm; }

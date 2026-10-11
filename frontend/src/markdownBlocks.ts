@@ -1,8 +1,8 @@
 import { htmlToMarkdown } from './htmlToMarkdown'
 
-const LEAF = 'p, h1, h2, h3, h4, h5, h6, li'
+const LEAF = 'p, h1, h2, h3, h4, h5, h6, li, summary'
 const CURSOR = 'MARKWORDCURSOR'
-export interface BlockChange { source: string; line: number; offset?: number; code?: boolean; table?: boolean }
+export interface BlockChange { source: string; line: number; offset?: number; code?: boolean; table?: boolean; focusExisting?: boolean }
 
 export const BLOCK_TYPES = [
   { id: 'text', label: 'Paragraph', source: CURSOR },
@@ -16,6 +16,7 @@ export const BLOCK_TYPES = [
   { id: 'code', label: 'Code block', source: '```text\n' + CURSOR + '\n```' },
   { id: 'table', label: 'Table', source: '|  |  |\n| --- | --- |\n|  |  |' },
   { id: 'divider', label: 'Divider', source: '---\n\n' + CURSOR },
+  { id: 'toggle', label: 'Toggle', source: '<details open>\n<summary>' + CURSOR + '</summary>\n\n\n</details>' },
 ] as const
 export type BlockType = typeof BLOCK_TYPES[number]['id']
 
@@ -27,8 +28,8 @@ export function lineOffsets(source: string) {
 
 export function rootBlock(root: HTMLElement, target: Element | null) {
   let element = target as HTMLElement | null
-  while (element && element.parentElement !== root) element = element.parentElement
-  return element?.parentElement === root ? element : null
+  while (element && element.parentElement !== root && !element.parentElement?.matches('.markdown-toggle-content, details')) element = element.parentElement
+  return element && root.contains(element) ? element : null
 }
 
 function bounds(root: HTMLElement, source: string, target: Element | null) {
@@ -48,10 +49,10 @@ function splice(source: string, from: number, to: number, content: string, curso
   return { source: prefix + replacement + source.slice(to), line: (prefix + separator + content.slice(0, cursor)).split('\n').length }
 }
 
-export function insertBlock(root: HTMLElement, source: string, target: Element | null, type: BlockType, replace = false): BlockChange {
+export function insertBlock(root: HTMLElement, source: string, target: Element | null, type: BlockType, replace = false, position?: number): BlockChange {
   const spec = BLOCK_TYPES.find((item) => item.id === type)!
   const block = bounds(root, source, target)
-  const from = replace && block ? block.from : block?.to ?? source.length
+  const from = position ?? (replace && block ? block.from : block?.to ?? source.length)
   const to = replace && block ? block.to : from
   const cursor = spec.source.indexOf(CURSOR)
   let prefix = ''
@@ -83,9 +84,18 @@ function clean(container: HTMLElement) {
 // Structural edits serialize only the containing block. Invisible definitions and other blocks stay byte-for-byte intact.
 export function splitBlock(root: HTMLElement, source: string, target: HTMLElement): BlockChange | null {
   const block = bounds(root, source, target)
-  const leaf = target.closest<HTMLElement>(LEAF)
+  let leaf = target.closest<HTMLElement>(LEAF)
+  // Loose Markdown lists wrap each item's writing line in a paragraph.
+  if (leaf?.matches('p') && leaf.parentElement?.matches('li') && leaf === leaf.parentElement.firstElementChild) leaf = leaf.parentElement
   const selection = window.getSelection()
   if (!block || !leaf || !selection?.rangeCount) return null
+  if (leaf.matches('summary')) {
+    const details = leaf.parentElement
+    const starts = lineOffsets(source)
+    const at = starts[Number(leaf.dataset.sourceEnd)] ?? source.length
+    if (!details?.matches('details')) return null
+    return { source: source.slice(0, at) + '\n\n' + source.slice(at), line: Number(leaf.dataset.sourceEnd) + 1 }
+  }
   const range = selection.getRangeAt(0)
   if (!leaf.contains(range.startContainer) || !leaf.contains(range.endContainer)) return null
   const before = range.cloneRange(); before.selectNodeContents(leaf); before.setEnd(range.startContainer, range.startOffset)
@@ -102,8 +112,14 @@ export function splitBlock(root: HTMLElement, source: string, target: HTMLElemen
   next.append(document.createTextNode(marker), after.cloneContents())
   copy.replaceChildren(before.cloneContents())
   if (leaf.matches('li') && !isEmpty) {
-    const checkbox = leaf.querySelector(':scope > input[type=checkbox]')
+    const checkbox = leaf.querySelector(':scope > input[type=checkbox], :scope > p:first-child > input[type=checkbox]')
     if (checkbox) { const unchecked = checkbox.cloneNode() as HTMLInputElement; unchecked.checked = false; unchecked.removeAttribute('checked'); next.prepend(unchecked, ' ') }
+    // A blank paragraph before child lists closes an empty Markdown item. Keep
+    // its first writing line inline; later paragraphs remain separate blocks.
+    for (const item of [copy, next]) {
+      const paragraph = item.firstElementChild
+      if (paragraph?.matches('p')) paragraph.replaceWith(...paragraph.childNodes)
+    }
   }
   if (isEmpty && leaf.matches('li')) {
     // Enter on an empty item exits its list, keeping following items as a separate list.
@@ -162,6 +178,17 @@ export function ensureWritingLine(root: HTMLElement, source: string, line: numbe
   const elements = Array.from(root.querySelectorAll<HTMLElement>('[data-source-start]'))
   const match = elements.reverse().find((el) => Number(el.dataset.sourceStart) <= line && Number(el.dataset.sourceEnd) >= line && el.matches(LEAF + ', pre'))
   if (match) return match
+  const toggle = Array.from(root.querySelectorAll<HTMLElement>('details[data-source-start]')).reverse().find((el) => Number(el.dataset.sourceStart) < line && Number(el.dataset.sourceEnd) >= line)
+  if (toggle) {
+    const paragraph = document.createElement('p')
+    paragraph.dataset.sourceStart = String(line)
+    paragraph.dataset.sourceEnd = String(line)
+    paragraph.dataset.markdownVirtual = ''
+    const content = toggle.querySelector(':scope > .markdown-toggle-content')
+    const next = Array.from(content?.children ?? []).find((el) => Number((el as HTMLElement).dataset.sourceStart) > line)
+    content?.insertBefore(paragraph, next ?? null)
+    return paragraph
+  }
   const quote = /^\s*>[ >]*$/.test(source.split('\n')[line - 1] ?? '')
     ? Array.from(root.querySelectorAll<HTMLElement>('blockquote[data-source-start]')).reverse().find((el) => Number(el.dataset.sourceStart) <= line)
     : null

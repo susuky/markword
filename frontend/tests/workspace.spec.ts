@@ -96,3 +96,23 @@ test('mobile outline, preview, assets, and language controls remain reachable', 
   await page.setViewportSize({ width: 812, height: 375 })
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
 })
+
+test('an unavailable HTML editor offers a safe return and a working retry', async ({ page }) => {
+  await page.route('**/HtmlEditorPage*', (route) => route.abort('failed'))
+  await page.goto('/')
+  const draft = '# Keep this draft\n\nWriting before a connection failure.'
+  await page.locator('.cm-content').fill(draft)
+  await expect(page.locator('.save-status')).toHaveText('Saved in this browser')
+  await page.getByRole('combobox', { name: 'Document mode' }).selectOption('html-page')
+  await expect(page.getByRole('heading', { name: 'The HTML editor could not be opened' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Try again', exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'Return to Markdown', exact: true }).click()
+  await expect.poll(() => page.locator('.cm-line').allTextContents().then((lines) => lines.join('\n'))).toBe(draft)
+  await page.getByRole('combobox', { name: 'Document mode' }).selectOption('html-page')
+  await expect(page.getByRole('heading', { name: 'The HTML editor could not be opened' })).toBeVisible()
+  await page.unroute('**/HtmlEditorPage*')
+  await page.getByRole('button', { name: 'Try again', exact: true }).click()
+  await expect(page.getByRole('button', { name: 'Open HTML file', exact: true })).toBeVisible()
+  await page.goto('/#/')
+  await expect.poll(() => page.locator('.cm-line').allTextContents().then((lines) => lines.join('\n'))).toBe(draft)
+})

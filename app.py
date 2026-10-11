@@ -17,7 +17,7 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.opc.constants import RELATIONSHIP_TYPE as RT
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
-from docx.shared import Inches, Pt, RGBColor
+from docx.shared import Inches, Mm, Pt, RGBColor
 # Gradio is a legacy-only dependency.  Keep it lazy so importing the FastAPI
 # backend never pays Gradio's large startup cost when an old environment still
 # happens to have the package installed.
@@ -28,7 +28,7 @@ from weasyprint.urls import FatalURLFetchingError
 
 from mermaid_renderer import MERMAID_BUNDLE
 from themes import THEMES, Theme
-from export_styles import EXPORT_STYLES
+from export_styles import EXPORT_STYLES, page_settings_css
 from export_markdown import render_export_body
 
 EXPORT_DIR = os.path.abspath(
@@ -429,7 +429,7 @@ def render_preview(md_text: str, theme_name: str = 'Light') -> str:
 # Export: PDF
 # ---------------------------------------------------------------------------
 
-def _render_md_to_html_for_export(md_text: str, theme: Theme, export_style: str = 'Classic') -> str:
+def _render_md_to_html_for_export(md_text: str, theme: Theme, export_style: str = 'Classic', **page_settings) -> str:
     '''
     Convert markdown to a print-ready HTML document with rendered Mermaid diagrams.
 
@@ -443,10 +443,11 @@ def _render_md_to_html_for_export(md_text: str, theme: Theme, export_style: str 
     body_html = _sanitize_emojis_for_export(render_export_body(md_text, theme))
     page = _build_html_page(body_html, theme, has_mermaid=False)
     style_css = EXPORT_STYLES.get(export_style, EXPORT_STYLES['Classic'])
-    return page.replace('</head>', f'<style>{style_css} .math-block {{ text-align:center; }} .math-image {{ object-fit:contain; }} img {{ max-width:100%; }} </style></head>')
+    settings_css = page_settings_css(**page_settings)
+    return page.replace('</head>', f'<style>{style_css} {settings_css} .math-block {{ text-align:center; }} .math-image {{ object-fit:contain; }} img {{ max-width:100%; }} </style></head>')
 
 
-def export_pdf(md_text: str, theme_name: str = 'Light', export_style: str = 'Classic') -> str | None:
+def export_pdf(md_text: str, theme_name: str = 'Light', export_style: str = 'Classic', *, page_size=None, margin_mm=None, font_size=None) -> str | None:
     '''
     Export markdown text to a PDF file styled with the selected theme.
 
@@ -463,7 +464,8 @@ def export_pdf(md_text: str, theme_name: str = 'Light', export_style: str = 'Cla
     _cleanup_old_exports()
     filename = _get_export_filename(md_text, ext='pdf')
     theme = THEMES.get(theme_name, THEMES['Light'])
-    html_str = _render_md_to_html_for_export(md_text, theme, export_style)
+    options = {key: value for key, value in {'page_size': page_size, 'margin_mm': margin_mm, 'font_size': font_size}.items() if value is not None}
+    html_str = _render_md_to_html_for_export(md_text, theme, export_style, **options)
 
     tmp_dir = tempfile.mkdtemp(dir=EXPORT_DIR, prefix='pdf_')
     out_path = os.path.join(tmp_dir, filename)
@@ -585,8 +587,10 @@ def _append_node_to_paragraph(
         # and KaTeX images are produced locally after that validation boundary.
         data = base64.b64decode(node['src'].split(',', 1)[1], validate=True)
         run = p.add_run()
+        section = p.part.document.sections[0]
+        max_width = min(396, section.page_width.pt - section.left_margin.pt - section.right_margin.pt)
         if 'math-image' in node.get('class', []):
-            width = min(float(node['width']) * .75, 396)
+            width = min(float(node['width']) * .75, max_width)
             picture = run.add_picture(BytesIO(data), width=Pt(width))
             descent = float(node.get('data-descent', '0')) * .75
             if descent:
@@ -596,7 +600,7 @@ def _append_node_to_paragraph(
         else:
             from PIL import Image
             with Image.open(BytesIO(data)) as image:
-                picture = run.add_picture(BytesIO(data), width=Pt(min(image.width * .75, 396)))
+                picture = run.add_picture(BytesIO(data), width=Pt(min(image.width * .75, max_width)))
         picture._inline.docPr.set('descr', node.get('alt', ''))
         return
     if tag == 'a' and node.get('href', '').startswith(('https://', 'http://', 'mailto:')):
@@ -642,7 +646,7 @@ def _append_node_to_paragraph(
             _set_cjk_font(run)
 
 
-def export_word(md_text: str, theme_name: str = 'Light', export_style: str = 'Classic') -> str | None:
+def export_word(md_text: str, theme_name: str = 'Light', export_style: str = 'Classic', *, page_size=None, margin_mm=None, font_size=None) -> str | None:
     '''
     Export markdown text to a Word (.docx) file styled with the selected theme.
 
@@ -659,6 +663,7 @@ def export_word(md_text: str, theme_name: str = 'Light', export_style: str = 'Cl
     '''
     if export_style != 'Classic':
         raise ValueError('Word supports only the Classic layout')
+    page_settings_css(page_size, margin_mm, font_size)
     if not md_text or not md_text.strip():
         return None
 
@@ -666,12 +671,18 @@ def export_word(md_text: str, theme_name: str = 'Light', export_style: str = 'Cl
     filename = _get_export_filename(md_text, ext='docx')
     theme = THEMES.get(theme_name, THEMES['Light'])
     doc = Document()
+    section = doc.sections[0]
+    if page_size is not None:
+        width, height = (210, 297) if page_size == 'A4' else (215.9, 279.4)
+        section.page_width, section.page_height = Mm(width), Mm(height)
+    if margin_mm is not None:
+        section.top_margin = section.bottom_margin = section.left_margin = section.right_margin = Mm(margin_mm)
 
     # Set default font for the document
     style = doc.styles['Normal']
     font = style.font
     font.name = 'Noto Sans CJK TC'
-    font.size = Pt(11)
+    font.size = Pt(font_size * .75 if font_size is not None else 11)
     rPr = style.element.get_or_add_rPr()
     rFonts = rPr.find(qn('w:rFonts'))
     if rFonts is None:
@@ -860,6 +871,12 @@ def export_word(md_text: str, theme_name: str = 'Light', export_style: str = 'Cl
             p._p.get_or_add_pPr().append(borders)
             continue
 
+    if font_size is not None:
+        # Scale explicit runs too, including hyperlinks and table cells. Keep
+        # headings and code proportional to the selected body font size.
+        scale = font_size * .75 / 11
+        for size in doc.element.iter(qn('w:sz')):
+            size.set(qn('w:val'), str(round(int(size.get(qn('w:val'))) * scale)))
     tmp_dir = tempfile.mkdtemp(dir=EXPORT_DIR, prefix='word_')
     out_path = os.path.join(tmp_dir, filename)
     try:

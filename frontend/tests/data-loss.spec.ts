@@ -132,7 +132,7 @@ async function holdFileRead(page: Page) {
 }
 
 for (const file of slowFiles) {
-  test(`opening ${file.name} backs up the latest content and document settings before replacement`, async ({ page }, testInfo) => {
+  test(`opening ${file.name} preserves the previous document and its settings and versions`, async ({ page }, testInfo) => {
     await page.goto('/')
     await page.getByRole('combobox', { name: 'Document mode' }).selectOption('text')
     await page.getByRole('button', { name: 'Preview theme: Light', exact: true }).click()
@@ -145,6 +145,10 @@ for (const file of slowFiles) {
     await expect(page.locator('.save-status')).toHaveText('Saved in this browser')
     await page.reload()
     await expect(page.locator('.cm-content')).toHaveText(imported)
+    await page.locator('.header-actions').getByRole('button', { name: 'Documents', exact: true }).click()
+    await page.locator('.document-list__open').filter({ has: page.getByText('Untitled document', { exact: true }) }).click()
+    await expect(page.locator('.cm-content')).toHaveText(original)
+    await expect(page.getByRole('combobox', { name: 'Document mode' })).toHaveValue('text')
     await page.getByRole('button', { name: 'Revision history', exact: true }).click()
     await expect(page.locator('.revision-list')).toContainText('Pre-open backup')
     await page.getByRole('button', { name: 'Restore this revision', exact: true }).click()
@@ -277,7 +281,7 @@ test('draft loading blocks editing and file shortcuts until hydration completes'
   })
   await page.goto('/')
   await expect.poll(() => page.evaluate(() => Boolean(window.dataLossHarness.releaseDraft))).toBe(true)
-  await expect(page.getByText('Loading local draft…', { exact: true })).toBeVisible()
+  await expect(page.getByText('Opening documents…', { exact: true })).toBeVisible()
   await expect(page.locator('.cm-content')).toHaveCount(0)
   await page.evaluate(() => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'o', ctrlKey: true, bubbles: true, cancelable: true })))
   expect(await page.evaluate(() => window.dataLossHarness.pickerCalls)).toBe(0)

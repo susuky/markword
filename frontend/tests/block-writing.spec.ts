@@ -135,3 +135,98 @@ test('choosing a block on an empty list item preserves the other items', async (
   await expect(page.locator('.markdown-body li')).toHaveText(['Keep this', 'Keep this too'])
   await expect(page.locator('.markdown-body h2')).toHaveText('Following section')
 })
+
+test('header add uses the source cursor between sections instead of the previous preview focus', async ({ page }) => {
+  const original = '# Trading plan\n\n- **Strategy Engine**\n  - Keep this child\n  - Keep this child too\n\n## Risk Management\n\nUntouched  **spacing**.\n\n[ref]: https://example.com\n'
+  await page.goto('/')
+  await page.locator('.cm-content').fill(original)
+  await page.locator('.markdown-body h1 [contenteditable]').click()
+  await page.locator('.cm-line').nth(5).click()
+  await page.keyboard.press('Home')
+  await expect(page.locator('.cm-activeLine')).toHaveText('')
+  await page.locator('.preview-header').getByRole('button', { name: 'Add content', exact: true }).click()
+  await page.getByRole('dialog', { name: 'Add content' }).getByRole('button', { name: 'Heading 2', exact: true }).click()
+  await active(page).fill('Before risk')
+  await expect(page.locator('.markdown-body h2')).toHaveText(['Before risk', 'Risk Management'])
+  const source = (await page.locator('.cm-line').allTextContents()).join('\n')
+  expect(source).toContain('- **Strategy Engine**\n  - Keep this child\n  - Keep this child too\n\n## Before risk')
+  expect(source).toContain('Untouched  **spacing**.\n\n[ref]: https://example.com\n')
+  await page.keyboard.press('Control+z')
+  await page.keyboard.press('Control+z')
+  await expect.poll(async () => (await page.locator('.cm-line').allTextContents()).join('\n')).toBe(original)
+  await page.getByRole('button', { name: 'Preview editing tools', exact: true }).click()
+  await page.getByRole('button', { name: 'Redo', exact: true }).click()
+  await page.getByRole('button', { name: 'Preview editing tools', exact: true }).click()
+  await page.getByRole('button', { name: 'Redo', exact: true }).click()
+  await expect(page.locator('.markdown-body h2')).toHaveText(['Before risk', 'Risk Management'])
+  await expect(page.locator('.save-status')).toHaveText('Saved in this browser')
+  await page.reload()
+  await expect(page.locator('.markdown-body h2')).toHaveText(['Before risk', 'Risk Management'])
+})
+
+test('source cursor insertion splits a paragraph at its caret and can insert at the start', async ({ page }) => {
+  await page.goto('/')
+  await page.locator('.cm-content').fill('# Notes\n\n起點終點\n\nAfter.\n\n[ref]: https://example.com\n')
+  await page.locator('.cm-line').nth(2).click()
+  await page.keyboard.press('Home')
+  await page.keyboard.press('ArrowRight')
+  await page.keyboard.press('ArrowRight')
+  await page.locator('.preview-header').getByRole('button', { name: 'Add content', exact: true }).click()
+  await page.getByRole('dialog', { name: 'Add content' }).getByRole('button', { name: 'Heading 2', exact: true }).click()
+  await active(page).fill('中間插入')
+  await expect(page.locator('.markdown-body > p')).toHaveText(['起點', '終點', 'After.'])
+  await expect(page.locator('.cm-content')).toContainText('起點## 中間插入終點')
+  await page.locator('.cm-content').press('Control+Home')
+  await page.locator('.preview-header').getByRole('button', { name: 'Add content', exact: true }).click()
+  await page.getByRole('dialog', { name: 'Add content' }).getByRole('button', { name: 'Paragraph', exact: true }).click()
+  await active(page).fill('Opening paragraph')
+  await expect(page.locator('.markdown-body > p')).toHaveText(['Opening paragraph', '起點', '終點', 'After.'])
+  const source = (await page.locator('.cm-line').allTextContents()).join('\n')
+  expect(source).toMatch(/^Opening paragraph\n\n# Notes/)
+  expect(source).toContain('[ref]: https://example.com\n')
+})
+
+for (const { name, marker, next, loose } of [
+  { name: 'bulleted', marker: '- ', next: '- ' },
+  { name: 'numbered', marker: '1. ', next: '2. ' },
+  { name: 'task', marker: '- [x] ', next: '- [ ] ' },
+  { name: 'loose bulleted', marker: '- ', next: '- ', loose: true },
+  { name: 'loose numbered', marker: '1. ', next: '2. ', loose: true },
+  { name: 'loose task', marker: '- [x] ', next: '- [ ] ', loose: true },
+]) {
+  test(`Enter on a ${name} parent focuses the new item before its preserved children`, async ({ page }) => {
+    const original = '# Trading plan\n\n' + marker + '**Strategy Engine**\n    - 統一 Strategy interface\n        - 中文孫項\n    - `Signal` 去重\n' + (loose ? '\n' : '') + next + 'Following section\n\n[ref]: https://example.com\n'
+    await single(page, original)
+    await page.locator('.markdown-body li strong [contenteditable]').click()
+    await page.keyboard.press('End')
+    await page.keyboard.press('Enter')
+    await expect(active(page)).toHaveText('')
+    expect(await active(page).evaluate((element) => element.parentElement?.matches('li') || (element.parentElement?.matches('p') && element.parentElement.parentElement?.matches('li')))).toBe(true)
+    await active(page).fill('新策略')
+    const items = page.locator('.markdown-body > :is(ul, ol) > li')
+    await expect(items).toHaveCount(3)
+    await expect(items.nth(0).locator('ul')).toHaveCount(0)
+    await expect(items.nth(1).locator(':scope > ul')).toContainText('統一 Strategy interface')
+    await expect(items.nth(1).locator('ul ul > li')).toHaveText('中文孫項')
+    await expect(items.nth(1).locator('code')).toHaveText('Signal')
+    await expect(items.nth(2)).toHaveText('Following section')
+    if (name.includes('task')) {
+      await expect(items.nth(0).locator(':scope > input[type=checkbox], :scope > p:first-child > input[type=checkbox]')).toBeChecked()
+      await expect(items.nth(1).locator(':scope > input[type=checkbox], :scope > p:first-child > input[type=checkbox]')).not.toBeChecked()
+    }
+    await page.keyboard.press('Control+z')
+    await page.keyboard.press('Control+z')
+    await expect.poll(async () => (await page.locator('.cm-line').allTextContents()).join('\n')).toBe(original)
+    await page.getByRole('button', { name: 'Preview editing tools', exact: true }).click()
+    await page.getByRole('button', { name: 'Redo', exact: true }).click()
+    await page.getByRole('button', { name: 'Preview editing tools', exact: true }).click()
+    await page.getByRole('button', { name: 'Redo', exact: true }).click()
+    await expect(items.nth(1)).toContainText('新策略')
+    await expect(page.locator('.save-status')).toHaveText('Saved in this browser')
+    await page.reload()
+    await expect(items.nth(1)).toContainText('新策略')
+    await expect(items.nth(1).locator('ul ul > li')).toHaveText('中文孫項')
+    await page.getByRole('button', { name: 'Split editing', exact: true }).click()
+    await expect(page.locator('.cm-content')).toContainText('[ref]: https://example.com')
+  })
+}

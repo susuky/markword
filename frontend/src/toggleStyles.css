@@ -1,0 +1,14 @@
+.markdown-toggle { margin-block: 1em; }
+.markdown-toggle > summary { min-height: 32px; cursor: pointer; font-weight: 600; }
+.markdown-toggle > summary::marker { color: var(--md-muted, inherit); font-size: .8em; }
+.markdown-toggle > summary:focus-visible { outline: 2px solid var(--md-accent, currentColor); outline-offset: 3px; }
+.markdown-toggle-content { margin-inline-start: 24px; padding-block: 1px; }
+.markdown-toggle-content > :first-child { margin-top: 8px; }
+.markdown-toggle-content > :last-child { margin-bottom: 8px; }
+@media (max-width: 900px) {
+  .markdown-toggle > summary { min-height: 44px; }
+}
+@media print {
+  .markdown-toggle::details-content { content-visibility: visible; display: block; }
+  .markdown-toggle:not([open]) > .markdown-toggle-content { display: block !important; }
+}

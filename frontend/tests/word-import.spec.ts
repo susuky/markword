@@ -145,15 +145,33 @@ test('oversized Markdown and Word files are rejected before reading or replacing
   function openButton() { return page.getByRole('button', { name: 'Open document or project', exact: true }) }
 })
 
-test('Word import and review notices work on mobile in Traditional Chinese', async ({ page }) => {
+test('Word import summary works on mobile in Traditional Chinese', async ({ page }) => {
   await page.setViewportSize({ width: 375, height: 812 })
   await page.goto('./')
   await page.getByRole('button', { name: 'Switch to Traditional Chinese', exact: true }).click()
   await expect(page.getByRole('button', { name: '開啟文件或專案', exact: true })).toBeVisible()
   await page.locator('input[type="file"]').first().setInputFiles(wordFile('<w:p><w:pPr><w:pStyle w:val="Custom"/></w:pPr><w:r><w:t>待檢查的 Word 內容</w:t></w:r></w:p>'))
-  await expect(page.locator('.toast')).toContainText('部分內容或格式無法保留')
+  const summary = page.getByRole('complementary', { name: '匯入摘要', exact: true })
+  await expect(summary).toContainText('Word 有 1 項樣式提醒')
+  await expect(summary).toContainText('Unmapped Style')
+  await expect(page.locator('.toast')).toHaveCount(0)
   await expect(page.locator('.cm-content')).toHaveText('待檢查的 Word 內容')
   await page.getByRole('tab', { name: '預覽', exact: true }).click()
   await expect(page.locator('.markdown-body')).toHaveText('待檢查的 Word 內容')
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+})
+
+test('Word review distinguishes style and missing-image warnings without exposing conversion internals', async ({ page }) => {
+  await page.goto('/')
+  await page.locator('input[type=file]').first().setInputFiles(wordFile('<w:p><w:pPr><w:pStyle w:val="Custom"/></w:pPr><w:r><w:t>Review the original</w:t></w:r></w:p><w:p><w:r><w:drawing><wp:inline><a:graphic><a:graphicData><pic:pic><pic:blipFill><a:blip/></pic:blipFill></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>', 'Review.docx'))
+  const summary = page.getByRole('complementary', { name: 'Import summary', exact: true })
+  await expect(summary).toContainText('Word style warnings: 1')
+  await expect(summary).toContainText('Unmapped Style')
+  await expect(summary).toContainText('Word image warnings: 1')
+  await expect(summary).not.toContainText('a:blip')
+  await expect(page.locator('.save-status')).toHaveText('Saved in this browser')
+  await page.reload()
+  await page.getByRole('button', { name: 'Import summary', exact: true }).click()
+  await expect(summary).toContainText('Review.docx')
+  await expect(summary).toContainText('Unmapped Style')
 })

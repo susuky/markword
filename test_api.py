@@ -87,6 +87,54 @@ async def test_export_rejects_unknown_style(client):
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize('setting', [
+    {'page_size': 'A4; margin:0'}, {'margin_mm': 0}, {'margin_mm': 41},
+    {'font_size': 11}, {'font_size': 25},
+])
+@pytest.mark.parametrize('export_format', ['pdf', 'docx'])
+async def test_export_rejects_invalid_page_settings(client, setting, export_format):
+    response = await client.post(f'/api/export/{export_format}', json={'markdown': '# Page', **setting})
+    assert response.status_code == 422
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize('export_format', ['pdf', 'docx'])
+async def test_worker_applies_page_settings(client, monkeypatch, tmp_path, export_format):
+    from io import BytesIO
+    from docx import Document
+    import re
+    import zlib
+    import app as export_app
+
+    monkeypatch.setattr(export_app, 'EXPORT_DIR', str(tmp_path))
+    response = await client.post(f'/api/export/{export_format}', json={
+        'markdown': '# Page settings\n\nA readable paragraph with **bold** and [a link](https://example.com).',
+        'page_size': 'Letter', 'margin_mm': 24, 'font_size': 20,
+    })
+    assert response.status_code == 200, response.text if response.status_code != 200 else ''
+    if export_format == 'pdf':
+        objects = response.content
+        for stream in re.findall(rb'stream\r?\n(.*?)\r?\nendstream', response.content, re.S):
+            try:
+                objects += zlib.decompress(stream)
+            except zlib.error:
+                pass
+        box = re.search(rb'/MediaBox\s*\[([^]]+)\]', objects)
+        assert box and [float(value) for value in box[1].split()] == pytest.approx([0, 0, 612, 792])
+    else:
+        doc = Document(BytesIO(response.content))
+        section = doc.sections[0]
+        assert section.page_width.inches == pytest.approx(8.5)
+        assert section.page_height.inches == pytest.approx(11)
+        assert section.left_margin.mm == pytest.approx(24, abs=.02)
+        assert section.top_margin.mm == pytest.approx(24, abs=.02)
+        assert doc.styles['Normal'].font.size.pt == 15
+        body_sizes = [int(size.get('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val')) for size in doc.paragraphs[1]._p.iter('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}sz')]
+        assert body_sizes and set(body_sizes) == {30}
+    assert list(tmp_path.iterdir()) == []
+
+
+@pytest.mark.anyio
 async def test_pdf_export_download_and_cleanup(client, monkeypatch, tmp_path):
     export_dir = tmp_path / "pdf_request"
     export_dir.mkdir()

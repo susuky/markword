@@ -227,3 +227,82 @@ def test_invalid_and_over_budget_math_preserve_source_and_missing_runtime_fails(
         export_markdown.render_export_body('$x$', THEMES['Light'])
     # Ordinary exports remain independent of the browser math runtime.
     assert '<p>Plain text</p>' == export_markdown.render_export_body('Plain text', THEMES['Light'])
+
+
+def test_closed_nested_toggles_export_all_children_and_preserve_literal_tags(monkeypatch, tmp_path):
+    monkeypatch.setattr(app, 'EXPORT_DIR', str(tmp_path))
+    source = '''<details>
+<summary>外層 **標題**</summary>
+
+Visible parent text.
+
+<details>
+<summary>內層標題</summary>
+
+Hidden child content. [Linked][ref]
+
+```text
+</details>
+<summary>literal</summary>
+```
+
+| 項目 | 內容 |
+| --- | --- |
+| 資料 | 完整保留 |
+
+</details>
+
+</details>
+
+[ref]: https://example.invalid/guide
+'''
+    body = BeautifulSoup(export_markdown.render_export_body(source, THEMES['Light']), 'html.parser')
+    assert not body.select('details')
+    assert body.select_one('strong').text == '標題'
+    assert 'Hidden child content.' in body.text
+    assert body.select_one('table td').text == '資料'
+    assert '</details>' in body.select_one('pre').text
+    assert body.select_one('a')['href'] == 'https://example.invalid/guide'
+    document = Document(app.export_word(source))
+    text = '\n'.join(paragraph.text for paragraph in document.paragraphs)
+    assert '外層 標題' in text and '內層標題' in text and 'Hidden child content.' in text
+    assert '</details>' in text and '<summary>literal</summary>' in text
+    assert document.tables[0].cell(1, 1).text == '完整保留'
+    pdf = Path(app.export_pdf(source))
+    pdf_text = subprocess.check_output(['pdftotext', str(pdf), '-'], text=True)
+    assert 'Hidden child content.' in pdf_text and '完整保留' in pdf_text
+    assert '</details>' in pdf_text and '<summary>literal</summary>' in pdf_text
+
+
+def test_commonmark_list_children_keep_exported_hierarchy(monkeypatch, tmp_path):
+    monkeypatch.setattr(app, 'EXPORT_DIR', str(tmp_path))
+    source = '''<details>
+<summary>Nested plan</summary>
+
+- Parent
+  - [x] Child
+    - Grandchild
+
+    Child paragraph.
+
+    ```text
+    - literal code
+    ```
+
+1. Ordered parent
+   1. Ordered child
+
+> - Quoted parent
+>   - Quoted child
+
+</details>
+'''
+    body = BeautifulSoup(export_markdown.render_export_body(source, THEMES['Light']), 'html.parser')
+    assert len(body.select('li > ul > li > ul > li')) == 1
+    assert body.select_one('li > ol > li').get_text(strip=True) == 'Ordered child'
+    assert body.select_one('blockquote li > ul > li').get_text(strip=True) == 'Quoted child'
+    assert any(p.get_text(strip=True) == 'Child paragraph.' for p in body.select('li > p'))
+    assert '- literal code' in body.select_one('li .codehilite').get_text()
+    doc = Document(app.export_word(source))
+    levels = [p._p.pPr.numPr.ilvl.val for p in doc.paragraphs if p._p.pPr is not None and p._p.pPr.numPr is not None]
+    assert {0, 1, 2} <= set(levels)

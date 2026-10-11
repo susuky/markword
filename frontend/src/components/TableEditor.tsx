@@ -1,5 +1,5 @@
 import { Columns3, Plus, Rows3, Trash2, X } from 'lucide-react'
-import { useLayoutEffect, useRef, useState, type ClipboardEvent, type KeyboardEvent } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type ClipboardEvent, type KeyboardEvent } from 'react'
 import { useI18n } from '../i18n'
 import { clipboardTable, MAX_TABLE_CELLS, TABLE_SIZE_ERROR, type TableAlignment, type TableData } from '../tableEditing'
 import { Modal } from './Modal'
@@ -16,6 +16,11 @@ export function TableEditor({ initial, existing, onApply, onClose }: {
   const [message, setMessage] = useState('')
   const gridRef = useRef<HTMLTableElement>(null)
   const width = data.alignments.length
+  useEffect(() => {
+    const deferred = () => setMessage(t('The file has not been opened. Apply or cancel this edit, then open the file again.'))
+    window.addEventListener('markword:open-deferred', deferred)
+    return () => window.removeEventListener('markword:open-deferred', deferred)
+  }, [t])
 
   useLayoutEffect(() => {
     gridRef.current?.querySelector('textarea')?.focus()

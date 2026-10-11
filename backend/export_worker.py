@@ -51,7 +51,8 @@ def main():
     payload = json.load(sys.stdin)
     exporter = export_pdf if sys.argv[1] == 'pdf' else export_word
     try:
-        path = exporter(payload['markdown'], payload['theme'], payload['style'])
+        options = {key: payload[key] for key in ('page_size', 'margin_mm', 'font_size') if payload.get(key) is not None}
+        path = exporter(payload['markdown'], payload['theme'], payload['style'], **options)
     except FatalURLFetchingError:
         sys.exit(3)
     if not path:

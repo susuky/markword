@@ -100,7 +100,7 @@ export function AssetPanel({
 
         <div className="asset-panel__summary">
           <span><strong>{assets.length.toLocaleString(locale)}</strong>{t('assets')}</span>
-          <span><strong>{formatBytes(totalBytes, locale)}</strong>{t('in this project')}</span>
+          <span><strong>{formatBytes(totalBytes, locale)}</strong>{t('in this browser')}</span>
           {storage ? <span><strong>{storage.quota ? formatBytes(storage.usage, locale) : '—'}</strong>{t(storage.persistent ? 'Browser storage protected' : 'Back up before clearing browser data')}</span> : null}
         </div>
 

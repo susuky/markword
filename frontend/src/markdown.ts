@@ -19,6 +19,7 @@ interface MarkdownEnvironment {
   footnotes: Map<string, FootnoteDefinition>
   footnoteOrder: string[]
   footnoteReferenceCounts: Map<string, number>
+  toggleDepth?: number
 }
 
 // ponytail: bounded FIFO; unchanged code blocks reuse highlighting while prose changes.
@@ -56,6 +57,69 @@ const md = new MarkdownIt({
 })
 
 md.enable('table')
+
+// Only this small, portable HTML container is accepted. Arbitrary HTML stays disabled.
+function toggleBlockRule(state: StateBlock, startLine: number, endLine: number, silent: boolean) {
+  const env = state.env as MarkdownEnvironment
+  if ((env.toggleDepth ?? 0) >= 100) return false
+  const line = (index: number) => state.src.slice(state.bMarks[index] + state.tShift[index], state.eMarks[index]).trim()
+  const opening = line(startLine).match(/^<details( open)?>$/)
+  const summary = startLine + 1 < endLine && line(startLine + 1).match(/^<summary>(.*)<\/summary>$/)
+  if (!opening || !summary || state.sCount[startLine] - state.blkIndent >= 4) return false
+  let depth = 1
+  let closing = startLine + 2
+  let fence = ''
+  for (; closing < endLine; closing++) {
+    const value = line(closing)
+    if (state.sCount[closing] - state.blkIndent >= 4) continue
+    const marker = value.match(/^(`{3,}|~{3,})/)
+    if (marker) {
+      if (!fence) fence = marker[1]
+      else if (marker[1][0] === fence[0] && marker[1].length >= fence.length && new RegExp(`^${fence[0]}{${fence.length},}\\s*$`).test(value)) fence = ''
+    }
+    if (fence) continue
+    if (/^<details(?: open)?>$/.test(value) && closing + 1 < endLine && /^<summary>.*<\/summary>$/.test(line(closing + 1))) depth++
+    if (value === '</details>' && --depth === 0) break
+  }
+  if (closing >= endLine) return false
+  if (silent) return true
+  const token = state.push('markword_toggle_open', 'details', 1)
+  token.map = [startLine, closing + 1]
+  token.attrSet('class', 'markdown-toggle')
+  if (opening[1]) token.attrSet('open', '')
+  const heading = state.push('markword_summary_open', 'summary', 1)
+  heading.map = [startLine + 1, startLine + 2]
+  const inline = state.push('inline', '', 0)
+  inline.content = summary[1]
+  inline.map = heading.map
+  inline.children = []
+  state.push('markword_summary_close', 'summary', -1)
+  const content = state.push('markword_toggle_content_open', 'div', 1)
+  content.attrSet('class', 'markdown-toggle-content')
+  const children: Token[] = []
+  const previousDepth = env.toggleDepth ?? 0
+  env.toggleDepth = previousDepth + 1
+  try {
+    state.md.block.parse(state.getLines(startLine + 2, closing, state.blkIndent, false), state.md, state.env, children)
+  } finally { env.toggleDepth = previousDepth }
+  for (const child of children) {
+    if (child.map) child.map = [child.map[0] + startLine + 2, child.map[1] + startLine + 2]
+    child.level += state.level
+    state.tokens.push(child)
+  }
+  if (!children.length) {
+    const empty = state.push('paragraph_open', 'p', 1)
+    empty.map = [closing, closing]
+    empty.attrSet('data-markdown-virtual', '')
+    state.push('inline', '', 0).children = []
+    state.push('paragraph_close', 'p', -1)
+  }
+  state.push('markword_toggle_content_close', 'div', -1)
+  state.push('markword_toggle_close', 'details', -1)
+  state.line = closing + 1
+  return true
+}
+md.block.ruler.before('fence', 'markword_toggle', toggleBlockRule, { alt: ['paragraph', 'reference', 'blockquote', 'list'] })
 
 // Allow only a plain line break inside table cells; arbitrary HTML stays disabled.
 md.inline.ruler.before('html_inline', 'markword_table_break', (state, silent) => {
@@ -360,7 +424,7 @@ export function renderMarkdown(source: string, mode: DocumentMode = 'markdown') 
   annotateSourceRanges(tokens)
   const html = md.renderer.render(tokens, md.options, env) + renderFootnotes(env)
   return DOMPurify.sanitize(html, {
-    ADD_ATTR: ['data-source-start', 'data-source-end', 'data-mermaid-source', 'data-math-source', 'data-math-display', 'data-asset-path', 'checked', 'controls', 'disabled', 'download', 'preload'],
+    ADD_ATTR: ['data-source-start', 'data-source-end', 'data-mermaid-source', 'data-math-source', 'data-math-display', 'data-asset-path', 'data-markdown-virtual', 'checked', 'controls', 'disabled', 'download', 'preload'],
     ADD_TAGS: ['audio', 'button', 'figcaption', 'figure', 'input', 'video'],
   })
 }

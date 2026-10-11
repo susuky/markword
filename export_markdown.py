@@ -79,6 +79,74 @@ class CommonMarkFences(Preprocessor):
         return lines
 
 
+class CommonMarkLists(Preprocessor):
+    def run(self, lines):
+        # CommonMark list content starts after its marker (often two spaces).
+        # Python-Markdown expects four; align mapped items without flattening
+        # nested lists, paragraphs, quotes, or fenced code inside them.
+        tokens = MarkdownIt('commonmark', {'html': False}).parse('\n'.join(lines))
+        parents = []
+        for token in tokens:
+            if token.type == 'list_item_close':
+                parents.pop()
+                continue
+            if token.type != 'list_item_open' or not token.map:
+                continue
+            start, end = token.map
+            same_line = bool(parents) and parents[-1] == start
+            parents.append(start)
+            opening = re.match(r'^((?:[ \t]*>[ \t]?)*)([ \t]*)([-+*]|\d+[.)])([ \t]+)', lines[start])
+            if not opening or same_line:
+                continue
+            quote_depth = opening[1].count('>')
+            indent = len(opening[2].expandtabs(4))
+            width = len((opening[2] + opening[3] + opening[4]).expandtabs(4)) - indent
+            if len(opening[4].expandtabs(4)) > 4:
+                width = len(opening[3]) + 1
+            for index in range(start + 1, end):
+                line = lines[index]
+                if not line.strip():
+                    continue
+                prefix = ''
+                for _ in range(quote_depth):
+                    quote = re.match(r'^[ \t]*>[ \t]?', line)
+                    if not quote:
+                        break
+                    prefix += quote[0]
+                    line = line[len(quote[0]):]
+                spaces = re.match(r'^[ \t]*', line)[0]
+                aligned = max(indent + 4, len(spaces.expandtabs(4)) + 4 - width)
+                lines[index] = prefix + ' ' * aligned + line[len(spaces):]
+        return lines
+
+
+class ExportToggles(Preprocessor):
+    def run(self, lines):
+        # PDF and Word always include folded children. Leave malformed containers
+        # and literal tags in code alone; arbitrary HTML handling is unchanged.
+        tokens = MarkdownIt('commonmark').parse('\n'.join(lines))
+        code_lines = {line for token in tokens if token.type in ('fence', 'code_block') and token.map
+                      for line in range(*token.map)}
+        stack = []
+        containers = []
+        for index, line in enumerate(lines):
+            if index in code_lines:
+                continue
+            opening = re.match(r'^([ \t]*)<details(?: open)?>\s*$', line)
+            if opening and index + 1 < len(lines):
+                summary = re.match(r'^[ \t]*<summary>(.*)</summary>\s*$', lines[index + 1])
+                if summary:
+                    stack.append((index, opening[1], summary[1]))
+                    continue
+            if re.match(r'^[ \t]*</details>\s*$', line) and stack:
+                containers.append((*stack.pop(), index))
+        for start, indent, title, end in containers:
+            lines[start] = ''
+            lines[start + 1] = indent + title
+            lines[end] = ''
+        return lines
+
+
 class ExportFootnotes(FootnoteExtension):
     def setFootnote(self, id, text):
         # The footnote parser has now removed continuation indentation. Run the
@@ -156,7 +224,9 @@ class BlockMath(BlockProcessor):
 class ExportSyntax(Extension):
     def extendMarkdown(self, md):
         md.ESCAPED_CHARS.append('$')
-        md.preprocessors.register(CommonMarkFences(md), 'export_fences', 25)
+        md.preprocessors.register(CommonMarkFences(md), 'export_fences', 26)
+        md.preprocessors.register(CommonMarkLists(md), 'export_lists', 25)
+        md.preprocessors.register(ExportToggles(md), 'export_toggles', 24)
         md.inlinePatterns.register(InlineMath(r'(?<!\$)\$(?!\$)', md), 'export_math', 185)
         md.parser.blockprocessors.register(BlockMath(md.parser), 'export_math', 85)
         md.treeprocessors.register(TaskLists(md), 'export_tasks', 15)

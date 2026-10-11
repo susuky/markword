@@ -1,11 +1,11 @@
 import { translate } from './i18n'
 
 const DATABASE_NAME = 'markword'
-const DATABASE_VERSION = 2
+const DATABASE_VERSION = 3
 const DRAFT_STORE = 'drafts'
 const REVISION_STORE = 'revisions'
 const ASSET_STORE = 'assets'
-const CURRENT_DRAFT_ID = 'current'
+export const CURRENT_DRAFT_ID = 'current'
 const LEGACY_DOCUMENT_KEY = 'markword.document'
 const PREFERENCE_PREFIX = 'markword.preference.'
 
@@ -25,10 +25,12 @@ export interface StoredDraft {
   metadata: DraftMetadata
   createdAt: number
   updatedAt: number
+  trashedAt?: number | null
 }
 
 export interface Revision {
   id: string
+  documentId: string
   content: string
   metadata: DraftMetadata
   createdAt: number
@@ -48,6 +50,7 @@ export interface StoredAsset {
 }
 
 export interface PersistenceSessionOptions {
+  documentId?: string
   snapshotIntervalMs?: number
   onStatusChange?: (status: PersistenceStatus, error?: Error) => void
   onRevisionCreated?: (revision: Revision) => void
@@ -60,6 +63,39 @@ export interface RestoredRevision {
 
 let databasePromise: Promise<IDBDatabase> | null = null
 const revisionEvents = new EventTarget()
+const documentEvents = new EventTarget()
+let documentChannel: BroadcastChannel | null = null
+
+function workspaceChannel() {
+  if (!documentChannel && typeof BroadcastChannel !== 'undefined') {
+    try { documentChannel = new BroadcastChannel('markword-documents') } catch { return null }
+  }
+  return documentChannel
+}
+
+function notifyDocuments() {
+  documentEvents.dispatchEvent(new Event('change'))
+  workspaceChannel()?.postMessage('change')
+}
+
+export function subscribeToDocuments(listener: () => void) {
+  documentEvents.addEventListener('change', listener)
+  window.addEventListener('focus', listener)
+  const channel = workspaceChannel()
+  channel?.addEventListener('message', listener)
+  return () => {
+    documentEvents.removeEventListener('change', listener)
+    window.removeEventListener('focus', listener)
+    channel?.removeEventListener('message', listener)
+  }
+}
+
+export function documentName(draft: Pick<StoredDraft, 'content' | 'metadata'>) {
+  const name = typeof draft.metadata.name === 'string' && draft.metadata.name.trim()
+    ? draft.metadata.name.trim()
+    : draft.content.match(/^#\s+(.+)$/m)?.[1]?.replace(/[*_`~]/g, '').trim() || translate('Untitled document')
+  return name.slice(0, 120)
+}
 
 export class DraftConflictError extends Error {
   constructor() {
@@ -106,6 +142,17 @@ function openDatabase(): Promise<IDBDatabase> {
         const assets = database.createObjectStore(ASSET_STORE, { keyPath: 'id' })
         assets.createIndex('path', 'path', { unique: true })
         assets.createIndex('createdAt', 'createdAt')
+      }
+      const revisions = request.transaction!.objectStore(REVISION_STORE)
+      if (!revisions.indexNames.contains('documentId')) {
+        revisions.createIndex('documentId', 'documentId')
+        const cursor = revisions.openCursor()
+        cursor.onsuccess = () => {
+          const entry = cursor.result
+          if (!entry) return
+          if (!entry.value.documentId) entry.update({ ...entry.value, documentId: CURRENT_DRAFT_ID })
+          entry.continue()
+        }
       }
     }
     request.onsuccess = () => {
@@ -159,7 +206,9 @@ export async function loadCurrentDraft(
   id = CURRENT_DRAFT_ID,
 ): Promise<StoredDraft> {
   const stored = await getCurrentDraft(id)
+  if (stored?.trashedAt) throw new Error(translate('This document is in the trash. Restore it before opening.'))
   if (stored) return stored
+  if (id !== CURRENT_DRAFT_ID && id !== 'html') throw new Error(translate('Document not found'))
 
   const legacyContent = id === CURRENT_DRAFT_ID ? localStorage.getItem(LEGACY_DOCUMENT_KEY) : null
   let draft: StoredDraft
@@ -188,7 +237,7 @@ export async function saveCurrentDraft(
   const store = transaction.objectStore(DRAFT_STORE)
   const previous = await requestResult(store.get(id) as IDBRequest<StoredDraft | undefined>)
   // Read, compare and write in one transaction across all browser tabs.
-  if ((previous ? previous.version ?? 0 : null) !== expectedVersion) {
+  if (previous?.trashedAt || (previous ? previous.version ?? 0 : null) !== expectedVersion) {
     await complete
     throw new DraftConflictError()
   }
@@ -207,36 +256,90 @@ export async function saveCurrentDraft(
   }
   store.put(draft)
   await complete
+  if (id !== 'html') notifyDocuments()
   return draft
 }
 
-export async function listRevisions(): Promise<Revision[]> {
+export async function listWorkspaceDrafts(): Promise<StoredDraft[]> {
+  const database = await openDatabase()
+  const transaction = database.transaction(DRAFT_STORE, 'readonly')
+  const drafts = await requestResult(transaction.objectStore(DRAFT_STORE).getAll() as IDBRequest<StoredDraft[]>)
+  await transactionComplete(transaction)
+  return drafts.filter((draft) => draft.id === CURRENT_DRAFT_ID || draft.id.startsWith('doc-'))
+    .sort((left, right) => right.updatedAt - left.updatedAt)
+}
+
+export async function createWorkspaceDocument(content = '', metadata: DraftMetadata = {}): Promise<StoredDraft> {
+  return saveCurrentDraft(content, metadata, null, `doc-${createRevisionId()}`)
+}
+
+export async function chooseWorkspaceDocument(preferred: string, fallbackContent: string): Promise<string> {
+  const drafts = await listWorkspaceDrafts()
+  const active = drafts.filter((draft) => !draft.trashedAt)
+  if (active.some((draft) => draft.id === preferred)) return preferred
+  if (active.length) return active[0].id
+  if (drafts.length) return (await createWorkspaceDocument('', { mode: 'markdown' })).id
+  return (await loadCurrentDraft(fallbackContent, { mode: 'markdown', theme: 'Light' })).id
+}
+
+export async function renameWorkspaceDocument(id: string, name: string, expectedVersion: number): Promise<StoredDraft> {
+  const draft = await getCurrentDraft(id)
+  if (!draft || draft.trashedAt) throw new Error(translate('Document not found'))
+  const nextName = name.trim().slice(0, 120)
+  if (!nextName) throw new Error(translate('Enter a document name'))
+  return saveCurrentDraft(draft.content, { ...draft.metadata, name: nextName }, expectedVersion, id)
+}
+
+export async function setDocumentTrashed(id: string, trashed: boolean, expectedVersion: number): Promise<void> {
+  const database = await openDatabase()
+  const transaction = database.transaction(DRAFT_STORE, 'readwrite')
+  const complete = transactionComplete(transaction)
+  const store = transaction.objectStore(DRAFT_STORE)
+  const draft = await requestResult(store.get(id) as IDBRequest<StoredDraft | undefined>)
+  if (!draft || (draft.version ?? 0) !== expectedVersion) {
+    await complete
+    throw new DraftConflictError()
+  }
+  store.put({ ...draft, version: expectedVersion + 1, trashedAt: trashed ? Date.now() : null })
+  await complete
+  notifyDocuments()
+}
+
+export async function listRevisions(documentId = CURRENT_DRAFT_ID): Promise<Revision[]> {
   const database = await openDatabase()
   const transaction = database.transaction(REVISION_STORE, 'readonly')
-  const index = transaction.objectStore(REVISION_STORE).index('createdAt')
-  const revisions = await requestResult(index.getAll() as IDBRequest<Revision[]>)
+  const index = transaction.objectStore(REVISION_STORE).index('documentId')
+  const revisions = await requestResult(index.getAll(documentId) as IDBRequest<Revision[]>)
   await transactionComplete(transaction)
-  revisions.reverse()
+  return revisions.sort((left, right) => right.createdAt - left.createdAt)
+}
+
+export async function listWorkspaceRevisions(): Promise<Revision[]> {
+  const database = await openDatabase()
+  const transaction = database.transaction(REVISION_STORE, 'readonly')
+  const revisions = await requestResult(transaction.objectStore(REVISION_STORE).getAll() as IDBRequest<Revision[]>)
+  await transactionComplete(transaction)
   return revisions
 }
 
-export async function getRevision(id: string): Promise<Revision | null> {
+export async function getRevision(id: string, documentId = CURRENT_DRAFT_ID): Promise<Revision | null> {
   const database = await openDatabase()
   const transaction = database.transaction(REVISION_STORE, 'readonly')
   const revision = await requestResult(
     transaction.objectStore(REVISION_STORE).get(id) as IDBRequest<Revision | undefined>,
   )
   await transactionComplete(transaction)
-  return revision ?? null
+  return revision?.documentId === documentId ? revision : null
 }
 
-async function pruneOldRevisions(): Promise<void> {
+async function pruneOldRevisions(documentId: string): Promise<void> {
   const database = await openDatabase()
   const transaction = database.transaction(REVISION_STORE, 'readwrite')
   const store = transaction.objectStore(REVISION_STORE)
-  const keys = await requestResult(store.index('createdAt').getAllKeys())
-  const excess = keys.length - MAX_REVISIONS
-  for (let index = 0; index < excess; index += 1) store.delete(keys[index])
+  const revisions = await requestResult(store.index('documentId').getAll(documentId) as IDBRequest<Revision[]>)
+  revisions.sort((left, right) => left.createdAt - right.createdAt)
+  const excess = revisions.length - MAX_REVISIONS
+  for (let index = 0; index < excess; index += 1) store.delete(revisions[index].id)
   await transactionComplete(transaction)
 }
 
@@ -244,9 +347,11 @@ export async function createSnapshot(
   content: string,
   metadata: DraftMetadata = {},
   reason: RevisionReason = 'manual',
+  documentId = CURRENT_DRAFT_ID,
 ): Promise<Revision> {
   const revision: Revision = {
     id: createRevisionId(),
+    documentId,
     content,
     metadata: cloneMetadata(metadata),
     createdAt: Date.now(),
@@ -256,12 +361,13 @@ export async function createSnapshot(
   const transaction = database.transaction(REVISION_STORE, 'readwrite')
   transaction.objectStore(REVISION_STORE).add(revision)
   await transactionComplete(transaction)
-  await pruneOldRevisions()
+  await pruneOldRevisions(documentId)
   revisionEvents.dispatchEvent(new Event('change'))
   return revision
 }
 
-export async function deleteRevision(id: string): Promise<void> {
+export async function deleteRevision(id: string, documentId = CURRENT_DRAFT_ID): Promise<void> {
+  if (!await getRevision(id, documentId)) throw new Error(translate('Revision not found'))
   const database = await openDatabase()
   const transaction = database.transaction(REVISION_STORE, 'readwrite')
   transaction.objectStore(REVISION_STORE).delete(id)
@@ -325,12 +431,13 @@ export async function restoreRevision(
   currentContent: string,
   currentMetadata: DraftMetadata,
   expectedVersion: number,
+  documentId = CURRENT_DRAFT_ID,
 ): Promise<RestoredRevision> {
-  const revision = await getRevision(revisionId)
+  const revision = await getRevision(revisionId, documentId)
   if (!revision) throw new Error(translate('Revision not found'))
 
-  await createSnapshot(currentContent, currentMetadata, 'pre-restore')
-  const draft = await saveCurrentDraft(revision.content, revision.metadata, expectedVersion)
+  await createSnapshot(currentContent, currentMetadata, 'pre-restore', documentId)
+  const draft = await saveCurrentDraft(revision.content, revision.metadata, expectedVersion, documentId)
   return { draft, revision }
 }
 
@@ -365,10 +472,12 @@ export class DraftPersistenceSession {
 
   constructor(private readonly options: PersistenceSessionOptions = {}) {}
 
+  get documentId() { return this.options.documentId ?? CURRENT_DRAFT_ID }
+
   async initialize(fallbackContent = '', fallbackMetadata: DraftMetadata = {}): Promise<StoredDraft> {
     const [draft, revisions] = await Promise.all([
-      loadCurrentDraft(fallbackContent, fallbackMetadata),
-      listRevisions(),
+      loadCurrentDraft(fallbackContent, fallbackMetadata, this.documentId),
+      listRevisions(this.documentId),
     ])
     this.content = draft.content
     this.metadata = cloneMetadata(draft.metadata)
@@ -393,7 +502,7 @@ export class DraftPersistenceSession {
 
   update(content: string, metadata: DraftMetadata = this.metadata): void {
     this.content = content
-    this.metadata = cloneMetadata(metadata)
+    this.metadata = { ...this.metadata, ...metadata }
     this.options.onStatusChange?.('saving')
     if (this.saveTimer !== null) window.clearTimeout(this.saveTimer)
     this.saveTimer = window.setTimeout(() => {
@@ -410,7 +519,7 @@ export class DraftPersistenceSession {
     while (this.savePromise) await this.savePromise
     const content = this.content
     const metadata = this.metadata
-    this.savePromise = saveCurrentDraft(content, metadata, this.version)
+    this.savePromise = saveCurrentDraft(content, metadata, this.version, this.documentId)
     try {
       const draft = await this.savePromise
       this.version = draft.version ?? 0
@@ -427,7 +536,7 @@ export class DraftPersistenceSession {
 
   async snapshot(reason: RevisionReason = 'manual'): Promise<Revision> {
     const draft = await this.flush()
-    const revision = await createSnapshot(draft.content, draft.metadata, reason)
+    const revision = await createSnapshot(draft.content, draft.metadata, reason, this.documentId)
     this.lastSnapshottedContent = revision.content
     this.options.onRevisionCreated?.(revision)
     return revision
@@ -435,7 +544,7 @@ export class DraftPersistenceSession {
 
   async restore(revisionId: string): Promise<RestoredRevision> {
     await this.flush()
-    const restored = await restoreRevision(revisionId, this.content, this.metadata, this.version)
+    const restored = await restoreRevision(revisionId, this.content, this.metadata, this.version, this.documentId)
     this.version = restored.draft.version ?? 0
     this.content = restored.draft.content
     this.metadata = cloneMetadata(restored.draft.metadata)

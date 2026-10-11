@@ -3,6 +3,7 @@ import { zipSync } from 'fflate'
 import mammoth from 'mammoth'
 import { assetMarkdownUrl, importLocalAssets } from './assets'
 import { htmlToMarkdown } from './htmlToMarkdown'
+import { countMergedCells, type ImportWarning } from './importSummary'
 import { unzipBounded } from './zip'
 
 export async function importWordDocument(file: File) {
@@ -41,8 +42,22 @@ export async function importWordDocument(file: File) {
   assets.forEach((asset, index) => {
     markdown = markdown.replaceAll(`](${imagePrefix}-${index})`, `](${assetMarkdownUrl(asset.path)})`)
   })
-  return {
-    markdown,
-    hasWarnings: result.messages.length > 0 || Boolean(body.querySelector('[colspan], [rowspan]')),
-  }
+  const warnings: ImportWarning[] = []
+  const styleMessages = result.messages.filter(({ message }) => /style/i.test(message))
+  const imageMessages = result.messages.filter(({ message }) => !/style/i.test(message) && /image|a:blip|v:imagedata/i.test(message))
+  if (styleMessages.length) warnings.push({
+    message: 'Word style warnings: {count}. Check the formatting of affected paragraphs.',
+    count: styleMessages.length,
+    details: [...new Set(styleMessages.map(({ message }) => message.match(/^Unrecognised \w+ style: '(.*)' \(Style ID:/)?.[1])
+      .filter((style): style is string => Boolean(style)))].slice(0, 20).map((style) => style.slice(0, 200)),
+  })
+  if (imageMessages.length) warnings.push({
+    message: 'Word image warnings: {count}. Some images may be missing or unsupported; compare with the original.',
+    count: imageMessages.length,
+  })
+  const mergedCells = countMergedCells(body)
+  if (mergedCells) warnings.push({ message: 'Merged table cells: {count}. The merged layout could not be preserved; check the tables.', count: mergedCells })
+  const otherWarnings = result.messages.length - styleMessages.length - imageMessages.length
+  if (otherWarnings) warnings.push({ message: 'Other Word conversion warnings: {count}. Compare the content with the original document.', count: otherWarnings })
+  return { markdown, warnings }
 }

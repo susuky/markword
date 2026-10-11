@@ -1,4 +1,4 @@
-import { Archive, Check, ChevronDown, Code2, Download, FileDown, FileText, Palette, Save, Type } from 'lucide-react'
+import { Archive, Check, ChevronDown, Code2, Download, FileDown, FileText, Palette, Save, Type, Settings2 } from 'lucide-react'
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { IS_STATIC_DEPLOYMENT } from '../deployment'
 import { DOCUMENT_MODES } from '../documentMode'
@@ -82,13 +82,14 @@ export function PreviewSettings({ theme, onThemeChange, markdownSize, mermaidSiz
   )
 }
 
-export function ExportMenu({ mode, disabled, exporting, clientExporting, exportStyle, onStyleChange, hasAssets, onSource, onSaveAs, onProject, onHtml, onExport }: {
+export function ExportMenu({ mode, disabled, exporting, clientExporting, exportStyle, onStyleChange, onPreview, hasAssets, onSource, onSaveAs, onProject, onHtml, onExport }: {
   mode: DocumentMode
   disabled: boolean
   exporting: 'pdf' | 'docx' | null
   clientExporting: 'html' | 'project' | null
   exportStyle: ExportStyleName
   onStyleChange: (style: ExportStyleName) => void
+  onPreview: () => void
   hasAssets: boolean
   onSource: () => void
   onSaveAs?: () => void
@@ -113,6 +114,7 @@ export function ExportMenu({ mode, disabled, exporting, clientExporting, exportS
           </button>)}</div>
         </details>
         <div className="export-menu__section">
+          <button type="button" onClick={() => { close(); onPreview() }}><Settings2 size={18} aria-hidden="true" /><span><strong>{t('Export settings and preview')}</strong><small>{t('Check paper size, margins and font size before downloading')}</small></span></button>
           <span>{t('Source and web')}</span>
           {onSaveAs ? <button type="button" onClick={() => { close(); onSaveAs() }}><Save size={18} aria-hidden="true" /><span><strong>{t('Save as…')}</strong><small>{t('Choose a file name and location')}</small></span></button> : null}
           <button type="button" onClick={() => { close(); onSource() }}><FileDown size={18} aria-hidden="true" /><span><strong>{t(DOCUMENT_MODES[mode].label)}</strong><small>{t('Keep the editable source')}</small></span></button>
