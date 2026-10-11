@@ -29,6 +29,20 @@ function fencedCode(previous: string, value: string) {
   return previous.includes('\r\n') ? result.replaceAll('\n', '\r\n') : result
 }
 
+function anchorGroups(anchors: HTMLElement[]) {
+  const keys = new Map<HTMLElement, string>()
+  const groups = new Map<string, HTMLElement[]>()
+  for (const anchor of anchors) {
+    const parent = anchor.parentElement?.closest<HTMLElement>('[data-source-start]')
+    const key = `${parent ? keys.get(parent) ?? '' : ''}/${anchor.tagName}`
+    const group = groups.get(key) ?? []
+    keys.set(anchor, `${key}:${group.length}`)
+    group.push(anchor)
+    groups.set(key, group)
+  }
+  return groups
+}
+
 export function prepareMarkdownEditing(root: HTMLElement, initialSource: string, codeLabel: string) {
   let source = initialSource
   const starts = [0]
@@ -112,15 +126,24 @@ export function prepareMarkdownEditing(root: HTMLElement, initialSource: string,
         parsed.innerHTML = renderMarkdown(replacement)
         const originalAnchors = [block.element, ...block.element.querySelectorAll<HTMLElement>('[data-source-start]')]
         const updatedAnchors = Array.from(parsed.querySelectorAll<HTMLElement>('[data-source-start]'))
-        // Serializing a list can move its later items by more than the overall
-        // line delta. Refresh those inner ranges before a handle can move them.
-        if (originalAnchors.length === updatedAnchors.length) originalAnchors.forEach((anchor, anchorIndex) => {
-          const updated = updatedAnchors[anchorIndex]
-          if (anchor.tagName !== updated.tagName) return
-          const startLine = source.slice(0, block.from).split('\n').length
-          anchor.dataset.sourceStart = String(startLine + Number(updated.dataset.sourceStart) - 1)
-          anchor.dataset.sourceEnd = String(startLine + Number(updated.dataset.sourceEnd) - 1)
-        })
+        // Typing into an empty loose item can add a paragraph wrapper. Match
+        // ranges within each parent so that other items still move their own source.
+        const originalGroups = anchorGroups(originalAnchors)
+        const updatedGroups = anchorGroups(updatedAnchors)
+        const originalSet = new Set(originalAnchors)
+        const matched = new Set<HTMLElement>()
+        const startLine = source.slice(0, block.from).split('\n').length
+        for (const [key, anchors] of originalGroups) {
+          const parent = anchors[0].parentElement?.closest<HTMLElement>('[data-source-start]')
+          if (parent && originalSet.has(parent) && !matched.has(parent)) continue
+          const updated = updatedGroups.get(key)
+          if (anchors.length !== updated?.length) continue
+          anchors.forEach((anchor, anchorIndex) => {
+            anchor.dataset.sourceStart = String(startLine + Number(updated[anchorIndex].dataset.sourceStart) - 1)
+            anchor.dataset.sourceEnd = String(startLine + Number(updated[anchorIndex].dataset.sourceEnd) - 1)
+            matched.add(anchor)
+          })
+        }
       }
       root.querySelectorAll<HTMLElement>('.preview-table').forEach((wrapper) => {
         const button = wrapper.querySelector<HTMLElement>('[data-table-line]')

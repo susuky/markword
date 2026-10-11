@@ -48,6 +48,10 @@ interface PreviewPaneProps {
   onRedo?: () => void
 }
 
+interface PreviewFocus extends BlockChange {
+  caret?: { field: number; from: number; to: number }
+}
+
 const MERMAID_SVG_CACHE_LIMIT = 40
 const MERMAID_RENDER_DEBOUNCE_MS = 300
 const MERMAID_BASE_PREVIEW_MAX_HEIGHT = 360
@@ -74,14 +78,14 @@ function beginCodeEdit(code: HTMLElement) {
 function focusPreviewBlock(root: HTMLElement | null, line: number) {
   if (!root) return
   const anchors = Array.from(root.querySelectorAll<HTMLElement>('[data-source-start]'))
-  const anchor = anchors.find((element) => Number(element.dataset.sourceStart) <= line && Number(element.dataset.sourceEnd) >= line)
+  const anchor = anchors.filter((element) => Number(element.dataset.sourceStart) <= line && Number(element.dataset.sourceEnd) >= line).at(-1)
     ?? anchors.find((element) => Number(element.dataset.sourceStart) >= line) ?? anchors.at(-1)
-  const block = anchor && rootBlock(root, anchor)
+  const block = anchor?.closest<HTMLElement>('.preview-source-block') ?? anchor
   if (!block) return
-  block.scrollIntoView({ block: 'nearest' })
   const target = block.querySelector<HTMLElement>('[data-markdown-source-edit], [data-markdown-edit-text]') ?? block
   if (!target.isContentEditable && target.tagName !== 'BUTTON') target.tabIndex = -1
   target.focus({ preventScroll: true })
+  target.scrollIntoView({ block: 'nearest' })
 }
 function configureMermaidPreview(block: HTMLElement, svg: SVGSVGElement, fontSize: number) {
   const viewBoxWidth = svg.viewBox.baseVal.width
@@ -201,7 +205,7 @@ const PreviewPaneComponent = forwardRef<PreviewHandle, PreviewPaneProps>(functio
     return () => window.removeEventListener('markword:open-deferred', deferred)
   }, [link])
   const [structureVersion, setStructureVersion] = useState(0)
-  const pendingFocusRef = useRef<BlockChange | null>(null)
+  const pendingFocusRef = useRef<PreviewFocus | null>(null)
   const activeBlockRef = useRef<HTMLElement | null>(null)
   const [blockMenu, setBlockMenu] = useState<{ target: HTMLElement | null; replace: boolean; position?: { offset: number; source: string } } | null>(null)
   const blockMenuRef = useRef<HTMLDivElement>(null)
@@ -258,6 +262,13 @@ const PreviewPaneComponent = forwardRef<PreviewHandle, PreviewPaneProps>(functio
       else if (pending.code) {
         const code = Array.from(contentRef.current.querySelectorAll<HTMLElement>('pre[data-source-start]')).find((el) => Number(el.dataset.sourceStart) === pending.line - 1)?.querySelector<HTMLElement>('[data-markdown-edit-code]')
         if (code) beginCodeEdit(code)
+      } else if (pending.caret) {
+        const item = contentRef.current.querySelector<HTMLElement>(`li[data-source-start="${pending.line}"]`)
+        const field = item?.querySelectorAll<HTMLElement>('[data-markdown-edit-text]')[pending.caret.field]
+        if (field) {
+          restoreInlineSelection(field, pending.caret.from, pending.caret.to)
+          field.scrollIntoView({ block: 'nearest' })
+        } else focusPreviewBlock(contentRef.current, pending.line)
       } else if (pending.focusExisting) focusPreviewBlock(contentRef.current, pending.line)
       else focusWritingLine(contentRef.current, pending.line, pending.offset)
     }
@@ -300,7 +311,7 @@ const PreviewPaneComponent = forwardRef<PreviewHandle, PreviewPaneProps>(functio
     return () => document.removeEventListener('pointerdown', close)
   }, [blockMenu])
 
-  const applyBlockChange = (change: BlockChange | null, target: Element) => {
+  const applyBlockChange = (change: PreviewFocus | null, target: Element) => {
     if (!change || !changeRef.current?.(change.source, markdown, target)) return false
     emittedRef.current = null
     pendingFocusRef.current = { ...change }
@@ -776,7 +787,22 @@ const PreviewPaneComponent = forwardRef<PreviewHandle, PreviewPaneProps>(functio
         const blocks = documentBlocks(contentRef.current, markdown)
         const block = blocks.find((item) => item.anchor === target.closest('li'))
         const change = block && blockAction(markdown, blocks, [block], event.shiftKey ? 'outdent' : 'indent', t('Toggle'))
-        if (change) { event.preventDefault(); applyBlockChange(change, target) }
+        if (change) {
+          event.preventDefault()
+          let caret: PreviewFocus['caret']
+          const selection = window.getSelection()
+          if (block && selection?.rangeCount) {
+            const range = selection.getRangeAt(0)
+            if (target.contains(range.startContainer) && target.contains(range.endContainer)) {
+              const before = range.cloneRange()
+              before.selectNodeContents(target)
+              before.setEnd(range.startContainer, range.startOffset)
+              const from = before.toString().length
+              caret = { field: Array.from(block.anchor.querySelectorAll('[data-markdown-edit-text]')).indexOf(target), from, to: from + range.toString().length }
+            }
+          }
+          applyBlockChange({ ...change, caret }, target)
+        }
         return
       }
       if (event.key === '/' && !target.closest('p, li, h1, h2, h3, h4, h5, h6')?.textContent?.trim()) {

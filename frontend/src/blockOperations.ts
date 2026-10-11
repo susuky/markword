@@ -113,7 +113,14 @@ export function moveBlocks(source: string, selectedInput: DocumentBlock[], targe
       const value = selectionContent(source, selected, marker.length)
       const at = target.to
       const removedBefore = selected.filter((block) => block.to <= at).reduce((sum, block) => sum + block.to - block.from, 0)
-      return edit(source, [...selected.map((block) => ({ from: block.from, to: block.to, content: '' })), { from: at, to: at, content: insert(source, at, value, selected.every((block) => block.kind === 'li')) }], at - removedBefore)
+      // Empty items and numbering after 1 cannot interrupt a paragraph without a blank line.
+      const firstNumber = value.match(/^[ \t]*(\d+)[.)]\s/)?.[1]
+      const emptyItem = /^[ \t]*(?:[-+*]|\d+[.)])[ \t]*(?:\r?\n|$)/.test(value)
+      const continuesList = target.anchor.lastElementChild?.matches(firstNumber ? 'ol' : 'ul')
+      const compact = selected.every((block) => block.kind === 'li') && (continuesList || (!emptyItem && (!firstNumber || Number(firstNumber) === 1)))
+      const insertion = insert(source, at, value, compact)
+      const focus = at - removedBefore + (insertion.match(/^(?:\r?\n)*/)?.[0].length ?? 0)
+      return edit(source, [...selected.map((block) => ({ from: block.from, to: block.to, content: '' })), { from: at, to: at, content: insertion }], focus)
     }
     const body = selectionContent(source, selected)
     if (target.kind === 'details') {
@@ -168,7 +175,9 @@ export function blockAction(source: string, blocks: DocumentBlock[], input: Docu
     const at = parent.to
     const value = selectionContent(source, selected, indentation(parent, source))
     const removed = selected.reduce((sum, block) => sum + block.to - block.from, 0)
-    return edit(source, [...selected.map((block) => ({ from: block.from, to: block.to, content: '' })), { from: at, to: at, content: insert(source, at, value, parent.kind === 'li' && selected.every((block) => block.kind === 'li')) }], at - removed)
+    const insertion = insert(source, at, value, parent.kind === 'li' && selected.every((block) => block.kind === 'li'))
+    const focus = at - removed + (insertion.match(/^(?:\r?\n)*/)?.[0].length ?? 0)
+    return edit(source, [...selected.map((block) => ({ from: block.from, to: block.to, content: '' })), { from: at, to: at, content: insertion }], focus)
   }
   const target = action === 'down' ? blocks.find((block) => block.parent === selected[0].parent && block.from >= selected.at(-1)!.to) : previousSibling(blocks, selected)
   return target ? moveBlocks(source, selected, target, action === 'indent' ? 'inside' : action === 'up' ? 'before' : 'after', defaultTitle) : null

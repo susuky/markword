@@ -102,8 +102,12 @@ export function restoreInlineSelection(leaf: HTMLElement, from: number, to: numb
     if (start && to <= next) { range.setEnd(text, Math.max(0, to - position)); end = true; break }
     position = next
   }
-  if (!start || !end) return
-  const editable = range.startContainer.parentElement?.closest<HTMLElement>('[data-markdown-edit-text]')
+  if (!start || !end) {
+    if (length) return
+    range.selectNodeContents(leaf)
+    range.collapse(true)
+  }
+  const editable = (range.startContainer instanceof Element ? range.startContainer : range.startContainer.parentElement)?.closest<HTMLElement>('[data-markdown-edit-text]')
   if (editable) editable.focus({ preventScroll: true })
   else { leaf.tabIndex = -1; leaf.focus({ preventScroll: true }) }
   const selection = window.getSelection()

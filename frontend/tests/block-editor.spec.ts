@@ -179,6 +179,96 @@ test('converting a loose task list item preserves checked state and can be undon
   expect(await source(page)).toBe(original)
 })
 
+test('Tab keeps the caret on an empty item after a parent with nested children', async ({ page }) => {
+  const original = '- **Market Data**\n  - 歷史 Tick 載入\n    - 即時 Tick 接收\n  - 區分 `on_tick` / `on_bar_update` / `on_bar_close`\n- \n- **Strategy Engine**\n  - 統一 Strategy interface\n\n[ref]: https://example.com\n'
+  await single(page, original)
+  const empty = body(page).locator(':scope > ul > li').nth(1).locator(':scope > [data-markdown-edit-text]')
+  await empty.focus()
+  await page.keyboard.press('Tab')
+  const nested = body(page).locator(':scope > ul > li').first().locator(':scope > ul > li').last()
+  await expect(nested.locator(':scope > [data-markdown-edit-text]')).toBeFocused()
+  await page.keyboard.insertText('新增資料')
+  await expect(nested).toHaveText('新增資料')
+  await expect(body(page).locator('strong').first()).toHaveText('Market Data')
+  await page.keyboard.press('Shift+Tab')
+  const restored = body(page).locator(':scope > ul > li').nth(1)
+  await expect(restored.locator(':scope > [data-markdown-edit-text]')).toBeFocused()
+  await page.keyboard.insertText('來源')
+  await expect(restored).toHaveText('新增資料來源')
+  expect(await source(page)).toContain('[ref]: https://example.com\n')
+})
+
+for (const [name, original] of [
+  ['tight list', '- Parent\n- Before **middle** after\n- Keep\n'],
+  ['loose list', '- Parent\n\n- Before **middle** after\n\n- Keep\n'],
+  ['task list', '- [x] Parent\n- [ ] Before **middle** after\n- [ ] Keep\n'],
+  ['numbered list', '1. Parent\n2. Before **middle** after\n3. Keep\n'],
+] as const) {
+  test(`Tab and Shift+Tab preserve a caret inside formatted text in a ${name}`, async ({ page }) => {
+    await single(page, original + '\n[ref]: https://example.com\n')
+    const field = body(page).locator('strong [data-markdown-edit-text]')
+    await field.focus()
+    await page.keyboard.press('Home')
+    await page.keyboard.press('ArrowRight')
+    await page.keyboard.press('ArrowRight')
+    await page.keyboard.press('Tab')
+    await expect(body(page).locator('li li strong [data-markdown-edit-text]')).toBeFocused()
+    await page.keyboard.insertText('甲')
+    await expect(body(page).locator('strong')).toHaveText('mi甲ddle')
+    await page.keyboard.press('Shift+Tab')
+    await expect(body(page).locator('li > strong [data-markdown-edit-text], li > p > strong [data-markdown-edit-text]')).toBeFocused()
+    await page.keyboard.insertText('乙')
+    await expect(body(page).locator('strong')).toHaveText('mi甲乙ddle')
+    if (name === 'task list') await expect(body(page).locator('li').first().locator('input[type=checkbox]')).toBeChecked()
+    expect(await source(page)).toContain('[ref]: https://example.com\n')
+  })
+}
+
+test('Tab keeps an empty parent writing line separate from its child and can be undone', async ({ page }) => {
+  const original = '- Parent\n- \n  - 保留子項\n- Keep\n\n[ref]: https://example.com\n'
+  await single(page, original)
+  const field = body(page).locator(':scope > ul > li').nth(1).locator(':scope > [data-markdown-edit-text]')
+  await field.focus()
+  await page.keyboard.press('Tab')
+  const item = body(page).locator(':scope > ul > li > ul > li')
+  await expect(item.locator(':scope > [data-markdown-edit-text]')).toBeFocused()
+  await page.keyboard.insertText('新增父項')
+  await expect(item.locator(':scope > [data-markdown-edit-text]')).toHaveText('新增父項')
+  await expect(item.locator('li')).toHaveText('保留子項')
+  await page.keyboard.press('Shift+Tab')
+  const restored = body(page).locator(':scope > ul > li').nth(1)
+  await expect(restored.locator(':scope > [data-markdown-edit-text], :scope > p > [data-markdown-edit-text]')).toBeFocused()
+  await expect(restored.locator('li')).toHaveText('保留子項')
+  await expect(body(page).locator(':scope > ul > li').last()).toHaveText('Keep')
+  await undo(page)
+  await undo(page)
+  await undo(page)
+  expect(await source(page)).toBe(original)
+})
+
+for (const [name, original, key] of [
+  ['a later paragraph', '- Parent\n- First paragraph\n\n  Before **middle** after\n\n- Keep\n', 'Tab'],
+  ['a toggle', '<details open>\n<summary>Plan</summary>\n\n- Before **middle** after\n\n</details>\n- Keep\n', 'Shift+Tab'],
+] as const) {
+  test(`list indentation keeps a text selection in ${name}`, async ({ page }) => {
+    await single(page, original + '\n[ref]: https://example.com\n')
+    await body(page).locator('strong [data-markdown-edit-text]').focus()
+    await page.keyboard.press('Home')
+    await page.keyboard.press('ArrowRight')
+    await page.keyboard.press('ArrowRight')
+    await page.keyboard.press('Shift+ArrowRight')
+    await page.keyboard.press('Shift+ArrowRight')
+    await page.keyboard.press(key)
+    await expect(body(page).locator('strong [data-markdown-edit-text]')).toBeFocused()
+    expect(await page.evaluate(() => window.getSelection()?.toString())).toBe('dd')
+    await page.keyboard.insertText('甲')
+    await expect(body(page).locator('strong')).toHaveText('mi甲le')
+    if (key === 'Tab') await expect(body(page).locator('li li')).toHaveCount(1)
+    else await expect(body(page).locator(':scope > ul > li')).toHaveCount(2)
+    expect(await source(page)).toContain('[ref]: https://example.com\n')
+  })
+}
+
 test('list items indent with Tab, keep children when converted, and outdent', async ({ page }) => {
   await single(page, '- Parent\n- Child\n- Last\n\n[ref]: https://example.com\n')
   await body(page).locator('li [contenteditable]').nth(1).focus()
