@@ -24,7 +24,7 @@ export function SourceBlockEditor({ initial, onApply, onClose }: {
       }
     }}>
       <h2>{t('Edit block source')}</h2>
-      <p id="source-block-help">{t('Edit the text, formula, or media reference in this block. Other blocks stay unchanged.')}</p>
+      <p id="source-block-help">{t('Edit the text, formula, or media reference in this block.')}</p>
       <label className="source-block-editor__label" htmlFor="source-block-input">{t('Block source')}</label>
       <textarea id="source-block-input" autoFocus value={value} onChange={(event) => setValue(event.target.value)} aria-describedby="source-block-help" spellCheck={false} />
       {changedElsewhere ? <p role="alert">{t('The document changed while this editor was open. Close it and reopen the block to keep your latest edits.')}</p> : null}

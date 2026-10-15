@@ -2,7 +2,7 @@
 
 Markword 只透過 [GitHub Issues](https://github.com/susuky/markword/issues) 接受問題回報與功能建議，不接受外部 Pull request 或直接提交程式碼。
 
-是否修正、何時處理及是否採納建議，由維護者決定；程式碼由維護者維護與提交。軟體的使用與修改條件以 [README 的權利聲明](README.zh-TW.md#權利聲明)為準。
+軟體的使用與修改條件以 [README 的權利聲明](README.zh-TW.md#權利聲明)為準。
 
 ## 回報問題
 

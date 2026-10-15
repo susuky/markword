@@ -110,6 +110,5 @@ export function HtmlPreview({ value, onChange, onDownload }: { value: string; on
       {linkError && <p id="html-link-error" role="alert">{t('Enter a valid address, such as https://example.com.')}</p>}
     </form>}
     <iframe ref={frameRef} title={t('HTML page preview')} className="html-preview-frame" sandbox="allow-same-origin" referrerPolicy="no-referrer" />
-    <p className="html-preview-note">{t('Page scripts are paused while editing. The downloaded HTML keeps the original scripts.')}</p>
   </section>
 }

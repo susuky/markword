@@ -29,7 +29,7 @@ export function htmlSample(locale: Locale) {
   <main>
     <p class="label">${zh ? '範例頁面' : 'Example page'}</p>
     <h1>${zh ? '把複雜的事，說清楚。' : 'Make room for a clear idea.'}</h1>
-    <p class="intro">${zh ? '一份好讀的文件，從清楚的想法開始。點選這段文字，換成你想說的話，原有的排版會保留下來。' : 'A readable document starts with a clear idea. Click this paragraph and replace it with your own words. The layout stays in place.'}</p>
+    <p class="intro">${zh ? '一份好讀的文件，從清楚的想法開始。點選這段文字，換成你想說的話。' : 'A readable document starts with a clear idea. Click this paragraph and replace it with your own words.'}</p>
     <section>
       <h2>${zh ? '這一頁，想讓讀者帶走什麼？' : 'What should the reader take away?'}</h2>
       <ul>

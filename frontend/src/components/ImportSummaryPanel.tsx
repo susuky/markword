@@ -25,12 +25,9 @@ export function ImportSummaryPanel({ summary, onClose }: { summary: ImportSummar
       <button ref={closeRef} type="button" className="icon-button" onClick={onClose} aria-label={t('Close import summary')}><X size={18} aria-hidden="true" /></button>
     </header>
     <p>{t(summary.restoredSource ? 'The editable source was restored.' : 'The file was converted to Markdown.')}</p>
-    {summary.warnings.length ? <>
-      <ul>{summary.warnings.map((warning) => <li key={warning.message}>
+    {summary.warnings.length ? <ul>{summary.warnings.map((warning) => <li key={warning.message}>
         <p>{t(warning.message, { count: warning.count })}</p>
         {warning.details?.length ? <ul className="import-summary__details">{warning.details.map((detail, index) => <li key={index}>{detail}</li>)}</ul> : null}
-      </li>)}</ul>
-      <p>{t('Affected positions could not be identified automatically. Compare with the original file; this summary remains available below.')}</p>
-    </> : <p>{t('No conversion warnings were detected.')}</p>}
+      </li>)}</ul> : <p>{t('No conversion warnings were detected.')}</p>}
   </aside>
 }

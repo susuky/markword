@@ -12,9 +12,7 @@
 .html-workspace--visual .html-source-pane { display: none; }
 .html-preview-frame { display: block; flex: 1; width: 100%; min-height: 0; border: 0; background: white; }
 .html-editing-label { color: var(--accent); font-size: 12px; }
-.html-editing-hint, .html-preview-note { flex: none; margin: 0; padding: 10px 20px; color: var(--muted); font-size: 13px; line-height: 1.6; background: #fbfcfb; }
-.html-editing-hint { border-bottom: 1px solid var(--border); }
-.html-preview-note { border-top: 1px solid var(--border); }
+.html-editing-hint { flex: none; margin: 0; padding: 10px 20px; border-bottom: 1px solid var(--border); color: var(--muted); font-size: 13px; line-height: 1.6; background: #fbfcfb; }
 .html-status-bar { display: flex; min-height: 40px; justify-content: space-between; align-items: center; gap: 12px; padding: 8px 20px; border-top: 1px solid var(--border); color: var(--muted); font-size: 12px; }
 .html-save-status { display: flex; align-items: center; gap: 6px; color: var(--accent); }
 .html-save-status.status-warn { color: #9b4a13; }
@@ -46,7 +44,7 @@
   .html-mobile-source .html-source-pane { display: flex; }
   .html-mobile-preview .html-source-pane, .html-mobile-source .html-preview-pane { display: none; }
   .html-editing-label { display: none; }
-  .html-editing-hint, .html-preview-note, .html-link-form { padding-inline: 16px; }
+  .html-editing-hint, .html-link-form { padding-inline: 16px; }
   .html-status-bar { padding-inline: 12px; }
   .html-status-bar > span:first-child { display: none; }
   .html-status-bar .html-save-status { font-size: 12px; }

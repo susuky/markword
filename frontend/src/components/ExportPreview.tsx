@@ -49,7 +49,6 @@ export function ExportPreview({ markdown, mode, theme, title, style, onStyleChan
         <button type="button" className="toolbar-button" onClick={() => { onSettingsChange({ ...DEFAULT_EXPORT_SETTINGS }); onStyleChange('Classic') }}><RotateCcw size={16} />{t('Reset export settings')}</button>
       </section>
       <section className="export-preview-document" aria-label={t('Export appearance')}>
-        <p className="export-preview-note">{t('HTML appearance preview. Page breaks and Word typography may differ in the downloaded file.')}</p>
         {error ? <div className="export-preview-message" role="alert"><p>{error}</p><button type="button" className="toolbar-button" onClick={() => setRetry((value) => value + 1)}>{t('Try again')}</button></div> : !snapshot ? <p className="export-preview-message" role="status">{t('Preparing export preview…')}</p> : <iframe title={t('Export appearance')} sandbox="" tabIndex={-1} srcDoc={html} />}
       </section>
     </div>

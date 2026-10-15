@@ -76,7 +76,7 @@ Choose **HTML editor** from the **Markdown** menu above the source pane in split
 
 ![HTML source beside a directly editable page](assets/markword-html-editor.png)
 
-Original styles and scripts remain in the downloaded file, but page scripts do not run in the editing preview. You can edit static text and existing links; layout dragging, image replacement, and dynamic chart editing are not supported.
+The downloaded file retains its original styles and scripts. The editing preview disables scripts and supports changes to static text and existing links.
 
 Relative-path resources are not imported with the HTML file; use embedded assets or full URLs. Visual edits may normalize markup whitespace and quoting.
 
@@ -116,7 +116,7 @@ See the [development and deployment guide](docs/development.md) (Traditional Chi
 
 ## Bug reports and feature suggestions
 
-This project accepts bug reports and feature suggestions through [GitHub Issues](https://github.com/susuky/markword/issues) only. External pull requests are not accepted. The maintainer decides whether and when to address reports or adopt suggestions, and maintains and commits the code. See the [reporting guide](CONTRIBUTING.md) (Traditional Chinese) for details.
+This project accepts bug reports and feature suggestions through [GitHub Issues](https://github.com/susuky/markword/issues) only. External pull requests are not accepted. See the [reporting guide](CONTRIBUTING.md) (Traditional Chinese) for details.
 
 ## Copyright
 

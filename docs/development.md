@@ -132,7 +132,7 @@ uv run uvicorn backend.main:app --host 127.0.0.1 --port 27860
 
 ### GitHub Pages 建置
 
-`.github/workflows/deploy-pages.yml` 會在推送到 `main` 時自動建置並發布網站，也保留手動發布入口。先在 **Settings → Pages → Build and deployment → Source** 選擇 **GitHub Actions**；需要手動發布時，再到 **Actions → Deploy GitHub Pages → Run workflow** 選擇要發布的分支。部署網址以 workflow 的 `github-pages` environment 顯示結果為準；尚未成功部署前，不代表已有可用的線上版本。
+`.github/workflows/deploy-pages.yml` 會在推送到 `main` 時自動建置並發布網站，也保留手動發布入口。先在 **Settings → Pages → Build and deployment → Source** 選擇 **GitHub Actions**；需要手動發布時，再到 **Actions → Deploy GitHub Pages → Run workflow** 選擇要發布的分支。部署網址以 workflow 的 `github-pages` environment 顯示結果為準。
 
 Pages 使用獨立的 `pages` build mode；一般的 `npm run build` 與 FastAPI 完整版部署不受影響。本機可用以下指令驗證 Pages 產物：
 
@@ -164,9 +164,9 @@ npm run test:ui
 
 ## 匯出處理與資源限制
 
-- PDF／Word 的 Mermaid 圖表與 KaTeX 公式使用已安裝的套件與本機 Chromium 產生 PNG，不會將原文傳給第三方服務。公式保留 LaTeX 替代文字，但不是可編輯的 Word 原生方程式；每份文件最多繪製 200 個公式，每式最多 10,000 個字元，無效或超限公式會保留來源並提示。React 預覽仍在瀏覽器內繪製圖表與公式。
-- PDF／Word 支援待辦核取方塊、腳註與 CommonMark 程式碼圍欄（含波浪號與較長的反引號）。Word 的腳註以文中上標與文件末尾的編號段落呈現，不是 Word 原生腳註。
-- 匯出用 Chromium 在處理圖表前就停用網路，並限制圖片、字型與樣式的載入。無法繪製圖表時，文件會保留原始碼並標示無法繪圖；缺少渲染器或執行逾時會讓匯出失敗，不會轉送外部服務。
+- PDF／Word 的 Mermaid 圖表與 KaTeX 公式使用已安裝的套件與本機 Chromium 產生 PNG。公式保留 LaTeX 替代文字；每份文件最多繪製 200 個公式，每式最多 10,000 個字元，無效或超限公式會保留來源並提示。React 預覽仍在瀏覽器內繪製圖表與公式。
+- PDF／Word 支援待辦核取方塊、腳註與 CommonMark 程式碼圍欄（含波浪號與較長的反引號）。Word 的腳註以文中上標與文件末尾的編號段落呈現。
+- 匯出用 Chromium 在處理圖表前就停用網路，並限制圖片、字型與樣式的載入。無法繪製圖表時，文件會保留原始碼並標示無法繪圖；缺少渲染器或執行逾時會讓匯出失敗。
 - PDF 的資源讀取只接受內嵌的 `data:` 內容。圖片、CSS、字型、SVG 巢狀引用或附件若要求讀取網路或 `file://` 檔案，匯出會中止，API 回傳 `422`，並清除未完成的檔案。Word 也不讀取外部圖片；一般 `http`／`https`／`mailto` 超連結仍會保留。
 - Linux API 每份匯出使用獨立工作程序，預設同時最多兩份，不另行排隊；滿載時回傳 `503`。每份工作的時間與累計 CPU 預算為 60 秒，記憶體預算為 1,024 MiB。系統每 100 ms 檢查包含 Chromium 的程序樹 CPU 與 RSS，另對轉換程序及其子程序設定 CPU、資料記憶體及 128 MiB 單檔寫入上限。超限、取消或轉換程序崩潰時，會回收子程序並清理該次暫存目錄；成功成品在下載回應結束後清除。
 - 這些限制以單個 API 程序為範圍，RSS 是定期檢查而非容器層級硬上限。多個 Uvicorn worker 各有自己的併發額度；對外部署仍需另設整體容器資源與存取限制。

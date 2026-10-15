@@ -28,7 +28,6 @@
 .export-preview-settings p { color: var(--muted); font-size: 13px; line-height: 1.7; }
 .export-preview-settings .toolbar-button { width: 100%; justify-content: center; }
 .export-preview-document { min-width: 0; padding: 16px; background: var(--surface-soft); }
-.export-preview-note { margin: 0 0 12px; color: var(--muted); font-size: 13px; line-height: 1.6; }
 .export-preview-document iframe { display: block; width: 100%; height: min(58dvh, 600px); border: 1px solid var(--border); background: white; }
 .export-preview-message { padding: 24px; color: var(--muted); }
 .export-preview-footer { display: flex; flex: none; gap: 16px; justify-content: space-between; align-items: center; padding: 16px 24px; border-top: 1px solid var(--border); }
