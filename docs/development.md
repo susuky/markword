@@ -12,6 +12,7 @@
 | --- | --- | --- |
 | `MARKWORD_FRONTEND_DIR` | `frontend/dist` | 前端正式版靜態檔目錄 |
 | `MARKWORD_EXPORT_DIR` | `exports` | PDF／Word 匯出檔目錄 |
+| `MARKWORD_DATABASE_PATH` | `data/markword.sqlite3` | 共用文件、版本與附件的 SQLite 資料庫 |
 | `MARKWORD_EXPORT_MAX_CONCURRENT` | `2` | 每個 API 程序的同時匯出數 |
 | `MARKWORD_EXPORT_TIMEOUT_SECONDS` | `60` | 每份匯出的時間及累計 CPU 秒數預算 |
 | `MARKWORD_EXPORT_MEMORY_MB` | `1024` | 每份匯出程序樹的 RSS 預算與轉換程序的資料記憶體上限，單位 MiB |
@@ -21,13 +22,13 @@
 
 ### systemd 部署
 
-systemd 範例假設專案已部署到 `/opt/markword`，執行帳號為 `markword`。Debian／Ubuntu 主機先安裝 Node.js、Python、`uv`，以及 WeasyPrint 所需的系統字型與函式庫，接著建立服務帳號和可寫的匯出目錄：
+systemd 範例假設專案已部署到 `/opt/markword`，執行帳號為 `markword`。Debian／Ubuntu 主機先安裝 Node.js、Python、`uv`，以及 WeasyPrint 所需的系統字型與函式庫，接著建立服務帳號和可寫的資料、匯出目錄：
 
 ```bash
 sudo apt install fonts-noto-cjk libcairo2 libpango-1.0-0 libpangoft2-1.0-0 shared-mime-info
 sudo useradd --system --home-dir /opt/markword --shell /usr/sbin/nologin markword
 sudo chown -R markword:markword /opt/markword
-sudo install -d -o markword -g markword /opt/markword/exports
+sudo install -d -o markword -g markword /opt/markword/exports /opt/markword/data
 ```
 
 若 `markword` 帳號已存在，略過 `useradd`。再建立 production build 與 Python 虛擬環境：
@@ -114,7 +115,7 @@ cd ..
 uv run uvicorn backend.main:app --host 127.0.0.1 --port 27860
 ```
 
-瀏覽器開啟 `http://localhost:27860`。重新部署前端變更時，須再次執行 `npm run build`。
+瀏覽器開啟 `http://localhost:27860`。文件、版本與附件寫入 `data/markword.sqlite3`，不同瀏覽器連線到同一服務時共用資料。首次開啟會合併原瀏覽器的 IndexedDB 資料，保留來源；同 ID 不同內容會建立獨立文件。Docker 的 `markword-data` volume 保留資料庫。重新部署前端變更時，須再次執行 `npm run build`；後端變更須重啟服務。
 
 圖表匯出會讀取 `frontend/node_modules/mermaid/dist/mermaid.min.js`；公式匯出會讀取 `frontend/node_modules/katex/dist/` 的 JavaScript、CSS 與字型，正式版部署也要保留。Docker 建置會自動複製這些套件檔並安裝 Chromium；手動部署若只複製 `frontend/dist`，需一併補齊上述檔案與 Playwright 瀏覽器。
 
@@ -125,6 +126,11 @@ uv run uvicorn backend.main:app --host 127.0.0.1 --port 27860
 | `GET` | `/api/health` | 服務健康狀態 |
 | `POST` | `/api/analyze` | 文字統計 |
 | `GET` | `/api/themes` | 取得預覽主題 |
+| `GET` | `/api/workspace` | 讀取共用文件、版本與附件清單 |
+| `GET` / `POST` | `/api/workspace/drafts/{id}` | 讀取或保存文件；保存帶 `expectedVersion`，衝突回傳 409 |
+| `POST` | `/api/workspace/import` | 原子合併舊瀏覽器資料，回傳文件 ID 對照 |
+| `POST` | `/api/workspace/restore` | 建立還原前版本並原子還原文件 |
+| `GET` / `POST` | `/api/workspace/assets` | 列出附件資訊或寫入附件 |
 | `POST` | `/api/export/pdf` | 依 `theme` 與 `style` 匯出 PDF |
 | `POST` | `/api/export/docx` | 依 `theme` 匯出固定版型 Word，`style` 僅接受 `Classic` |
 
@@ -156,11 +162,12 @@ npm run lint
 npm run build
 npm run build:pages
 npm run test:ui
+npm run test:shared
 ```
 
-介面測試會視需要啟動本機預覽，驗證草稿復原、版本還原、下載、鍵盤操作與手機版面；需先備妥 Playwright Chromium 瀏覽器（`npx playwright install chromium`）。
+介面測試會啟動隔離 SQLite 與本機預覽；`test:shared` 驗證 Ctrl+S、跨瀏覽器共用、舊資料合併及三篇文件側欄。其他介面測試驗證版本還原、下載、鍵盤操作與手機版面；需先備妥 Playwright Chromium 瀏覽器（`npx playwright install chromium`）。
 
-若 `5173` 已被其他專案使用，可設定 `MARKWORD_TEST_PORT=5183` 執行測試。使用既有 Chromium 時，可用 `PLAYWRIGHT_CHROMIUM_EXECUTABLE` 指定執行檔。`.github/workflows/test.yml` 會在 `main` 推送或手動觸發時執行後端測試、兩種前端建置、lint 與 Playwright 測試。
+若測試用的 `5188`（一般介面）或 `5187`（共用工作區）已被其他專案使用，可設定 `MARKWORD_TEST_PORT` 指定另一個埠。使用既有 Chromium 時，可用 `PLAYWRIGHT_CHROMIUM_EXECUTABLE` 指定執行檔。`.github/workflows/test.yml` 會在 `main` 推送或手動觸發時執行後端測試、兩種前端建置、lint 與 Playwright 測試。
 
 ## 匯出處理與資源限制
 

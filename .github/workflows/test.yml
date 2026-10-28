@@ -40,4 +40,5 @@ jobs:
           npm run lint
           npm run build
           npm run build:pages
-          npm run test:ui -- --workers=2
+          npm run test:ui
+          npm run test:shared

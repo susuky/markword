@@ -10,6 +10,7 @@
     "build:pages": "tsc -b && vite build --mode pages",
     "lint": "eslint .",
     "test:ui": "playwright test",
+    "test:shared": "playwright test --config=playwright.shared.config.ts",
     "preview": "vite preview --host 127.0.0.1"
   },
   "dependencies": {

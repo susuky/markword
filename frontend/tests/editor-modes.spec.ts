@@ -1,4 +1,5 @@
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test } from './shared-workspace-fixture'
+import { type Page } from '@playwright/test'
 
 const source = (page: Page) => page.locator('.cm-line').allTextContents().then((lines) => lines.join('\n'))
 
@@ -256,7 +257,7 @@ test('project archives and revisions restore the document mode with the source',
   await page.getByRole('combobox', { name: 'Document mode' }).selectOption('text')
   const original = '# Plain document\n1. Literal item'
   await page.locator('.cm-content').fill(original)
-  await expect(page.locator('.save-status')).toHaveText('Saved in this browser')
+  await expect(page.locator('.save-status')).toHaveText('Saved locally')
   await page.getByRole('button', { name: 'Revision history', exact: true }).click()
   await page.getByRole('button', { name: 'Create current revision', exact: true }).click()
   await expect(page.locator('.revision-panel__message')).toHaveText('Current revision created')
@@ -298,12 +299,15 @@ test('plain text preserves literal content, undo history, mode, and downloads', 
   await page.keyboard.press('Control+z')
   await expect.poll(() => source(page)).toBe(text)
   await page.getByRole('combobox', { name: 'Document mode' }).selectOption('text')
-  await expect(page.locator('.save-status')).toHaveText('Saved in this browser')
+  await expect(page.locator('.save-status')).toHaveText('Saved locally')
   await page.reload()
   await expect(page.getByRole('combobox', { name: 'Document mode' })).toHaveValue('text')
   await expect.poll(() => source(page)).toBe(text)
-  const pending = page.waitForEvent('download')
   await page.keyboard.press('Control+s')
+  await expect(page.locator('.save-status')).toHaveText('Saved locally')
+  await page.getByRole('button', { name: 'Export', exact: true }).click()
+  const pending = page.waitForEvent('download')
+  await page.getByRole('button', { name: 'Plain text Keep the editable source', exact: true }).click()
   const download = await pending
   expect(download.suggestedFilename()).toMatch(/\.txt$/)
   const stream = await download.createReadStream()
@@ -329,7 +333,7 @@ test('raw Mermaid renders, reports syntax errors, and recovers', async ({ page }
   await page.getByRole('button', { name: 'Open diagram preview', exact: true }).click()
   await expect(page.getByRole('dialog', { name: 'Image preview' })).toBeVisible()
   await page.keyboard.press('Escape')
-  await expect(page.locator('.save-status')).toHaveText('Saved in this browser')
+  await expect(page.locator('.save-status')).toHaveText('Saved locally')
   await page.reload()
   await expect(page.getByRole('combobox', { name: 'Document mode' })).toHaveValue('mermaid')
   await expect(page.locator('.mermaid-block.is-rendered .mermaid-image')).toBeVisible()

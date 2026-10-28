@@ -1,4 +1,5 @@
-import { expect, test, type Download, type Page } from '@playwright/test'
+import { expect, test } from './shared-workspace-fixture'
+import { type Download, type Page } from '@playwright/test'
 import { strToU8, unzipSync, zipSync } from 'fflate'
 
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jF9sAAAAASUVORK5CYII=', 'base64')
@@ -58,7 +59,7 @@ test('sharing includes only document assets, library export keeps others, and th
   let warning = ''
   page.once('dialog', async (dialog) => { warning = dialog.message(); await dialog.dismiss() })
   await page.getByRole('button', { name: 'Delete keep.png', exact: true }).click()
-  expect(warning).toBe('This asset is referenced by the document. Delete it anyway?')
+  await expect.poll(() => warning).toBe('This asset is referenced by the document. Delete it anyway?')
   await expect(page.locator('.asset-item')).toHaveCount(2)
 })
 

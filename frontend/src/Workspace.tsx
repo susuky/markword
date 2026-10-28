@@ -39,8 +39,10 @@ export default function Workspace() {
   const htmlPage = useSyncExternalStore(subscribeToRoute, () => window.location.hash === '#/html')
   const initialSample = useRef(SAMPLE_MARKDOWN[locale])
   const [selection, setSelection] = useState<{ id: string; revealSummary?: boolean; notice?: string } | null>(null)
+  const [documentsOpen, setDocumentsOpen] = useState(() => loadPreference('documents-open', false))
   const linkedFiles = useRef(new Map<string, LinkedFile>())
   const [updateAvailable, setUpdateAvailable] = useState(false)
+  useEffect(() => { savePreference('documents-open', documentsOpen) }, [documentsOpen])
   useEffect(() => { if (htmlPage) setSelection((current) => current ? { id: current.id } : null) }, [htmlPage])
   useEffect(() => {
     const onUpdate = () => setUpdateAvailable(true)
@@ -78,6 +80,7 @@ export default function Workspace() {
     </HtmlEditorBoundary>
     : selection ? <App key={selection.id} documentId={selection.id} revealImportSummary={selection.revealSummary} initialNotice={selection.notice}
       initialLinkedFile={linkedFiles.current.get(selection.id) ?? null} onDocumentChange={selectDocument} onLinkedFileChange={rememberLinkedFile}
+      documentsOpen={documentsOpen} onDocumentsOpenChange={setDocumentsOpen}
       updateAvailable={updateAvailable} onUpdateAvailableChange={setUpdateAvailable} />
       : <div className="app-loading">{t('Opening documents…')}</div>
 }

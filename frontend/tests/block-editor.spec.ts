@@ -1,4 +1,5 @@
-import { expect, test, type Locator, type Page } from '@playwright/test'
+import { expect, test } from './shared-workspace-fixture'
+import { type Locator, type Page } from '@playwright/test'
 import { readFile } from 'node:fs/promises'
 
 const body = (page: Page) => page.locator('.markdown-body')
@@ -142,7 +143,7 @@ test('create a toggle, edit its title and body, fold and reopen the saved docume
   await body(page).locator('summary').click({ position: { x: 2, y: 12 } })
   await expect(body(page).locator('details')).not.toHaveAttribute('open')
   await expect(body(page).locator('.markdown-toggle-content')).toBeHidden()
-  await expect(page.locator('.save-status')).toHaveText('Saved in this browser')
+  await expect(page.locator('.save-status')).toHaveText('Saved locally')
   await page.reload()
   await expect(body(page).locator('details')).not.toHaveAttribute('open')
   await body(page).locator('summary').press('Enter')
@@ -436,7 +437,7 @@ test('convert a list parent to a toggle while retaining nested tasks and code', 
   await body(page).locator('details li [contenteditable]').last().fill('Edited todo')
   await expect(body(page).locator('details li')).toHaveText(['Done', 'Edited todo'])
   await expect(body(page).locator(':scope > p')).toHaveText('After.')
-  await expect(page.locator('.save-status')).toHaveText('Saved in this browser')
+  await expect(page.locator('.save-status')).toHaveText('Saved locally')
   await page.reload()
   await expect(body(page).locator('details li')).toHaveText(['Done', 'Edited todo'])
 })

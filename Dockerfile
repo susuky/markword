@@ -40,8 +40,8 @@ COPY --chown=markword:markword --from=frontend-build /build/frontend/dist ./fron
 COPY --chown=markword:markword --from=frontend-build /build/frontend/node_modules/mermaid/dist/mermaid.min.js ./frontend/node_modules/mermaid/dist/mermaid.min.js
 COPY --chown=markword:markword --from=frontend-build /build/frontend/node_modules/katex/dist ./frontend/node_modules/katex/dist
 
-RUN mkdir -p /app/exports \
-    && chown -R markword:markword /app/exports
+RUN mkdir -p /app/exports /app/data \
+    && chown -R markword:markword /app/exports /app/data
 
 USER markword
 EXPOSE 27860

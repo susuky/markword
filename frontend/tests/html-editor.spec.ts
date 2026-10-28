@@ -1,4 +1,5 @@
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test } from './shared-workspace-fixture'
+import { type Page } from '@playwright/test'
 
 const html = `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><title>A page</title>
@@ -47,7 +48,7 @@ test('visual text and link edits preserve formatting, scripts and editable HTML'
   expect(result.content).not.toMatch(/data-markword-edit-|contenteditable|Content-Security-Policy/)
   await expect(preview.locator('script')).toHaveCount(0)
   await expect(page.locator('body')).not.toHaveAttribute('data-escaped')
-  await expect(page.getByRole('status')).toHaveText('Saved in this browser')
+  await expect(page.getByRole('status')).toHaveText('Saved locally')
   await page.reload()
   await expect(preview.locator('h1')).toHaveText('A new heading')
   await expect(preview.getByRole('link')).toHaveAttribute('href', 'https://example.com/new')
@@ -110,10 +111,10 @@ test('returning to an earlier visual edit refreshes the preview and its editing 
 test('HTML has an independent draft and does not replace the Markdown draft', async ({ page }) => {
   await page.goto('/')
   await page.locator('.cm-content').fill('# Keep this Markdown draft')
-  await expect(page.locator('.save-status')).toHaveText('Saved in this browser')
+  await expect(page.locator('.save-status')).toHaveText('Saved locally')
   await page.getByRole('combobox', { name: 'Document mode' }).selectOption('html-page')
   await paste(page)
-  await expect(page.getByRole('status')).toHaveText('Saved in this browser')
+  await expect(page.getByRole('status')).toHaveText('Saved locally')
   await page.getByRole('link', { name: 'Markdown', exact: true }).click()
   await expect(page.locator('.cm-content')).toContainText('# Keep this Markdown draft')
   await page.getByRole('combobox', { name: 'Document mode' }).selectOption('html-page')
@@ -159,12 +160,12 @@ test('preview blocks executable content, navigation and injected text without ch
 test('a second tab cannot silently overwrite a newer HTML draft', async ({ page, context }) => {
   await page.goto('/#/html')
   await paste(page)
-  await expect(page.getByRole('status')).toHaveText('Saved in this browser')
+  await expect(page.getByRole('status')).toHaveText('Saved locally')
   const other = await context.newPage()
   await other.goto('/#/html')
   await expect(other.frameLocator('iframe').locator('h1')).toHaveText('Original heading')
   await page.frameLocator('iframe').locator('h1 [contenteditable]').fill('First tab update')
-  await expect(page.getByRole('status')).toHaveText('Saved in this browser')
+  await expect(page.getByRole('status')).toHaveText('Saved locally')
   await other.frameLocator('iframe').locator('h1 [contenteditable]').fill('Second tab update')
   await expect(other.getByRole('status')).toHaveText('Changed in another tab. Download a backup.')
   expect((await downloaded(other)).content).toContain('Second tab update')
@@ -173,7 +174,10 @@ test('a second tab cannot silently overwrite a newer HTML draft', async ({ page,
 })
 
 test('storage failure keeps editing and downloads available with an honest status', async ({ page }) => {
-  await page.addInitScript(() => Object.defineProperty(window, 'indexedDB', { value: undefined }))
+  await page.route('**/api/workspace/drafts/html', async (route) => {
+    if (route.request().method() === 'POST') await route.fulfill({ status: 507, json: { detail: 'Workspace storage is full' } })
+    else await route.continue()
+  })
   await page.goto('/#/html')
   await expect(page.getByRole('status')).toHaveText('Draft not saved. Download a backup.')
   await paste(page)

@@ -11,6 +11,7 @@ WorkingDirectory=/opt/markword
 Environment=PYTHONUNBUFFERED=1
 Environment=MARKWORD_FRONTEND_DIR=/opt/markword/frontend/dist
 Environment=MARKWORD_EXPORT_DIR=/opt/markword/exports
+Environment=MARKWORD_DATABASE_PATH=/opt/markword/data/markword.sqlite3
 ExecStart=/opt/markword/.venv/bin/uvicorn backend.main:app --host 127.0.0.1 --port 27860
 Restart=on-failure
 RestartSec=5
@@ -18,7 +19,7 @@ TimeoutStopSec=30
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=full
-ReadWritePaths=/opt/markword/exports
+ReadWritePaths=/opt/markword/exports /opt/markword/data
 
 [Install]
 WantedBy=multi-user.target

@@ -25,7 +25,7 @@ button svg { flex-shrink: 0; }
 button:disabled { cursor: not-allowed; opacity: .55; }
 button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
 
-.app-shell { display: grid; --workspace-toolbar-height: 56px; grid-template-rows: var(--header-height) var(--workspace-toolbar-height) minmax(0, 1fr) var(--status-height); width: 100%; height: 100dvh; background: var(--surface); }
+.app-shell { display: grid; --workspace-toolbar-height: 56px; grid-template-columns: minmax(0, 1fr); grid-template-rows: var(--header-height) var(--workspace-toolbar-height) minmax(0, 1fr) var(--status-height); width: 100%; height: 100dvh; background: var(--surface); }
 .app-header { display: flex; align-items: center; gap: 24px; padding: 0 24px; border-bottom: 1px solid var(--border); }
 .brand { display: flex; flex: 0 0 192px; align-items: center; gap: 12px; font-size: 22px; font-weight: 750; letter-spacing: -.7px; }
 .brand img { flex: none; }
@@ -358,6 +358,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 
 @media (max-width: 1200px) {
   .brand { flex-basis: 174px; }
+  .new-document-trigger span, .language-toggle span { display: none; }
   .outline-panel { flex-basis: 194px; }
   .font-size-label { display: none; }
   .pane-title > span { display: none; }
@@ -382,7 +383,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   .header-actions { gap: 4px; }
   .header-actions .toolbar-button { min-width: 44px; min-height: 44px; padding-inline: 10px; }
   .view-mode-trigger { display: none; }
-  .open-trigger span, .save-trigger span, .language-toggle span { display: none; }
+  .open-trigger span, .save-trigger span { display: none; }
   .header-actions .export-trigger { min-width: 44px; padding-inline: 12px; }
   .export-trigger > svg:last-child { display: none; }
   .workspace-toolbar { padding-inline: 8px; gap: 0; }
@@ -420,6 +421,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 }
 @media (max-width: 374px) {
   .app-header { padding-inline: 4px; gap: 4px; }
+  .app-header .brand { display: none; }
   .header-actions { gap: 0; }
   .pane-header { padding-inline: 8px; gap: 4px; }
   .pane--editor .pane-title { min-width: 0; }
@@ -430,9 +432,12 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   .header-actions .export-trigger span { display: none; }
   .save-status { font-size: 10px; }
 }
-@media (max-width: 430px) {
+@media (max-width: 600px) {
   .brand > span { display: none; }
   .header-actions .export-trigger span { display: none; }
+}
+@media (max-width: 430px) {
+  .header-actions { gap: 0; }
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; }

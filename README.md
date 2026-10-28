@@ -13,7 +13,7 @@ Markword is a browser-based Markdown and HTML editor. Write Markdown directly in
 - **HTML editing**: open or paste HTML, click to change text and links, and download the edited page with its original styles.
 - **Rich content**: editable code blocks with syntax highlighting, task checkboxes, a table editor, Mermaid diagrams, and math.
 - **Import and export**: open Markdown, text, Mermaid, HTML, Word (`.docx`), and project ZIP files. Export Markdown, portable HTML, or project ZIP; the full edition also exports PDF and Word.
-- **Drafts and backups**: automatic browser drafts, Markdown revision history, and project backups with referenced attachments.
+- **Quick capture and backups**: the local edition shares documents, revision history, and attachments in one database. Press `Ctrl/Cmd+S` to save immediately, or download a project backup.
 - **Workspace controls**: a collapsible toolbar, eight preview themes, focus mode, word counts, mobile layouts, and English/Traditional Chinese interfaces.
 
 ## Get started
@@ -36,7 +36,7 @@ For installation without Docker, see the [local installation and deployment guid
 | --- | --- | --- |
 | Single-page / split editing, diagrams, and math | Supported | Supported |
 | HTML source and visual text editing | Supported | Supported |
-| Browser drafts, revisions, and attachments | Supported | Supported |
+| Documents, revisions, and attachments | Shared local database | Separate browser storage |
 | Markdown, portable HTML, and project ZIP | Supported | Supported |
 | Direct PDF / Word export | Supported | Unavailable |
 
@@ -84,7 +84,7 @@ Opening HTML in the Markdown workspace still converts it to Markdown. Switch to 
 
 ## Saving and exporting
 
-In the Markdown workspace, use **Save** or `Ctrl/Cmd+S` to save the source. Browsers with direct file saving can update an opened file or let you choose a new location; other browsers download it. Use **Export** for the formats below.
+In the local Markdown workspace, **Save** or `Ctrl/Cmd+S` saves directly to the shared local database. Conflicting edits are saved as a separate copy. The document sidebar stays open when switching, creating, importing, or copying documents. Use **Export → Save as…** to write a file, or download a format below. The Pages edition retains browser file saving and downloads.
 
 | Format | Use it for |
 | --- | --- |
@@ -97,18 +97,20 @@ In the Markdown workspace, use **Save** or `Ctrl/Cmd+S` to save the source. Brow
 
 | Shortcut | Action |
 | --- | --- |
-| `Ctrl/Cmd+S` | Save Markdown source or download the current HTML page |
+| `Ctrl/Cmd+S` | Save the local Markdown document, or download the current HTML page |
 | `Ctrl/Cmd+F` | Search and replace in the Markdown workspace |
 | `Ctrl/Cmd+K` | Open the Markdown workspace command palette |
 
 ### Drafts and backups
 
-Drafts stay in the current browser; saving a draft does not update a file on your computer. Before changing devices or clearing site data:
+The local edition stores documents, trash, revisions, and attachments in `data/markword.sqlite3`, shared by browsers connected to that Markword service. Existing browser data is imported on first use; different documents with the same ID are kept as separate copies. The Pages edition retains separate browser storage.
+
+For a full local backup, stop the service and copy the `data` directory; Docker uses the `markword-data` volume. To export a single document:
 
 - **Markdown**: export a project ZIP to keep the current document and its referenced local attachments. ZIPs do not include revision history or other documents.
 - **HTML**: download the page from the HTML editor. Its separate draft is not included in a Markdown project ZIP.
 
-Importing and editing happen in the browser. PDF/Word export sends the document and supported local images to the Markword service you are using. Run Markword on your own computer to keep that processing there.
+Editing and format conversion run in the browser. The local edition saves documents, revisions, and attachments to the connected Markword service and its SQLite database. That service also handles PDF/Word export.
 
 ## Learn more
 

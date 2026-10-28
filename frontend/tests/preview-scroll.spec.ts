@@ -1,4 +1,5 @@
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test } from './shared-workspace-fixture'
+import { type Page } from '@playwright/test'
 
 const intro = '歡迎使用 **文字工具箱**，這是一個專為 Markdown 寫作而生的線上工具。它能即時預覽、統計字數，並支援程式碼、清單與圖表。'
 const source = '\n\n\n![圖示](./assets/diagram.svg)\n\n# 文字工具箱使用指南\n\n\n\n' + intro

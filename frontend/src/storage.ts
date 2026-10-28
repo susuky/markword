@@ -1,4 +1,7 @@
 import { translate } from './i18n'
+import { IS_STATIC_DEPLOYMENT } from './deployment'
+
+export const usesSharedWorkspace = !IS_STATIC_DEPLOYMENT
 
 const DATABASE_NAME = 'markword'
 const DATABASE_VERSION = 3
@@ -65,6 +68,90 @@ let databasePromise: Promise<IDBDatabase> | null = null
 const revisionEvents = new EventTarget()
 const documentEvents = new EventTarget()
 let documentChannel: BroadcastChannel | null = null
+let migrationPromise: Promise<void> | null = null
+let importedDocumentIds: Record<string, string> = {}
+
+class WorkspaceError extends Error {
+  constructor(readonly status: number, message: string) { super(message) }
+}
+
+async function workspaceFetch(path: string, options: RequestInit = {}, versioned = false): Promise<Response> {
+  const response = await fetch(`/api/workspace${path}`, {
+    cache: 'no-store',
+    ...options,
+    headers: options.body ? { 'Content-Type': 'application/json', ...options.headers } : options.headers,
+  })
+  if (!response.ok) {
+    if (response.status === 409 && versioned) throw new DraftConflictError()
+    const body = await response.json().catch(() => null)
+    const detail = body?.detail
+    const message = typeof detail === 'string' ? detail
+      : typeof detail?.message === 'string' ? `${detail.message}${detail.paths?.length ? ` ${detail.paths.join(', ')}` : ''}`
+        : translate('The server could not process the request')
+    throw new WorkspaceError(response.status, translate(message))
+  }
+  return response
+}
+
+async function sharedJSON<T>(path: string, options: RequestInit = {}, versioned = false): Promise<T> {
+  await migrateBrowserWorkspace()
+  return (await workspaceFetch(path, options, versioned)).json()
+}
+
+function assetData(asset: StoredAsset): Promise<Omit<StoredAsset, 'blob'> & { data: string }> {
+  const { blob, ...metadata } = asset
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onerror = () => reject(reader.error)
+    reader.onload = () => {
+      resolve({ ...metadata, data: String(reader.result).split(',')[1] })
+    }
+    reader.readAsDataURL(blob)
+  })
+}
+
+async function sharedAsset(metadata: Omit<StoredAsset, 'blob'>): Promise<StoredAsset> {
+  const response = await workspaceFetch(`/assets/${encodeURIComponent(metadata.id)}`)
+  return { ...metadata, blob: await response.blob() }
+}
+
+function migrateBrowserWorkspace(): Promise<void> {
+  if (migrationPromise) return migrationPromise
+  migrationPromise = (async () => {
+    let drafts: StoredDraft[] = []
+    let revisions: Revision[] = []
+    let assets: StoredAsset[] = []
+    if (typeof indexedDB !== 'undefined') {
+      const database = await openDatabase()
+      const transaction = database.transaction([DRAFT_STORE, REVISION_STORE, ASSET_STORE], 'readonly')
+      const complete = transactionComplete(transaction)
+      const records = await Promise.all([
+        requestResult(transaction.objectStore(DRAFT_STORE).getAll() as IDBRequest<StoredDraft[]>),
+        requestResult(transaction.objectStore(REVISION_STORE).getAll() as IDBRequest<Revision[]>),
+        requestResult(transaction.objectStore(ASSET_STORE).getAll() as IDBRequest<StoredAsset[]>),
+      ])
+      drafts = records[0]
+      revisions = records[1]
+      assets = records[2]
+      await complete
+    }
+    const legacy = localStorage.getItem(LEGACY_DOCUMENT_KEY)
+    if (legacy !== null && !drafts.some((draft) => draft.id === CURRENT_DRAFT_ID)) {
+      const now = Date.now()
+      drafts.push({ id: CURRENT_DRAFT_ID, version: 0, content: legacy, metadata: { mode: 'markdown' }, createdAt: now, updatedAt: now })
+    }
+    if (!drafts.length && !revisions.length && !assets.length) return
+    const response = await workspaceFetch('/import', {
+      method: 'POST',
+      body: JSON.stringify({ drafts, revisions, assets: await Promise.all(assets.map(assetData)) }),
+    })
+    const result = await response.json() as { documentIds: Record<string, string> }
+    importedDocumentIds = result.documentIds
+    const preferred = loadPreference('active-document', CURRENT_DRAFT_ID)
+    if (result.documentIds[preferred]) savePreference('active-document', result.documentIds[preferred])
+  })().catch((error) => { migrationPromise = null; throw error })
+  return migrationPromise
+}
 
 function workspaceChannel() {
   if (!documentChannel && typeof BroadcastChannel !== 'undefined') {
@@ -83,10 +170,12 @@ export function subscribeToDocuments(listener: () => void) {
   window.addEventListener('focus', listener)
   const channel = workspaceChannel()
   channel?.addEventListener('message', listener)
+  const timer = usesSharedWorkspace ? window.setInterval(() => { if (!document.hidden) listener() }, 2000) : null
   return () => {
     documentEvents.removeEventListener('change', listener)
     window.removeEventListener('focus', listener)
     channel?.removeEventListener('message', listener)
+    if (timer !== null) window.clearInterval(timer)
   }
 }
 
@@ -191,6 +280,10 @@ function createRevisionId(): string {
 }
 
 export async function getCurrentDraft(id = CURRENT_DRAFT_ID): Promise<StoredDraft | null> {
+  if (usesSharedWorkspace) {
+    try { return await sharedJSON<StoredDraft>(`/drafts/${encodeURIComponent(id)}`) }
+    catch (error) { if (error instanceof WorkspaceError && error.status === 404) return null; throw error }
+  }
   const database = await openDatabase()
   const transaction = database.transaction(DRAFT_STORE, 'readonly')
   const result = await requestResult(
@@ -231,19 +324,30 @@ export async function saveCurrentDraft(
   expectedVersion: number | null,
   id = CURRENT_DRAFT_ID,
 ): Promise<StoredDraft> {
+  if (usesSharedWorkspace) {
+    const draft = await sharedJSON<StoredDraft>(`/drafts/${encodeURIComponent(id)}`, {
+      method: 'POST', body: JSON.stringify({ content, metadata, expectedVersion }),
+    }, true)
+    if (id !== 'html') notifyDocuments()
+    return draft
+  }
   const database = await openDatabase()
   const transaction = database.transaction(DRAFT_STORE, 'readwrite')
   const complete = transactionComplete(transaction)
   const store = transaction.objectStore(DRAFT_STORE)
   const previous = await requestResult(store.get(id) as IDBRequest<StoredDraft | undefined>)
   // Read, compare and write in one transaction across all browser tabs.
-  if (previous?.trashedAt || (previous ? previous.version ?? 0 : null) !== expectedVersion) {
+  if (previous?.trashedAt) {
     await complete
     throw new DraftConflictError()
   }
   if (previous && previous.content === content && JSON.stringify(previous.metadata) === JSON.stringify(metadata)) {
     await complete
     return previous
+  }
+  if ((previous ? previous.version ?? 0 : null) !== expectedVersion) {
+    await complete
+    throw new DraftConflictError()
   }
   const now = Date.now()
   const draft: StoredDraft = {
@@ -261,6 +365,10 @@ export async function saveCurrentDraft(
 }
 
 export async function listWorkspaceDrafts(): Promise<StoredDraft[]> {
+  if (usesSharedWorkspace) {
+    const drafts = await sharedJSON<StoredDraft[]>('/drafts')
+    return drafts.filter((draft) => draft.id !== 'html').sort((left, right) => right.updatedAt - left.updatedAt)
+  }
   const database = await openDatabase()
   const transaction = database.transaction(DRAFT_STORE, 'readonly')
   const drafts = await requestResult(transaction.objectStore(DRAFT_STORE).getAll() as IDBRequest<StoredDraft[]>)
@@ -275,11 +383,12 @@ export async function createWorkspaceDocument(content = '', metadata: DraftMetad
 
 export async function chooseWorkspaceDocument(preferred: string, fallbackContent: string): Promise<string> {
   const drafts = await listWorkspaceDrafts()
+  if (usesSharedWorkspace) preferred = importedDocumentIds[preferred] ?? preferred
   const active = drafts.filter((draft) => !draft.trashedAt)
   if (active.some((draft) => draft.id === preferred)) return preferred
   if (active.length) return active[0].id
   if (drafts.length) return (await createWorkspaceDocument('', { mode: 'markdown' })).id
-  return (await loadCurrentDraft(fallbackContent, { mode: 'markdown', theme: 'Light' })).id
+  return (await loadCurrentDraft(usesSharedWorkspace ? '' : fallbackContent, { mode: 'markdown', theme: 'Light' })).id
 }
 
 export async function renameWorkspaceDocument(id: string, name: string, expectedVersion: number): Promise<StoredDraft> {
@@ -291,6 +400,13 @@ export async function renameWorkspaceDocument(id: string, name: string, expected
 }
 
 export async function setDocumentTrashed(id: string, trashed: boolean, expectedVersion: number): Promise<void> {
+  if (usesSharedWorkspace) {
+    await sharedJSON(`/drafts/${encodeURIComponent(id)}/trash`, {
+      method: 'POST', body: JSON.stringify({ trashed, expectedVersion }),
+    }, true)
+    notifyDocuments()
+    return
+  }
   const database = await openDatabase()
   const transaction = database.transaction(DRAFT_STORE, 'readwrite')
   const complete = transactionComplete(transaction)
@@ -306,6 +422,7 @@ export async function setDocumentTrashed(id: string, trashed: boolean, expectedV
 }
 
 export async function listRevisions(documentId = CURRENT_DRAFT_ID): Promise<Revision[]> {
+  if (usesSharedWorkspace) return sharedJSON<Revision[]>(`/revisions?documentId=${encodeURIComponent(documentId)}`)
   const database = await openDatabase()
   const transaction = database.transaction(REVISION_STORE, 'readonly')
   const index = transaction.objectStore(REVISION_STORE).index('documentId')
@@ -315,6 +432,7 @@ export async function listRevisions(documentId = CURRENT_DRAFT_ID): Promise<Revi
 }
 
 export async function listWorkspaceRevisions(): Promise<Revision[]> {
+  if (usesSharedWorkspace) return sharedJSON<Revision[]>('/revisions')
   const database = await openDatabase()
   const transaction = database.transaction(REVISION_STORE, 'readonly')
   const revisions = await requestResult(transaction.objectStore(REVISION_STORE).getAll() as IDBRequest<Revision[]>)
@@ -323,6 +441,7 @@ export async function listWorkspaceRevisions(): Promise<Revision[]> {
 }
 
 export async function getRevision(id: string, documentId = CURRENT_DRAFT_ID): Promise<Revision | null> {
+  if (usesSharedWorkspace) return (await listRevisions(documentId)).find((revision) => revision.id === id) ?? null
   const database = await openDatabase()
   const transaction = database.transaction(REVISION_STORE, 'readonly')
   const revision = await requestResult(
@@ -357,6 +476,11 @@ export async function createSnapshot(
     createdAt: Date.now(),
     reason,
   }
+  if (usesSharedWorkspace) {
+    await sharedJSON('/revisions', { method: 'POST', body: JSON.stringify(revision) })
+    revisionEvents.dispatchEvent(new Event('change'))
+    return revision
+  }
   const database = await openDatabase()
   const transaction = database.transaction(REVISION_STORE, 'readwrite')
   transaction.objectStore(REVISION_STORE).add(revision)
@@ -367,6 +491,11 @@ export async function createSnapshot(
 }
 
 export async function deleteRevision(id: string, documentId = CURRENT_DRAFT_ID): Promise<void> {
+  if (usesSharedWorkspace) {
+    await sharedJSON(`/revisions/${encodeURIComponent(id)}?documentId=${encodeURIComponent(documentId)}`, { method: 'DELETE' })
+    revisionEvents.dispatchEvent(new Event('change'))
+    return
+  }
   if (!await getRevision(id, documentId)) throw new Error(translate('Revision not found'))
   const database = await openDatabase()
   const transaction = database.transaction(REVISION_STORE, 'readwrite')
@@ -376,6 +505,7 @@ export async function deleteRevision(id: string, documentId = CURRENT_DRAFT_ID):
 }
 
 export async function listAssets(): Promise<StoredAsset[]> {
+  if (usesSharedWorkspace) return Promise.all((await sharedJSON<Omit<StoredAsset, 'blob'>[]>('/assets')).map(sharedAsset))
   const database = await openDatabase()
   const transaction = database.transaction(ASSET_STORE, 'readonly')
   const assets = await requestResult(
@@ -386,6 +516,10 @@ export async function listAssets(): Promise<StoredAsset[]> {
 }
 
 export async function getAssetByPath(path: string): Promise<StoredAsset | null> {
+  if (usesSharedWorkspace) {
+    const asset = (await sharedJSON<Omit<StoredAsset, 'blob'>[]>('/assets')).find((item) => item.path === path)
+    return asset ? sharedAsset(asset) : null
+  }
   const database = await openDatabase()
   const transaction = database.transaction(ASSET_STORE, 'readonly')
   const asset = await requestResult(
@@ -397,6 +531,11 @@ export async function getAssetByPath(path: string): Promise<StoredAsset | null> 
 
 export async function getAssetsByPaths(paths: readonly string[]): Promise<Map<string, StoredAsset>> {
   if (!paths.length) return new Map()
+  if (usesSharedWorkspace) {
+    const metadata = await sharedJSON<Omit<StoredAsset, 'blob'>[]>('/assets')
+    const assets = await Promise.all(metadata.filter((asset) => paths.includes(asset.path)).map(sharedAsset))
+    return new Map(assets.map((asset) => [asset.path, asset]))
+  }
   const database = await openDatabase()
   const transaction = database.transaction(ASSET_STORE, 'readonly')
   const index = transaction.objectStore(ASSET_STORE).index('path')
@@ -412,6 +551,10 @@ export async function getAssetsByPaths(paths: readonly string[]): Promise<Map<st
 
 export async function putAssets(assets: readonly StoredAsset[]): Promise<void> {
   if (!assets.length) return
+  if (usesSharedWorkspace) {
+    await sharedJSON('/assets', { method: 'POST', body: JSON.stringify(await Promise.all(assets.map(assetData))) })
+    return
+  }
   const database = await openDatabase()
   const transaction = database.transaction(ASSET_STORE, 'readwrite')
   const store = transaction.objectStore(ASSET_STORE)
@@ -420,6 +563,7 @@ export async function putAssets(assets: readonly StoredAsset[]): Promise<void> {
 }
 
 export async function deleteAsset(id: string): Promise<void> {
+  if (usesSharedWorkspace) { await sharedJSON(`/assets/${encodeURIComponent(id)}`, { method: 'DELETE' }); return }
   const database = await openDatabase()
   const transaction = database.transaction(ASSET_STORE, 'readwrite')
   transaction.objectStore(ASSET_STORE).delete(id)
@@ -433,6 +577,14 @@ export async function restoreRevision(
   expectedVersion: number,
   documentId = CURRENT_DRAFT_ID,
 ): Promise<RestoredRevision> {
+  if (usesSharedWorkspace) {
+    const restored = await sharedJSON<RestoredRevision>('/restore', {
+      method: 'POST', body: JSON.stringify({ revisionId, currentContent, currentMetadata, expectedVersion, documentId }),
+    }, true)
+    revisionEvents.dispatchEvent(new Event('change'))
+    notifyDocuments()
+    return restored
+  }
   const revision = await getRevision(revisionId, documentId)
   if (!revision) throw new Error(translate('Revision not found'))
 
@@ -540,6 +692,12 @@ export class DraftPersistenceSession {
     this.lastSnapshottedContent = revision.content
     this.options.onRevisionCreated?.(revision)
     return revision
+  }
+
+  async createCopy(metadata: DraftMetadata = {}): Promise<StoredDraft> {
+    try { await this.flush() }
+    catch (error) { if (!(error instanceof DraftConflictError)) throw error }
+    return createWorkspaceDocument(this.content, { ...this.metadata, ...metadata })
   }
 
   async restore(revisionId: string): Promise<RestoredRevision> {

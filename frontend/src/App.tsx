@@ -104,6 +104,8 @@ function collectHeadings(markdown: string): OutlineHeading[] {
 
 interface AppProps {
   documentId: string
+  documentsOpen: boolean
+  onDocumentsOpenChange: (open: boolean) => void
   revealImportSummary?: boolean
   initialNotice?: string
   updateAvailable: boolean
@@ -113,9 +115,9 @@ interface AppProps {
   onLinkedFileChange: (id: string, file: LinkedFile | null) => void
 }
 
-export default function App({ documentId, revealImportSummary = false, initialNotice = '', initialLinkedFile, onDocumentChange, onLinkedFileChange, updateAvailable, onUpdateAvailableChange: setUpdateAvailable }: AppProps) {
+export default function App({ documentId, documentsOpen, onDocumentsOpenChange: setDocumentsOpen, revealImportSummary = false, initialNotice = '', initialLinkedFile, onDocumentChange, onLinkedFileChange, updateAvailable, onUpdateAvailableChange: setUpdateAvailable }: AppProps) {
   const { locale, setLocale, t } = useI18n()
-  const initialSampleRef = useRef(documentId === CURRENT_DRAFT_ID ? SAMPLE_MARKDOWN[locale] : '')
+  const initialSampleRef = useRef(IS_STATIC_DEPLOYMENT && documentId === CURRENT_DRAFT_ID ? SAMPLE_MARKDOWN[locale] : '')
   const [mode, setMode] = useState<DocumentMode>('markdown')
   const [markdown, setMarkdown] = useState(initialSampleRef.current)
   const deferredMarkdown = useDeferredValue(markdown)
@@ -133,7 +135,6 @@ export default function App({ documentId, revealImportSummary = false, initialNo
   const [importSummary, setImportSummary] = useState<ImportSummary | null>(null)
   const [importSummaryOpen, setImportSummaryOpen] = useState(false)
   const [name, setDocumentName] = useState<string | null>(null)
-  const [documentsOpen, setDocumentsOpen] = useState(false)
   const [documentBusy, setDocumentBusy] = useState(false)
   const noticeTimerRef = useRef<number | null>(null)
   const [activeLine, setActiveLine] = useState(1)
@@ -191,7 +192,11 @@ export default function App({ documentId, revealImportSummary = false, initialNo
   const assetInputRef = useRef<HTMLInputElement>(null)
   const { stats, available } = useDebouncedStats(markdown)
   const saveWarning = persistenceStatus === 'error' || persistenceStatus === 'conflict'
-  const saveLabel = t(persistenceStatus === 'conflict' ? 'Changed in another tab. Download a backup.' : persistenceStatus === 'saved' ? 'Saved in this browser' : persistenceStatus === 'error' ? 'Draft not saved. Download a backup.' : persistenceStatus === 'saving' ? 'Saving…' : 'Draft not saved')
+  const saveLabel = t(persistenceStatus === 'conflict'
+    ? IS_STATIC_DEPLOYMENT ? 'Changed in another tab. Download a backup.' : 'Changed elsewhere. Save to keep a copy.'
+    : persistenceStatus === 'saved' ? IS_STATIC_DEPLOYMENT ? 'Saved in this browser' : 'Saved locally'
+      : persistenceStatus === 'error' ? IS_STATIC_DEPLOYMENT ? 'Draft not saved. Download a backup.' : 'Could not save. Try again.'
+        : persistenceStatus === 'saving' ? 'Saving…' : 'Draft not saved')
   const fileDirty = linkedFile && (fileSaveFailed || linkedFile.content !== markdown || linkedFile.mode !== mode)
   const fileSaveLabel = t(fileBusy === 'saving' ? 'Saving file…' : fileDirty ? 'File has unsaved changes' : 'Saved to file')
   const totalLines = Math.max(1, markdown.split('\n').length)
@@ -514,6 +519,39 @@ export default function App({ documentId, revealImportSummary = false, initialNo
     }
   }, [assetBusy, downloadSource, linkedFile, markdown, mode, name, showNotice, t])
 
+  const saveDocument = useCallback(async () => {
+    if (IS_STATIC_DEPLOYMENT) { await saveFile(); return }
+    if (fileBusyRef.current || wordImportBusyRef.current || assetBusy || clientExporting) return
+    fileBusyRef.current = true
+    setFileBusy('saving')
+    try {
+      const current = currentDocumentRef.current
+      if (!storageReady) {
+        const version = documentVersionRef.current
+        const draft = await createWorkspaceDocument(current.markdown, { theme: current.theme, mode: current.mode, importSummary: current.importSummary, name: current.name })
+        if (version === documentVersionRef.current) onDocumentChange(draft.id, false, t('Saved locally'))
+        else showNotice(t('Copy saved'))
+        return
+      }
+      persistence.update(current.markdown, { theme: current.theme, mode: current.mode, importSummary: current.importSummary, name: current.name })
+      try { await persistence.flush() }
+      catch (error) {
+        if (!(error instanceof DraftConflictError)) throw error
+        const latest = currentDocumentRef.current
+        const version = documentVersionRef.current
+        persistence.update(latest.markdown, { theme: latest.theme, mode: latest.mode, importSummary: latest.importSummary, name: latest.name })
+        const copy = await persistence.createCopy({ name: t('Copy of {name}', { name: storedDocumentName({ content: latest.markdown, metadata: { name: latest.name } }) }).slice(0, 120) })
+        if (version === documentVersionRef.current) onDocumentChange(copy.id, false, t('Copy saved'))
+        else showNotice(t('Copy saved'))
+      }
+    } catch {
+      showNotice(t('Could not save. Try again.'))
+    } finally {
+      fileBusyRef.current = false
+      setFileBusy(null)
+    }
+  }, [assetBusy, clientExporting, onDocumentChange, persistence, saveFile, showNotice, storageReady, t])
+
   const downloadHtml = useCallback(async () => {
     if (clientExporting) return
     setClientExporting('html')
@@ -652,7 +690,7 @@ export default function App({ documentId, revealImportSummary = false, initialNo
     }
   }, [])
 
-  const runDocumentAction = useCallback(async (operation: (draft: StoredDraft, select: (id: string) => void) => Promise<void>) => {
+  const runDocumentAction = useCallback(async (operation: (draft: StoredDraft, select: (id: string) => void) => Promise<void>, copyCurrent = false) => {
     if (!storageReady) throw new DocumentActionError(t('Could not save your current document. Download a backup before switching.'))
     if (document.querySelector('.markdown-link-form')) throw new DocumentActionError(t('Apply or cancel the link edit before changing documents.'))
     if (fileBusyRef.current || wordImportBusyRef.current || assetBusy || clientExporting) {
@@ -666,8 +704,17 @@ export default function App({ documentId, revealImportSummary = false, initialNo
       const current = currentDocumentRef.current
       persistence.update(current.markdown, { theme: current.theme, mode: current.mode, importSummary: current.importSummary, name: current.name })
       let draft: StoredDraft
-      try { draft = await persistence.flush() }
-      catch { throw new DocumentActionError(t('Could not save your current document. Download a backup before switching.')) }
+      try {
+        draft = copyCurrent
+          ? await persistence.createCopy({ name: t('Copy of {name}', { name: storedDocumentName({ content: current.markdown, metadata: { name: current.name } }) }).slice(0, 120) })
+          : await persistence.flush()
+      } catch (error) {
+        throw new DocumentActionError(t(error instanceof DraftConflictError
+          ? 'Another tab saved changes. Save a copy to keep these edits.'
+          : error instanceof DOMException && error.name === 'QuotaExceededError'
+            ? 'Browser storage is full. Download a backup before switching.'
+            : 'Could not save your current document. Download a backup before switching.'))
+      }
       const select = (id: string) => {
         if (version !== documentVersionRef.current) throw new DocumentActionError(t('Your document changed while switching. Your edits are kept; try again.'))
         onDocumentChange(id)
@@ -690,18 +737,19 @@ export default function App({ documentId, revealImportSummary = false, initialNo
     select((await createWorkspaceDocument('', { mode: 'markdown', theme: currentDocumentRef.current.theme, name: null })).id)
   }), [runDocumentAction])
 
-  const openDocument = (id: string) => id === documentId ? Promise.resolve(closeDocuments()) : runDocumentAction(async (_draft, select) => {
+  const openDocument = (id: string) => id === documentId ? Promise.resolve() : runDocumentAction(async (_draft, select) => {
     const target = await getCurrentDraft(id)
     if (!target || target.trashedAt) throw new DocumentActionError(t('This document is unavailable. Refresh the list and try again.'))
     select(id)
   })
 
   const duplicateDocument = (id: string) => runDocumentAction(async (draft, select) => {
-    const original = id === documentId ? draft : await getCurrentDraft(id)
+    if (id === documentId) { select(draft.id); return }
+    const original = await getCurrentDraft(id)
     if (!original || original.trashedAt) throw new DocumentActionError(t('Document not found'))
     const copy = await createWorkspaceDocument(original.content, { ...original.metadata, name: t('Copy of {name}', { name: storedDocumentName(original) }).slice(0, 120) })
     select(copy.id)
-  })
+  }, id === documentId)
 
   const renameDocument = (id: string, nextName: string, version: number) => runDocumentAction(async (draft) => {
     if (id !== documentId) { await renameWorkspaceDocument(id, nextName, version); return }
@@ -727,10 +775,10 @@ export default function App({ documentId, revealImportSummary = false, initialNo
     await setDocumentTrashed(id, false, version)
   })
 
-  const closeDocuments = () => {
+  const closeDocuments = useCallback(() => {
     setDocumentsOpen(false)
     requestAnimationFrame(() => document.querySelector<HTMLButtonElement>('[aria-controls="workspace-documents"]')?.focus())
-  }
+  }, [setDocumentsOpen])
 
   const commandActions = useMemo<CommandAction[]>(() => [
     { id: 'commands', label: t('Open command palette'), run: () => setCommandOpen(true) },
@@ -739,7 +787,7 @@ export default function App({ documentId, revealImportSummary = false, initialNo
     { id: 'open', label: t('Open document or project'), description: t('Open Markdown, text, Mermaid, Word, HTML, or a Markword ZIP'), keywords: 'file upload import word docx html project 匯入 轉換 檔案 專案', run: () => void loadFile() },
     { id: 'assets', label: t('Manage local assets'), description: t('Images, video, audio, and attachments'), keywords: 'asset media image video attachment 圖片 影片 附件', run: () => setAssetsOpen(true) },
     { id: 'insert-asset', label: t('Insert: Local asset'), description: t('Import files from this device'), keywords: '/ asset media image video attachment 圖片 影片 附件', run: () => assetInputRef.current?.click() },
-    { id: 'save-md', label: canSaveLocalFile ? t('Save file') : t('Download {format}', { format: t(DOCUMENT_MODES[mode].label) }), description: t('Keep the editable source'), keywords: 'file save 儲存', run: () => void saveFile() },
+    { id: 'save-md', label: !IS_STATIC_DEPLOYMENT ? t('Save') : canSaveLocalFile ? t('Save file') : t('Download {format}', { format: t(DOCUMENT_MODES[mode].label) }), keywords: 'file save 儲存', run: () => void saveDocument() },
     ...(canSaveLocalFile ? [{ id: 'save-as', label: t('Save as…'), description: t('Choose a file name and location'), keywords: 'save copy 另存新檔', run: () => void saveFile(true) }] : []),
     { id: 'download-source', label: t('Download source'), description: t('Keep the editable source'), keywords: 'download export 匯出 下載', run: downloadSource },
     { id: 'save-project', label: t('Download project ZIP'), description: t('Document and referenced local assets'), keywords: 'export zip share 匯出 分享', run: () => void downloadProject() },
@@ -759,7 +807,7 @@ export default function App({ documentId, revealImportSummary = false, initialNo
     { id: 'snapshot', label: t('Create current revision'), description: t('Save to local revision history'), run: () => void createManualSnapshot() },
     { id: 'revisions', label: t('Open revision history'), description: t('Preview, download, or restore an older revision'), run: () => setRevisionsOpen(true) },
     { id: 'shortcuts', label: t('Show keyboard shortcuts'), run: () => setHelpOpen(true) },
-  ].map((action) => ({ ...action, shortcut: formatShortcut(shortcuts[action.id]) })), [createDocument, createManualSnapshot, downloadHtml, downloadSource, downloadProject, focusMode, loadFile, mode, runInSource, saveFile, shortcuts, showNotice, showVisualSource, syncEnabled, t, toggleSource, typewriterMode])
+  ].map((action) => ({ ...action, shortcut: formatShortcut(shortcuts[action.id]) })), [createDocument, createManualSnapshot, downloadHtml, downloadSource, downloadProject, focusMode, loadFile, mode, runInSource, saveDocument, saveFile, setDocumentsOpen, shortcuts, showNotice, showVisualSource, syncEnabled, t, toggleSource, typewriterMode])
 
   useEffect(() => {
     if (!hydrated) return
@@ -783,6 +831,7 @@ export default function App({ documentId, revealImportSummary = false, initialNo
       } else if (event.key === 'Escape' && focusMode) {
         setFocusMode(false)
       } else if (event.key === 'Escape') {
+        if (documentsOpen && !target?.closest('.document-panel')) closeDocuments()
         setMobileOutlineOpen(false)
         setStatsOpen(false)
         setImportSummaryOpen(false)
@@ -790,7 +839,7 @@ export default function App({ documentId, revealImportSummary = false, initialNo
     }
     window.addEventListener('keydown', onKeyDown, true)
     return () => window.removeEventListener('keydown', onKeyDown, true)
-  }, [commandActions, documentBusy, focusMode, hydrated, shortcuts])
+  }, [closeDocuments, commandActions, documentBusy, documentsOpen, focusMode, hydrated, shortcuts])
 
   if (!hydrated) {
     return <main className="app-shell productivity-shell"><div className="app-loading">{t('Loading local draft…')}</div></main>
@@ -812,9 +861,10 @@ export default function App({ documentId, revealImportSummary = false, initialNo
         <div className="brand"><img src={`${import.meta.env.BASE_URL}markword-icon.svg`} width="36" height="36" alt="" /><span>Markword<span className="brand-caption">{t('A space for your words')}</span></span></div>
         <div className="document-heading"><FileText size={18} aria-hidden="true" /><span title={title}>{title}</span><span className="document-extension">.{DOCUMENT_MODES[mode].extension}</span></div>
         <nav className="header-actions" aria-label={t('Document tools')} inert={documentBusy}>
-          <button className={`toolbar-button documents-trigger ${documentsOpen ? 'is-active' : ''}`} type="button" onClick={() => { setImportSummaryOpen(false); setStatsOpen(false); setDocumentsOpen((open) => !open); setMobileOutlineOpen(false) }} aria-label={t('Documents')} title={t('Documents')} aria-controls="workspace-documents" aria-expanded={documentsOpen}><Files size={17} aria-hidden="true" /><span>{t('Documents')}</span></button>
+          <button className="toolbar-button new-document-trigger" type="button" disabled={Boolean(fileBusy) || assetBusy || Boolean(clientExporting)} onClick={() => void createDocument().catch((error: Error) => showNotice(error.message))} aria-label={t('New document')} title={t('New document')}><Plus size={17} aria-hidden="true" /><span>{t('New document')}</span></button>
+          <button className={`toolbar-button documents-trigger ${documentsOpen ? 'is-active' : ''}`} type="button" onClick={() => { setImportSummaryOpen(false); setStatsOpen(false); setDocumentsOpen(!documentsOpen); setMobileOutlineOpen(false) }} aria-label={t('Documents')} title={t('Documents')} aria-controls="workspace-documents" aria-expanded={documentsOpen}><Files size={17} aria-hidden="true" /><span>{t('Documents')}</span></button>
           <button className="toolbar-button open-trigger" type="button" disabled={Boolean(fileBusy) || importingWord} onClick={() => void loadFile()} aria-label={t(importingWord ? 'Converting Word…' : 'Open document or project')} title={t('Open document or project')}><FolderOpen size={17} aria-hidden="true" /><span>{t(importingWord ? 'Converting Word…' : 'Open')}</span></button>
-          <button className="toolbar-button save-trigger" type="button" disabled={Boolean(fileBusy) || assetBusy} onClick={() => void saveFile()} aria-label={t(canSaveLocalFile ? 'Save file' : 'Download source')} title={t(canSaveLocalFile ? 'Save file' : 'Download source')}><Save size={17} aria-hidden="true" /><span>{t(fileBusy === 'saving' ? 'Saving…' : canSaveLocalFile ? 'Save' : 'Download')}</span></button>
+          <button className="toolbar-button save-trigger" type="button" disabled={Boolean(fileBusy) || assetBusy} onClick={() => void saveDocument()} aria-label={t(!IS_STATIC_DEPLOYMENT ? 'Save' : canSaveLocalFile ? 'Save file' : 'Download source')} title={t(!IS_STATIC_DEPLOYMENT ? 'Save' : canSaveLocalFile ? 'Save file' : 'Download source')}><Save size={17} aria-hidden="true" /><span>{t(fileBusy === 'saving' ? 'Saving…' : !IS_STATIC_DEPLOYMENT || canSaveLocalFile ? 'Save' : 'Download')}</span></button>
           <button className="toolbar-button language-toggle" type="button" onClick={() => setLocale(locale === 'en' ? 'zh-TW' : 'en')} title={t(locale === 'en' ? 'Switch to Traditional Chinese' : 'Switch to English')} aria-label={t(locale === 'en' ? 'Switch to Traditional Chinese' : 'Switch to English')}><Languages size={17} aria-hidden="true" /><span>{locale === 'en' ? t('Traditional Chinese') : 'EN'}</span></button>
           <button className="toolbar-button workspace-toolbar-toggle" type="button" aria-label={t(toolbarCollapsed ? 'Show toolbar' : 'Hide toolbar')} title={t(toolbarCollapsed ? 'Show toolbar' : 'Hide toolbar')} aria-controls="workspace-tools" aria-expanded={!toolbarCollapsed} onClick={() => setToolbarCollapsed((collapsed) => !collapsed)}>{toolbarCollapsed ? <PanelTopOpen size={17} aria-hidden="true" /> : <PanelTopClose size={17} aria-hidden="true" />}</button>
           <ExportMenu mode={mode} disabled={!markdown.trim()} exporting={exporting} clientExporting={clientExporting} exportStyle={exportStyle} onStyleChange={setExportStyle} onPreview={() => setExportPreviewOpen(true)} hasAssets={referencedAssets.size > 0} onSource={downloadSource} onSaveAs={canSaveLocalFile ? () => void saveFile(true) : undefined} onProject={(scope) => void downloadProject(scope)} onHtml={() => void downloadHtml()} onExport={(format) => void handleExport(format)} />
@@ -824,7 +874,6 @@ export default function App({ documentId, revealImportSummary = false, initialNo
       <nav id="workspace-tools" className="workspace-toolbar" aria-label={t('Workspace tools')}>
         <div className="workspace-toolbar__group">
           {mode === 'markdown' ? <button className="toolbar-button outline-trigger" type="button" aria-label={t('Document outline')} aria-controls="document-outline" aria-expanded={window.matchMedia('(max-width: 900px)').matches ? mobileOutlineOpen : !outlineCollapsed} onClick={() => {
-            setDocumentsOpen(false)
             if (window.matchMedia('(max-width: 900px)').matches) setMobileOutlineOpen((open) => !open)
             else setOutlineCollapsed((collapsed) => !collapsed)
           }}><ListTree size={17} aria-hidden="true" /><span>{t('Outline')}</span></button> : null}
@@ -858,7 +907,8 @@ export default function App({ documentId, revealImportSummary = false, initialNo
       >
         {mode === 'markdown' && mobileOutlineOpen ? <button className="outline-scrim" type="button" aria-label={t('Collapse document outline')} onClick={() => setMobileOutlineOpen(false)} /> : null}
         {documentsOpen ? <DocumentPanel currentId={documentId} busy={Boolean(fileBusy) || assetBusy || Boolean(clientExporting)} onClose={closeDocuments}
-          onOpen={openDocument} onCreate={createDocument} onDuplicate={duplicateDocument} onRename={renameDocument} onTrash={trashDocument} onRestore={restoreDocument} /> : null}
+          onOpen={openDocument} onDuplicate={duplicateDocument} onRename={renameDocument} onTrash={trashDocument} onRestore={restoreDocument}
+          onSaveCopy={persistenceStatus === 'conflict' ? () => duplicateDocument(documentId) : undefined} /> : null}
         {mode === 'markdown' && !documentsOpen ? <OutlinePanel mobileOpen={mobileOutlineOpen} onMobileClose={() => setMobileOutlineOpen(false)} headings={headings} collapsed={outlineCollapsed} activeLine={activeLine} onCollapsedChange={setOutlineCollapsed} onJump={(line) => {
           if (visualEditing && !showVisualSource) {
             setMobileOutlineOpen(false)

@@ -1,4 +1,5 @@
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test } from './shared-workspace-fixture'
+import { type Page } from '@playwright/test'
 
 const source = (page: Page) => page.locator('.editor-host .cm-line').allTextContents().then((lines) => lines.join('\n'))
 const library = (page: Page) => page.getByRole('complementary', { name: 'Documents', exact: true })
@@ -12,12 +13,13 @@ function documentRow(page: Page, name: string) {
 async function openDocument(page: Page, name: string) {
   await showDocuments(page)
   await documentRow(page, name).locator('.document-list__open').click()
-  await expect(library(page)).toHaveCount(0)
+  await expect(library(page)).toBeVisible()
+  await library(page).getByRole('button', { name: 'Close documents', exact: true }).click()
   await expect(page.locator('.document-heading')).toContainText(name)
 }
 async function createDocument(page: Page) {
   await showDocuments(page)
-  await library(page).getByRole('button', { name: 'New document', exact: true }).click()
+  await page.locator('.header-actions').getByRole('button', { name: 'New document', exact: true }).click()
   await expect.poll(() => source(page)).toBe('')
 }
 async function snapshot(page: Page) {
@@ -79,6 +81,7 @@ test('renaming, searching, copying, trashing, and restoring preserve the source'
   await documentRow(page, '工作筆記').getByRole('button', { name: 'Duplicate', exact: true }).click()
   await expect(page.locator('.document-heading')).toContainText('Copy of 工作筆記')
   await expect.poll(() => source(page)).toBe(original)
+  await library(page).getByRole('searchbox', { name: 'Search documents', exact: true }).fill('')
   await page.locator('.cm-content').fill('# Copy edited\n\nOnly the copy changed.')
   await openDocument(page, '工作筆記')
   await expect.poll(() => source(page)).toBe(original)
@@ -169,18 +172,18 @@ test('migration preserves the old Markdown draft, versions, attachments, and ind
 test('a save conflict stops switching without discarding either tab’s content', async ({ page, context }) => {
   await page.goto('/')
   await page.locator('.cm-content').fill('# Shared note\n\nStarting content.')
-  await expect(page.locator('.save-status')).toHaveText('Saved in this browser')
+  await expect(page.locator('.save-status')).toHaveText('Saved locally')
   const other = await context.newPage()
   await other.goto('/')
   await expect.poll(() => source(other)).toBe('# Shared note\n\nStarting content.')
-  await expect(other.locator('.save-status')).toHaveText('Saved in this browser')
+  await expect(other.locator('.save-status')).toHaveText('Saved locally')
   await page.locator('.cm-content').fill('# Shared note\n\nFirst tab saved.')
-  await expect(page.locator('.save-status')).toHaveText('Saved in this browser')
+  await expect(page.locator('.save-status')).toHaveText('Saved locally')
   await other.locator('.cm-content').fill('# Shared note\n\nSecond tab still has this copy.')
-  await expect(other.locator('.save-status')).toContainText('Changed in another tab')
+  await expect(other.locator('.save-status')).toContainText('Changed elsewhere')
   await showDocuments(other)
-  await library(other).getByRole('button', { name: 'New document', exact: true }).click()
-  await expect(library(other).getByRole('alert')).toContainText('Download a backup before switching')
+  await other.locator('.header-actions').getByRole('button', { name: 'New document', exact: true }).click()
+  await expect(library(other).getByRole('alert')).toContainText('Another tab saved changes')
   await expect.poll(() => source(other)).toBe('# Shared note\n\nSecond tab still has this copy.')
   await expect.poll(() => source(page)).toBe('# Shared note\n\nFirst tab saved.')
   await expect(library(other).locator('.document-list__open')).toHaveCount(1)
@@ -188,25 +191,19 @@ test('a save conflict stops switching without discarding either tab’s content'
 
 test('revision limits apply per document and a revision from another document cannot be restored', async ({ page }) => {
   await page.goto('/')
-  await expect(page.locator('.save-status')).toHaveText('Saved in this browser')
+  await expect(page.locator('.save-status')).toHaveText('Saved locally')
   const result = await page.evaluate(async () => {
     const module = '/src/storage.ts'
     const storage = await import(/* @vite-ignore */ module)
     const other = await storage.createWorkspaceDocument('# Other document', { mode: 'markdown' })
-    const database = await new Promise<IDBDatabase>((resolve, reject) => { const request = indexedDB.open('markword', 3); request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error) })
-    await new Promise<void>((resolve, reject) => {
-      const transaction = database.transaction('revisions', 'readwrite')
-      const store = transaction.objectStore('revisions')
-      for (let i = 0; i < 125; i++) store.put({ id: `current-${i}`, documentId: 'current', content: `Original ${i}`, metadata: {}, createdAt: i, reason: 'manual' })
-      for (let i = 0; i < 3; i++) store.put({ id: `other-${i}`, documentId: other.id, content: `Other ${i}`, metadata: {}, createdAt: i, reason: 'manual' })
-      transaction.oncomplete = () => resolve(); transaction.onerror = () => reject(transaction.error)
-    })
-    database.close()
+    for (let i = 0; i < 125; i++) await storage.createSnapshot(`Original ${i}`, {}, 'manual', 'current')
+    const otherRevisions = []
+    for (let i = 0; i < 3; i++) otherRevisions.push(await storage.createSnapshot(`Other ${i}`, {}, 'manual', other.id))
     await storage.createSnapshot('Latest current revision')
     const session = new storage.DraftPersistenceSession()
     await session.initialize()
     let refused = false
-    try { await session.restore('other-0') } catch { refused = true }
+    try { await session.restore(otherRevisions[0].id) } catch { refused = true }
     return { current: (await storage.listRevisions()).length, other: (await storage.listRevisions(other.id)).length, refused }
   })
   expect(result).toEqual({ current: 120, other: 3, refused: true })
@@ -217,7 +214,7 @@ test('mobile document navigation keeps long names readable, traps focus, and ret
   await page.goto('/')
   await page.getByRole('button', { name: 'Switch to Traditional Chinese', exact: true }).click()
   await page.locator('.cm-content').fill('# 很長的中文文件名稱，用來確認手機上的文件導覽仍然清楚並且可操作\n\n保留原文。')
-  await expect(page.locator('.save-status')).toHaveText('已儲存在此瀏覽器')
+  await expect(page.locator('.save-status')).toHaveText('已儲存在本機')
   await page.locator('.header-actions').getByRole('button', { name: '文件', exact: true }).click()
   const dialog = page.getByRole('dialog', { name: '文件', exact: true })
   await expect(dialog.getByRole('searchbox', { name: '搜尋文件', exact: true })).toBeFocused()

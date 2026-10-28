@@ -6,6 +6,7 @@ import { Modal } from './components/Modal'
 import { useHtmlDraft } from './hooks/useHtmlDraft'
 import { htmlSample } from './htmlSample'
 import { useI18n } from './i18n'
+import { usesSharedWorkspace } from './storage'
 import './htmlEditor.css'
 
 const MAX_FILE_BYTES = 15 * 1024 * 1024
@@ -26,7 +27,7 @@ export default function HtmlEditorPage() {
   const editorRef = useRef<EditorHandle>(null)
   const statusLabel = t(status === 'conflict' ? 'Changed in another tab. Download a backup.'
     : status === 'error' ? 'Draft not saved. Download a backup.'
-    : status === 'saved' ? 'Saved in this browser' : 'Saving…')
+    : status === 'saved' ? usesSharedWorkspace ? 'Saved locally' : 'Saved in this browser' : 'Saving…')
 
   const changeContent = useCallback((content: string) => {
     if (content !== draftRef.current.content) update({ ...draftRef.current, content })

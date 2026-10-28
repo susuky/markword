@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './shared-workspace-fixture'
 
 test('single-page editing shares preview, undo and persisted source visibility', async ({ page }) => {
   await page.goto('/')
@@ -20,7 +20,7 @@ test('single-page editing shares preview, undo and persisted source visibility',
   await page.getByRole('button', { name: 'Single-page editing', exact: true }).click()
   await page.locator('.outline-panel nav button').last().click()
   await expect(page.locator('.pane--editor')).toBeHidden()
-  await expect(page.locator('.save-status')).toHaveText('Saved in this browser')
+  await expect(page.locator('.save-status')).toHaveText('Saved locally')
   await page.reload()
   await expect(page.locator('.pane--editor')).toBeHidden()
   await expect(heading).toHaveText('Changed again')
@@ -30,7 +30,10 @@ test('single-page editing shares preview, undo and persisted source visibility',
 })
 
 test('the previous single-pane preference migrates to the shared editable preview', async ({ page }) => {
-  await page.addInitScript(() => localStorage.setItem('markword.preference.live-editing', 'true'))
+  await page.addInitScript(() => {
+    localStorage.setItem('markword.preference.live-editing', 'true')
+    localStorage.setItem('markword.document', '# Migrated one-page note')
+  })
   await page.goto('/')
   await expect(page.locator('.pane--editor')).toBeHidden()
   await expect(page.locator('.markdown-body h1 [contenteditable]')).toBeVisible()
@@ -60,6 +63,7 @@ test('toolbar collapse reclaims equal space in both panes and survives reload', 
 test('mobile toolbar and preview menus stay reachable when collapsed', async ({ page }) => {
   await page.setViewportSize({ width: 375, height: 812 })
   await page.goto('/')
+  await page.locator('.cm-content').fill('# Mobile note')
   await page.getByRole('button', { name: 'Hide toolbar', exact: true }).click()
   await page.getByRole('tab', { name: 'Preview', exact: true }).click()
   await page.locator('.markdown-body h1 [contenteditable]').fill('Edited on mobile')

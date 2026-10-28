@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './shared-workspace-fixture'
 
 test('code highlighting stays current across prose, language, code, and locale changes', async ({ page }) => {
   await page.goto('/')

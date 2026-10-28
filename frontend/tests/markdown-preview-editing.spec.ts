@@ -1,4 +1,5 @@
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test } from './shared-workspace-fixture'
+import { type Page } from '@playwright/test'
 
 const preview = (page: Page) => page.locator('.pane--preview .markdown-body')
 const text = '[data-markdown-edit-text]'
@@ -43,7 +44,7 @@ test('direct typing preserves formatting, other source blocks, save, undo and re
   await page.getByRole('button', { name: 'Preview editing tools', exact: true }).click()
   await page.getByRole('button', { name: 'Redo', exact: true }).click()
   await expect(preview(page).locator('strong')).toHaveText('stronger')
-  await expect(page.locator('.save-status')).toHaveText('Saved in this browser')
+  await expect(page.locator('.save-status')).toHaveText('Saved locally')
   await page.reload()
   await expect(preview(page).locator('h1')).toHaveText('Changed by typing')
   await expect(preview(page).locator('strong')).toHaveText('stronger')
@@ -83,7 +84,7 @@ test('nested lists, task checkboxes and blockquotes retain structure', async ({ 
   expect(result).toContain('Nested item')
   expect(result).toContain('> Quoted **thought**.')
   expect(result).toContain('\n\nAfter.\n')
-  await expect(page.locator('.save-status')).toHaveText('Saved in this browser')
+  await expect(page.locator('.save-status')).toHaveText('Saved locally')
   await page.reload()
   await expect(preview(page).locator('ul ul li')).toHaveText('Nested item')
   await expect(preview(page).locator('input[type=checkbox]').first()).toBeChecked()
@@ -95,7 +96,7 @@ test('typed markup stays literal, IME Enter keeps focus, and source changes rebu
   await heading.fill('*literal* ~~keep~~ [text] $x$ <img src=x onerror=alert(1)>')
   await heading.dispatchEvent('keydown', { key: 'Enter', isComposing: true })
   await expect(heading).toBeFocused()
-  await expect(page.locator('.save-status')).toHaveText('Saved in this browser')
+  await expect(page.locator('.save-status')).toHaveText('Saved locally')
   await page.reload()
   await expect(preview(page).locator('h1')).toHaveText('*literal* ~~keep~~ [text] $x$ <img src=x onerror=alert(1)>')
   await expect(preview(page).locator('h1 img, h1 em, h1 del, h1 .katex')).toHaveCount(0)
@@ -212,7 +213,7 @@ test('code editing preserves multiline input, fence safety, metadata and later b
   await page.getByRole('textbox', { name: 'Row 1, column 2', exact: true }).fill('Edited')
   await page.getByRole('button', { name: 'Apply changes', exact: true }).click()
   expect(await download(page)).toBe(changed.replace('| One | Two |', '| One | Edited |'))
-  await expect(page.locator('.save-status')).toHaveText('Saved in this browser')
+  await expect(page.locator('.save-status')).toHaveText('Saved locally')
   await page.reload()
   await expect(renderedCode).toHaveText('const value = 2;\nconsole.log(value);\n```\n')
 })

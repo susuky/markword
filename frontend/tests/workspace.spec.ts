@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './shared-workspace-fixture'
 
 test('editing, appearance, recovery, and downloads keep the same document', async ({ page }) => {
   const errors: string[] = []
@@ -9,7 +9,7 @@ test('editing, appearance, recovery, and downloads keep the same document', asyn
   await page.locator('.cm-content').fill(document)
   await expect(page.locator('.markdown-body h1')).toHaveText('Workspace check')
   await expect(page.locator('.document-heading')).toContainText('Workspace check')
-  await expect(page.locator('.save-status')).toHaveText('Saved in this browser')
+  await expect(page.locator('.save-status')).toHaveText('Saved locally')
   await page.reload()
   await expect(page.locator('.cm-content')).toContainText('A document worth keeping.')
 
@@ -81,6 +81,7 @@ test('mobile outline, preview, assets, and language controls remain reachable', 
   await page.emulateMedia({ reducedMotion: 'reduce' })
   await page.goto('/')
   await expect(page.locator('.cm-editor')).toBeVisible()
+  await page.locator('.cm-content').fill('# Mobile outline\n\nKeep the preview readable.')
   await page.getByRole('button', { name: 'Document outline', exact: true }).click()
   await expect(page.locator('.outline-panel')).toBeVisible()
   await page.locator('.outline-panel nav button').first().click()
@@ -102,7 +103,7 @@ test('an unavailable HTML editor offers a safe return and a working retry', asyn
   await page.goto('/')
   const draft = '# Keep this draft\n\nWriting before a connection failure.'
   await page.locator('.cm-content').fill(draft)
-  await expect(page.locator('.save-status')).toHaveText('Saved in this browser')
+  await expect(page.locator('.save-status')).toHaveText('Saved locally')
   await page.getByRole('combobox', { name: 'Document mode' }).selectOption('html-page')
   await expect(page.getByRole('heading', { name: 'The HTML editor could not be opened' })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Try again', exact: true })).toBeVisible()

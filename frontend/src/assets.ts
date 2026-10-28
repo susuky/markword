@@ -10,6 +10,7 @@ import {
   listWorkspaceDrafts,
   listWorkspaceRevisions,
   putAssets,
+  usesSharedWorkspace,
   type AssetKind,
   type StoredAsset,
 } from './storage'
@@ -488,7 +489,7 @@ export async function importProjectArchive(file: File): Promise<ProjectArchive> 
 }
 
 export async function requestPersistentStorage(): Promise<boolean> {
-  if (!navigator.storage?.persist) return false
+  if (usesSharedWorkspace || !navigator.storage?.persist) return false
   try {
     return await navigator.storage.persist()
   } catch {

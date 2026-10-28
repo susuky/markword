@@ -1,6 +1,7 @@
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown'
 import { EditorState } from '@codemirror/state'
-import { expect, test, type Locator, type Page } from '@playwright/test'
+import { expect, test } from './shared-workspace-fixture'
+import { type Locator, type Page } from '@playwright/test'
 import { tableAtPosition, tableMarkdown } from '../src/tableEditing'
 
 const original = '# 工作表\n\n| 項目 | 負責人 | 狀態 |\n| --- | --- | --- |\n| 設計稿 | 怡君 | 完成 |\n| 表格 | 柏翰 | 進行中 |\n\n保留這一段。'
@@ -58,7 +59,7 @@ test('edit a preview table, change its shape and alignment, then undo it as one 
   await expect.poll(() => source(page)).toBe(original)
   await page.keyboard.press('Control+y')
   await expect(page.locator('.markdown-body table')).toContainText('已完成')
-  await expect(page.locator('.save-status')).toHaveText('Saved in this browser')
+  await expect(page.locator('.save-status')).toHaveText('Saved locally')
   await page.reload()
   await expect(page.locator('.markdown-body table')).toContainText('已完成')
   expect(errors).toEqual([])

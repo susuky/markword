@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './shared-workspace-fixture'
 import { strToU8, unzipSync, zipSync } from 'fflate'
 
 const wordMime = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
@@ -44,7 +44,7 @@ test('Word import preserves editable content, tables, images, and downloads', as
   await expect(page.locator('.markdown-body img')).toHaveAttribute('data-asset-path', 'assets/Meeting-image-1.png')
   await expect.poll(() => page.locator('.markdown-body img').evaluate((image: HTMLImageElement) => image.complete && image.naturalWidth > 0)).toBe(true)
   await expect(page.locator('.cm-content')).toContainText('# Word meeting notes')
-  await expect(page.locator('.save-status')).toHaveText('Saved in this browser')
+  await expect(page.locator('.save-status')).toHaveText('Saved locally')
   await page.reload()
   await expect(page.locator('.markdown-body h1')).toHaveText('Word meeting notes')
   await expect(page.locator('.markdown-body img')).toHaveAttribute('src', /^blob:/)
@@ -169,7 +169,7 @@ test('Word review distinguishes style and missing-image warnings without exposin
   await expect(summary).toContainText('Unmapped Style')
   await expect(summary).toContainText('Word image warnings: 1')
   await expect(summary).not.toContainText('a:blip')
-  await expect(page.locator('.save-status')).toHaveText('Saved in this browser')
+  await expect(page.locator('.save-status')).toHaveText('Saved locally')
   await page.reload()
   await page.getByRole('button', { name: 'Import summary', exact: true }).click()
   await expect(summary).toContainText('Review.docx')

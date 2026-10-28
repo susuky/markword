@@ -1,4 +1,5 @@
-import { expect, test, type Download, type Page } from '@playwright/test'
+import { expect, test } from './shared-workspace-fixture'
+import { type Download, type Page } from '@playwright/test'
 
 async function openSettings(page: Page) {
   await page.getByRole('button', { name: 'Export', exact: true }).click()

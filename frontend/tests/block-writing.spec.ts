@@ -1,4 +1,5 @@
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test } from './shared-workspace-fixture'
+import { type Page } from '@playwright/test'
 
 const active = (page: Page) => page.locator('.markdown-body [contenteditable]:focus')
 async function single(page: Page, source = '') {
@@ -26,7 +27,7 @@ test('write from an empty page, split a paragraph, merge and keep the source hid
   await active(page).press('Backspace')
   await expect(page.locator('.markdown-body > p')).toHaveText(['First paragraph', 'Second paragraph'])
   await expect(page.locator('.pane--editor')).toBeHidden()
-  await expect(page.locator('.save-status')).toHaveText('Saved in this browser')
+  await expect(page.locator('.save-status')).toHaveText('Saved locally')
   await page.reload()
   await expect(page.locator('.markdown-body > p')).toHaveText(['First paragraph', 'Second paragraph'])
 })
@@ -53,7 +54,7 @@ test('slash menu creates headings, lists and exits an empty list item', async ({
   await page.locator('.markdown-body input[type=checkbox]').first().check()
   await expect(page.locator('.markdown-body > p').last()).toHaveText('After tasks')
   await expect(page.locator('.pane--editor')).toBeHidden()
-  await expect(page.locator('.save-status')).toHaveText('Saved in this browser')
+  await expect(page.locator('.save-status')).toHaveText('Saved locally')
   await page.reload()
   await expect(page.locator('.markdown-body input[type=checkbox]').first()).toBeChecked()
   await expect(page.locator('.markdown-body input[type=checkbox]').last()).not.toBeChecked()
@@ -118,7 +119,7 @@ test('quote, numbered list and divider keep a usable next writing position', asy
   await active(page).fill('After the divider')
   await expect(page.locator('.markdown-body hr')).toHaveCount(1)
   await expect(page.locator('.markdown-body > p').last()).toHaveText('After the divider')
-  await expect(page.locator('.save-status')).toHaveText('Saved in this browser')
+  await expect(page.locator('.save-status')).toHaveText('Saved locally')
   await page.reload()
   await expect(page.locator('.markdown-body blockquote')).toHaveText('A new quote')
   await expect(page.locator('.markdown-body ol li')).toHaveText(['One', 'Two'])
@@ -159,7 +160,7 @@ test('header add uses the source cursor between sections instead of the previous
   await page.getByRole('button', { name: 'Preview editing tools', exact: true }).click()
   await page.getByRole('button', { name: 'Redo', exact: true }).click()
   await expect(page.locator('.markdown-body h2')).toHaveText(['Before risk', 'Risk Management'])
-  await expect(page.locator('.save-status')).toHaveText('Saved in this browser')
+  await expect(page.locator('.save-status')).toHaveText('Saved locally')
   await page.reload()
   await expect(page.locator('.markdown-body h2')).toHaveText(['Before risk', 'Risk Management'])
 })
@@ -222,7 +223,7 @@ for (const { name, marker, next, loose } of [
     await page.getByRole('button', { name: 'Preview editing tools', exact: true }).click()
     await page.getByRole('button', { name: 'Redo', exact: true }).click()
     await expect(items.nth(1)).toContainText('新策略')
-    await expect(page.locator('.save-status')).toHaveText('Saved in this browser')
+    await expect(page.locator('.save-status')).toHaveText('Saved locally')
     await page.reload()
     await expect(items.nth(1)).toContainText('新策略')
     await expect(items.nth(1).locator('ul ul > li')).toHaveText('中文孫項')

@@ -1,4 +1,5 @@
-import { expect, test, type Download, type Page } from '@playwright/test'
+import { expect, test } from './shared-workspace-fixture'
+import { type Download, type Page } from '@playwright/test'
 import { strToU8, zipSync } from 'fflate'
 
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jF9sAAAAASUVORK5CYII=', 'base64')
@@ -63,7 +64,7 @@ test('HTML files convert content and embedded images without executing markup, a
   expect(errors).toEqual([])
 })
 
-test('portable HTML restores exact Markdown, formulas, diagrams, and attachments in a clean browser and remaps collisions', async ({ page, browser }) => {
+test('portable HTML restores exact Markdown, formulas, diagrams, and attachments across browsers sharing an asset library', async ({ page, browser }) => {
   const markdown = '# Round trip\n\n![Photo][picture]\n\n[picture]: ./assets/photo.png "Title"\n\n[Attachment](./assets/notes.txt)\n\n@[audio](./assets/voice.wav)\n\nFormula $x^2$ and a footnote[^photo].\n\n[^photo]: ![Footnote image](./assets/photo.png)\n\n~~~mermaid\nflowchart LR\nA-->B\n~~~~\n\n```html\n</script><script>window.htmlAttack=true</script>\n![literal](./assets/photo.png)\n```\n'
   await page.goto('/')
   await expect(page.locator('.cm-content')).toBeEditable()
@@ -77,13 +78,18 @@ test('portable HTML restores exact Markdown, formulas, diagrams, and attachments
   const html = await exportHtml(page)
   expect(html.toString()).toContain('id="markword-source"')
   expect(html.toString()).toContain('\\u003c/script>')
+  const remapped = (suffix: number) => markdown
+    .replace('[picture]: ./assets/photo.png', `[picture]: ./assets/photo-${suffix}.png`)
+    .replace('[Attachment](./assets/notes.txt)', `[Attachment](./assets/notes-${suffix}.txt)`)
+    .replace('@[audio](./assets/voice.wav)', `@[audio](./assets/voice-${suffix}.wav)`)
+    .replace('[^photo]: ![Footnote image](./assets/photo.png)', `[^photo]: ![Footnote image](./assets/photo-${suffix}.png)`)
   const clean = await browser.newContext()
   try {
     const restored = await clean.newPage()
     await restored.goto(page.url())
     await expect(restored.locator('.cm-content')).toBeEditable()
     await restored.locator('input[type=file]').first().setInputFiles({ name: 'Round trip.html', mimeType: 'text/html', buffer: html })
-    await expect.poll(() => source(restored)).toBe(markdown)
+    await expect.poll(() => source(restored)).toBe(remapped(2))
     await expect(restored.getByRole('combobox', { name: 'Document mode' })).toHaveValue('markdown')
     await expect(restored.locator('.markdown-body .katex')).toHaveCount(1)
     await expect(restored.locator('.markdown-body .mermaid-image')).toHaveCount(1)
@@ -95,18 +101,14 @@ test('portable HTML restores exact Markdown, formulas, diagrams, and attachments
       const { listAssets } = await import(/* @vite-ignore */ module)
       return (await listAssets()).map((asset: { path: string; blob: Blob }) => ({ path: asset.path, size: asset.blob.size }))
     })
-    expect(assets.map((asset: { path: string }) => asset.path).sort()).toEqual(['assets/notes.txt', 'assets/photo.png', 'assets/voice.wav'])
+    expect(assets.map((asset: { path: string }) => asset.path).sort()).toEqual(['assets/notes-2.txt', 'assets/notes.txt', 'assets/photo-2.png', 'assets/photo.png', 'assets/voice-2.wav', 'assets/voice.wav'])
     expect(await restored.evaluate(() => Reflect.get(window, 'htmlAttack'))).toBeUndefined()
   } finally { await clean.close() }
   await page.locator('input[type=file]').first().setInputFiles({ name: 'Round trip.html', mimeType: 'text/html', buffer: html })
-  await expect.poll(() => source(page)).toBe(markdown
-    .replace('[picture]: ./assets/photo.png', '[picture]: ./assets/photo-2.png')
-    .replace('[Attachment](./assets/notes.txt)', '[Attachment](./assets/notes-2.txt)')
-    .replace('@[audio](./assets/voice.wav)', '@[audio](./assets/voice-2.wav)')
-    .replace('[^photo]: ![Footnote image](./assets/photo.png)', '[^photo]: ![Footnote image](./assets/photo-2.png)'))
+  await expect.poll(() => source(page)).toBe(remapped(3))
   for (const image of await page.locator('.markdown-body img[data-asset-path]').all()) await expect(image).toHaveClass(/is-resolved/)
   await page.getByRole('button', { name: 'Manage local assets', exact: true }).click()
-  await expect(page.locator('.asset-item')).toHaveCount(6)
+  await expect(page.locator('.asset-item')).toHaveCount(9)
 })
 
 for (const mode of ['text', 'mermaid'] as const) {
@@ -163,7 +165,8 @@ test('HTML opens through the native picker and saving selects a Markdown target'
   await page.getByRole('button', { name: 'Open document or project', exact: true }).click()
   await expect(page.locator('.markdown-body h1')).toHaveText('Picked HTML')
   expect(await page.evaluate(() => Reflect.get(window, 'htmlPickerOptions').types[0].accept['text/html'])).toEqual(['.html', '.htm'])
-  await page.getByRole('button', { name: 'Save file', exact: true }).click()
+  await page.getByRole('button', { name: 'Export', exact: true }).click()
+  await page.getByRole('button', { name: 'Save as… Choose a file name and location', exact: true }).click()
   await expect.poll(() => page.evaluate(() => Reflect.get(window, 'htmlSaveOptions')?.suggestedName)).toBe('Picked HTML.md')
   expect(await source(page)).toBe('# Picked HTML')
 })
@@ -200,7 +203,7 @@ test('HTML import details survive reload and follow the imported document', asyn
   await page.getByRole('button', { name: 'Close import summary', exact: true }).click()
   const trigger = page.getByRole('button', { name: 'Import summary', exact: true })
   await expect(trigger).toBeFocused()
-  await expect(page.locator('.save-status')).toHaveText('Saved in this browser')
+  await expect(page.locator('.save-status')).toHaveText('Saved locally')
   await page.reload()
   await trigger.click()
   await expect(summary).toContainText('Chart from the original')

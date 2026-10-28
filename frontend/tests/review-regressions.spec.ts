@@ -1,4 +1,5 @@
-import { expect, test, type Download } from '@playwright/test'
+import { expect, test } from './shared-workspace-fixture'
+import { type Download } from '@playwright/test'
 import { strToU8, Zip, ZipDeflate, ZipPassThrough, zipSync } from 'fflate'
 
 async function downloadText(download: Download) {
@@ -109,22 +110,22 @@ test('stale tabs cannot overwrite a newer saved draft', async ({ page, context }
   page.on('pageerror', (error) => errors.push(error.message))
   await page.goto('/')
   await page.locator('.cm-content').fill('# Shared draft')
-  await expect(page.locator('.save-status')).toHaveText('Saved in this browser')
+  await expect(page.locator('.save-status')).toHaveText('Saved locally')
   const stale = await context.newPage()
   stale.on('pageerror', (error) => errors.push(error.message))
   await stale.goto('/')
   await expect(stale.locator('.cm-content')).toHaveText('# Shared draft')
-  await expect(stale.locator('.save-status')).toHaveText('Saved in this browser')
+  await expect(stale.locator('.save-status')).toHaveText('Saved locally')
   await page.locator('.cm-content').fill('# Newer saved draft')
-  await expect(page.locator('.save-status')).toHaveText('Saved in this browser')
+  await expect(page.locator('.save-status')).toHaveText('Saved locally')
   await stale.locator('.cm-content').fill('# Keep this separate copy')
-  await expect(stale.locator('.save-status')).toContainText('Changed in another tab')
+  await expect(stale.locator('.save-status')).toContainText('Changed elsewhere')
   await stale.reload()
   await expect(stale.locator('.cm-content')).toHaveText('# Newer saved draft')
   expect(errors).toEqual([])
   // Verify the conflict message is readable on a phone too.
   await page.locator('.cm-content').fill('# Latest version')
-  await expect(page.locator('.save-status')).toHaveText('Saved in this browser')
+  await expect(page.locator('.save-status')).toHaveText('Saved locally')
   await stale.setViewportSize({ width: 390, height: 844 })
   await stale.getByRole('button', { name: 'Switch to Traditional Chinese', exact: true }).click()
   await stale.locator('.cm-content').fill('# 另一個分頁的內容')
@@ -173,6 +174,7 @@ test('plain text project imports preserve literal asset paths', async ({ page })
 
 test('ZIP validation bounds actual output and accepts stored and streamed archives', async ({ page }) => {
   await page.goto('/')
+  await page.locator('.cm-content').fill('# Keep this draft after an invalid archive')
   const valid = Buffer.from(zipSync({ '中文.md': strToU8('# Valid') }, { level: 0 }))
   // A small ZIP64 fixture exercises 64-bit directory sizes and local offsets
   // without allocating a multi-gigabyte archive.
@@ -264,6 +266,7 @@ test('Word export does not send an HTML or PDF layout', async ({ page }) => {
     await route.fulfill({ body: 'test document', headers: { 'Content-Disposition': 'attachment; filename="test.docx"' } })
   })
   await page.goto('/')
+  await page.locator('.cm-content').fill('# Word export\n\nKeep this source.')
   await page.getByRole('button', { name: 'Export', exact: true }).click()
   await expect(page.getByText('Layouts apply to HTML and PDF', { exact: true })).toBeVisible()
   await page.locator('.export-style-picker summary').click()

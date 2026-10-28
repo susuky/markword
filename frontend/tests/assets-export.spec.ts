@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './shared-workspace-fixture'
 import { strFromU8, unzipSync } from 'fflate'
 
 test('asset references follow Markdown links, reference definitions, and media while excluding examples', async ({ page }) => {

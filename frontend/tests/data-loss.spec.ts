@@ -1,16 +1,12 @@
-import { expect, test, type Download, type Page } from '@playwright/test'
+import { expect, test } from './shared-workspace-fixture'
+import { type Download, type Page } from '@playwright/test'
 import { strToU8, zipSync } from 'fflate'
 
 declare global {
   interface Window {
     dataLossHarness: {
-      failWrites?: boolean
       releaseRead?: () => void
-      releaseDraft?: () => void
       pickerCalls?: number
-      failRevisionWrites?: boolean
-      holdSnapshot?: boolean
-      releaseSnapshot?: () => void
     }
   }
 }
@@ -46,22 +42,20 @@ test('updating saves the pending debounce before reloading', async ({ page }) =>
 test('failed update saves preserve edits, allow backups, and can be retried', async ({ page }, testInfo) => {
   const errors: string[] = []
   page.on('pageerror', (error) => errors.push(error.message))
-  await page.addInitScript(() => {
-    window.dataLossHarness = { failWrites: false }
-    const put = IDBObjectStore.prototype.put
-    IDBObjectStore.prototype.put = function (...args) {
-      if (this.name === 'drafts' && window.dataLossHarness.failWrites) throw new DOMException('Storage full', 'QuotaExceededError')
-      return put.apply(this, args)
-    }
+  let failWrites = false
+  await page.route('**/api/workspace/drafts/**', async (route) => {
+    if (failWrites && route.request().method() === 'POST') {
+      await route.fulfill({ status: 507, json: { detail: 'Workspace storage is full' } })
+    } else await route.continue()
   })
   await page.goto('/')
-  await expect(page.locator('.save-status')).toHaveText('Saved in this browser')
-  await page.evaluate(() => { window.dataLossHarness.failWrites = true })
+  await expect(page.locator('.save-status')).toHaveText('Saved locally')
+  failWrites = true
   await page.locator('.cm-content').fill('# Keep my unsaved work')
   await notifyUpdate(page)
   await updateDialog(page).getByRole('button', { name: 'Save and update', exact: true }).click()
   await expect(updateDialog(page).getByRole('alert')).toContainText('could not be saved')
-  await expect(page.locator('.save-status')).toContainText('Draft not saved')
+  await expect(page.locator('.save-status')).toHaveText('Could not save. Try again.')
   await expect(page.locator('.cm-content')).toHaveText('# Keep my unsaved work')
   const backup = page.waitForEvent('download')
   await updateDialog(page).getByRole('button', { name: 'Download source', exact: true }).click()
@@ -70,7 +64,7 @@ test('failed update saves preserve edits, allow backups, and can be retried', as
   await page.screenshot({ path: testInfo.outputPath('update-save-failed-desktop.png') })
   await updateDialog(page).getByRole('button', { name: 'Later', exact: true }).click()
   await page.locator('.cm-content').fill('# Newer work after the failed update')
-  await page.evaluate(() => { window.dataLossHarness.failWrites = false })
+  failWrites = false
   await notifyUpdate(page)
   const reloaded = page.waitForEvent('load')
   await updateDialog(page).getByRole('button', { name: 'Save and update', exact: true }).click()
@@ -82,12 +76,12 @@ test('failed update saves preserve edits, allow backups, and can be retried', as
 test('a conflicting update keeps both tab copies and offers a project backup on mobile', async ({ page, context }, testInfo) => {
   await page.goto('/')
   await page.locator('.cm-content').fill('# Shared starting point')
-  await expect(page.locator('.save-status')).toHaveText('Saved in this browser')
+  await expect(page.locator('.save-status')).toHaveText('Saved locally')
   const stale = await context.newPage()
   await stale.goto('/')
-  await expect(stale.locator('.save-status')).toHaveText('Saved in this browser')
+  await expect(stale.locator('.save-status')).toHaveText('Saved locally')
   await page.locator('.cm-content').fill('# Newer saved copy')
-  await expect(page.locator('.save-status')).toHaveText('Saved in this browser')
+  await expect(page.locator('.save-status')).toHaveText('Saved locally')
   await stale.setViewportSize({ width: 390, height: 844 })
   await stale.getByRole('button', { name: 'Switch to Traditional Chinese', exact: true }).click()
   await stale.locator('.cm-content').fill('# 保留此分頁的修改')
@@ -142,7 +136,7 @@ for (const file of slowFiles) {
     await page.locator('.cm-content').fill(original)
     await page.locator('input[type=file]').first().setInputFiles(file)
     await expect(page.locator('.cm-content')).toHaveText(imported)
-    await expect(page.locator('.save-status')).toHaveText('Saved in this browser')
+    await expect(page.locator('.save-status')).toHaveText('Saved locally')
     await page.reload()
     await expect(page.locator('.cm-content')).toHaveText(imported)
     await page.locator('.header-actions').getByRole('button', { name: 'Documents', exact: true }).click()
@@ -175,7 +169,7 @@ for (const file of slowFiles) {
     await expect(page.locator('.toast')).toContainText('Your document changed while opening this file')
     await expect(page.locator('.cm-content')).toHaveText('# Keep these edits')
     await expect(page.getByRole('combobox', { name: 'Document mode' })).toHaveValue('text')
-    await expect(page.locator('.save-status')).toHaveText('Saved in this browser')
+    await expect(page.locator('.save-status')).toHaveText('Saved locally')
     await page.reload()
     await expect(page.locator('.cm-content')).toHaveText('# Keep these edits')
     await expect(page.getByRole('combobox', { name: 'Document mode' })).toHaveValue('text')
@@ -183,20 +177,19 @@ for (const file of slowFiles) {
 }
 
 test('a failed pre-open backup keeps the current document and can be retried', async ({ page }) => {
-  await page.addInitScript(() => {
-    window.dataLossHarness = { failRevisionWrites: false }
-    const add = IDBObjectStore.prototype.add
-    IDBObjectStore.prototype.add = function (...args) {
-      if (this.name === 'revisions' && window.dataLossHarness.failRevisionWrites) throw new DOMException('Storage full', 'QuotaExceededError')
-      return add.apply(this, args)
-    }
+  let failRevisionWrites = false
+  await page.route('**/api/workspace/revisions', async (route) => {
+    if (failRevisionWrites && route.request().method() === 'POST') {
+      await route.fulfill({ status: 507, json: { detail: 'Workspace storage is full' } })
+    } else await route.continue()
   })
   await page.goto('/')
   await page.locator('.cm-content').fill('# Keep before opening')
-  await page.evaluate(() => { window.dataLossHarness.failRevisionWrites = true })
+  failRevisionWrites = true
   await page.locator('input[type=file]').first().setInputFiles(slowFiles[0])
   await expect(page.locator('.toast')).toContainText('It has not been replaced')
   await expect(page.locator('.cm-content')).toHaveText('# Keep before opening')
+  failRevisionWrites = false
   await page.reload()
   await expect(page.locator('.cm-content')).toHaveText('# Keep before opening')
   await page.locator('input[type=file]').first().setInputFiles(slowFiles[0])
@@ -206,12 +199,12 @@ test('a failed pre-open backup keeps the current document and can be retried', a
 test('a conflicting pre-open backup does not replace either tab copy', async ({ page, context }) => {
   await page.goto('/')
   await page.locator('.cm-content').fill('# Shared copy')
-  await expect(page.locator('.save-status')).toHaveText('Saved in this browser')
+  await expect(page.locator('.save-status')).toHaveText('Saved locally')
   const stale = await context.newPage()
   await stale.goto('/')
   await expect(stale.locator('.cm-content')).toHaveText('# Shared copy')
   await page.locator('.cm-content').fill('# Newer copy in another tab')
-  await expect(page.locator('.save-status')).toHaveText('Saved in this browser')
+  await expect(page.locator('.save-status')).toHaveText('Saved locally')
   await stale.locator('.cm-content').fill('# Unsaved stale copy')
   await stale.locator('input[type=file]').first().setInputFiles(slowFiles[0])
   await expect(stale.locator('.toast')).toContainText('It has not been replaced')
@@ -221,31 +214,25 @@ test('a conflicting pre-open backup does not replace either tab copy', async ({ 
 })
 
 test('edits made while the pre-open snapshot commits are preserved', async ({ page }) => {
-  await page.addInitScript(() => {
-    window.dataLossHarness = { holdSnapshot: true }
-    const add = IDBObjectStore.prototype.add
-    IDBObjectStore.prototype.add = function (...args) {
-      const result = add.apply(this, args)
-      if (this.name === 'revisions' && window.dataLossHarness.holdSnapshot) {
-        window.dataLossHarness.holdSnapshot = false
-        const transaction = this.transaction
-        transaction.addEventListener('complete', (event) => {
-          event.stopImmediatePropagation()
-          window.dataLossHarness.releaseSnapshot = () => transaction.dispatchEvent(new Event('complete'))
-        }, { once: true })
-      }
-      return result
-    }
+  let releaseSnapshot: (() => void) | undefined
+  let holdSnapshot = true
+  await page.route('**/api/workspace/revisions', async (route) => {
+    if (route.request().method() === 'POST' && holdSnapshot) {
+      holdSnapshot = false
+      const response = await route.fetch()
+      await new Promise<void>((resolve) => { releaseSnapshot = resolve })
+      await route.fulfill({ response })
+    } else await route.continue()
   })
   await page.goto('/')
   await page.locator('.cm-content').fill('# Before snapshot')
   await page.locator('input[type=file]').first().setInputFiles(slowFiles[0])
-  await expect.poll(() => page.evaluate(() => Boolean(window.dataLossHarness.releaseSnapshot))).toBe(true)
+  await expect.poll(() => Boolean(releaseSnapshot)).toBe(true)
   await page.locator('.cm-content').fill('# Edited while backing up')
-  await page.evaluate(() => window.dataLossHarness.releaseSnapshot?.())
+  releaseSnapshot?.()
   await expect(page.locator('.toast')).toContainText('Your document changed while opening this file')
   await expect(page.locator('.cm-content')).toHaveText('# Edited while backing up')
-  await expect(page.locator('.save-status')).toHaveText('Saved in this browser')
+  await expect(page.locator('.save-status')).toHaveText('Saved locally')
   await page.reload()
   await expect(page.locator('.cm-content')).toHaveText('# Edited while backing up')
 })
@@ -266,28 +253,29 @@ test('updates wait for a pending import to finish', async ({ page }) => {
 })
 
 test('draft loading blocks editing and file shortcuts until hydration completes', async ({ page }) => {
+  let releaseDraft: (() => void) | undefined
+  let draftBlocked = false
+  const draftReady = new Promise<void>((resolve) => { releaseDraft = resolve })
+  await page.route('**/api/workspace/drafts', async (route) => {
+    if (route.request().method() === 'GET') {
+      draftBlocked = true
+      await draftReady
+    }
+    await route.continue()
+  })
   await page.addInitScript(() => {
     window.dataLossHarness = { pickerCalls: 0 }
     Object.defineProperty(window, 'showOpenFilePicker', { value: async () => { window.dataLossHarness.pickerCalls! += 1; return [] } })
-    const open = indexedDB.open.bind(indexedDB)
-    indexedDB.open = (...args) => {
-      const request = open(...args)
-      request.addEventListener('success', (event) => {
-        event.stopImmediatePropagation()
-        window.dataLossHarness.releaseDraft = () => request.dispatchEvent(new Event('success'))
-      }, { once: true })
-      return request
-    }
   })
   await page.goto('/')
-  await expect.poll(() => page.evaluate(() => Boolean(window.dataLossHarness.releaseDraft))).toBe(true)
+  await expect.poll(() => draftBlocked).toBe(true)
   await expect(page.getByText('Opening documents…', { exact: true })).toBeVisible()
   await expect(page.locator('.cm-content')).toHaveCount(0)
   await page.evaluate(() => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'o', ctrlKey: true, bubbles: true, cancelable: true })))
   expect(await page.evaluate(() => window.dataLossHarness.pickerCalls)).toBe(0)
   await notifyUpdate(page)
   await expect(updateDialog(page)).toHaveCount(0)
-  await page.evaluate(() => window.dataLossHarness.releaseDraft?.())
+  releaseDraft?.()
   await expect(updateDialog(page)).toBeVisible()
   await updateDialog(page).getByRole('button', { name: 'Later', exact: true }).click()
   await expect(page.locator('.cm-content')).toBeVisible()

@@ -14,7 +14,7 @@ import { memo, useEffect, useMemo, useState } from 'react'
 import { formatBytes } from '../assets'
 import { useI18n } from '../i18n'
 import { Modal } from './Modal'
-import type { AssetKind, StoredAsset } from '../storage'
+import { usesSharedWorkspace, type AssetKind, type StoredAsset } from '../storage'
 
 interface AssetPanelProps {
   open: boolean
@@ -73,7 +73,7 @@ export function AssetPanel({
   const totalBytes = useMemo(() => assets.reduce((total, asset) => total + asset.size, 0), [assets])
 
   useEffect(() => {
-    if (!open) return
+    if (!open || usesSharedWorkspace) return
     let cancelled = false
     void Promise.all([
       navigator.storage?.estimate?.() ?? Promise.resolve({}),
@@ -93,14 +93,14 @@ export function AssetPanel({
         <header>
           <div>
             <span className="asset-panel__icon" aria-hidden="true"><HardDrive size={19} /></span>
-            <span><h2 id="asset-panel-title">{t('Local assets')}</h2><p>{t('Stored only in this browser')}</p></span>
+            <span><h2 id="asset-panel-title">{t('Local assets')}</h2>{!usesSharedWorkspace ? <p>{t('Stored only in this browser')}</p> : null}</span>
           </div>
           <button type="button" onClick={onClose} aria-label={t('Close local assets')}><X size={18} /></button>
         </header>
 
         <div className="asset-panel__summary">
           <span><strong>{assets.length.toLocaleString(locale)}</strong>{t('assets')}</span>
-          <span><strong>{formatBytes(totalBytes, locale)}</strong>{t('in this browser')}</span>
+          <span><strong>{formatBytes(totalBytes, locale)}</strong>{t(usesSharedWorkspace ? 'Total size' : 'in this browser')}</span>
           {storage ? <span><strong>{storage.quota ? formatBytes(storage.usage, locale) : '—'}</strong>{t(storage.persistent ? 'Browser storage protected' : 'Back up before clearing browser data')}</span> : null}
         </div>
 

@@ -150,6 +150,7 @@ markword.service
 frontend/node_modules/
 frontend/dist/
 frontend/.vite/
+/data/
 
 # Local environment overrides
 .env.*

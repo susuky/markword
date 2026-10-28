@@ -1,4 +1,5 @@
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test } from './shared-workspace-fixture'
+import { type Page } from '@playwright/test'
 
 const openSettings = (page: Page) => page.getByRole('button', { name: 'Keyboard shortcuts', exact: true }).click()
 const record = async (page: Page, action: string, keys: string) => {

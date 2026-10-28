@@ -9,8 +9,10 @@ services:
     environment:
       MARKWORD_FRONTEND_DIR: /app/frontend/dist
       MARKWORD_EXPORT_DIR: /app/exports
+      MARKWORD_DATABASE_PATH: /app/data/markword.sqlite3
     volumes:
       - markword-exports:/app/exports
+      - markword-data:/app/data
     healthcheck:
       test:
         - CMD
@@ -24,3 +26,4 @@ services:
 
 volumes:
   markword-exports:
+  markword-data:

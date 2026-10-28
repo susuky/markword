@@ -1,4 +1,5 @@
-import { expect, test, type Locator, type Page } from '@playwright/test'
+import { expect, test } from './shared-workspace-fixture'
+import { type Locator, type Page } from '@playwright/test'
 
 async function start(page: Page, source: string) {
   await page.goto('/')
@@ -41,7 +42,7 @@ test('partial formatting preserves both unselected sides and shares undo with th
   await expect(paragraph.locator('strong')).toHaveText('Before middle after')
   await page.keyboard.press('Control+Shift+z')
   await expect(paragraph.locator('strong')).toHaveText(['Before', 'after'])
-  await expect(page.locator('.save-status')).toHaveText('Saved in this browser')
+  await expect(page.locator('.save-status')).toHaveText('Saved locally')
   await page.reload()
   await expect(paragraph.locator('strong')).toHaveText(['Before', 'after'])
 })
@@ -100,7 +101,7 @@ test('switching documents cannot discard an unfinished link address', async ({ p
   await page.getByLabel('Link address', { exact: true }).fill('https://example.com/unfinished')
   await page.getByRole('button', { name: 'Documents', exact: true }).first().click()
   await page.getByRole('button', { name: 'New document', exact: true }).click()
-  await expect(page.getByRole('alert')).toContainText('Apply or cancel the link edit')
+  await expect(page.locator('.toast')).toContainText('Apply or cancel the link edit')
   await page.getByRole('button', { name: 'Close documents', exact: true }).click()
   await expect(page.getByLabel('Link address', { exact: true })).toHaveValue('https://example.com/unfinished')
   await page.getByRole('button', { name: 'Cancel', exact: true }).click()
@@ -149,7 +150,7 @@ test('clicking inline code edits its text, preserves literal backticks, and save
   await expect(codes).toHaveText(['on_tick_修改', 'on_bar_update_修改', 'on_bar_close'])
   await page.keyboard.press('Control+Shift+z')
   await expect(codes.nth(2)).toHaveText('on_bar_close_新增`值')
-  await expect(page.locator('.save-status')).toHaveText('Saved in this browser')
+  await expect(page.locator('.save-status')).toHaveText('Saved locally')
   await page.reload()
   await expect(codes).toHaveText(['on_tick_修改', 'on_bar_update_修改', 'on_bar_close_新增`值'])
   await expect(page.locator('.markdown-body li li')).toHaveText('子項目保留。')
