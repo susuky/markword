@@ -1,6 +1,7 @@
 import { translate } from './i18n'
 import { DOCUMENT_MODES, normalizeDocumentMode } from './documentMode'
 import type { DocumentMode } from './types'
+import type { ImportSummary } from './importSummary'
 import { unzipBounded } from './zip'
 import { markdownLanguage } from '@codemirror/lang-markdown'
 import { normalizeReference, unescapeAll } from 'markdown-it/lib/common/utils.mjs'
@@ -50,6 +51,7 @@ export interface ProjectArchive {
   markdown: string
   documentName: string
   assets: StoredAsset[]
+  importSummary?: ImportSummary
 }
 
 function createId(): string {
@@ -149,6 +151,13 @@ export function normalizeAssetPath(value: string | null | undefined): string | n
   return parts.join('/')
 }
 
+export function normalizeAssetUrl(value: string | null | undefined): string | null {
+  if (!value) return null
+  let url = value.trim()
+  if (url.startsWith('<') && url.endsWith('>')) url = url.slice(1, -1)
+  return normalizeAssetPath(url.split(/[?#]/, 1)[0])
+}
+
 function strictEncodeURIComponent(value: string): string {
   return encodeURIComponent(value).replace(/[!'()*]/g, (character) => `%${character.charCodeAt(0).toString(16).toUpperCase()}`)
 }
@@ -212,7 +221,7 @@ function localAssetReferences(markdown: string): AssetReference[] {
     if (name !== 'Image' && name !== 'Link' && name !== 'LinkReference') return
     const url = node.getChild('URL')
     const label = node.getChild('LinkLabel')
-    const path = url ? normalizeAssetPath(unescapeAll(markdown.slice(url.from, url.to))) : null
+    const path = url ? normalizeAssetUrl(unescapeAll(markdown.slice(url.from, url.to))) : null
     if (name === 'LinkReference') {
       if (label) {
         const key = normalizeReference(markdown.slice(label.from + 1, label.to - 1))
@@ -259,9 +268,9 @@ function requireReferencedAssets(paths: Iterable<string>, assets: ReadonlyMap<st
   }
 }
 
-export async function importLocalAssets(files: readonly File[]): Promise<StoredAsset[]> {
+export async function importLocalAssets(files: readonly File[], reservedPaths: ReadonlySet<string> = new Set()): Promise<StoredAsset[]> {
   const existing = await listAssets()
-  const usedPaths = new Set(existing.map((asset) => asset.path.toLocaleLowerCase()))
+  const usedPaths = new Set([...existing.map((asset) => asset.path.toLocaleLowerCase()), ...reservedPaths])
   const now = Date.now()
   const assets = files.map((file, index): StoredAsset => {
     if (file.size > MAX_LOCAL_ASSET_BYTES) {
@@ -398,18 +407,48 @@ export async function createProjectArchive(markdown: string, title: string, asse
   return new Blob([archive], { type: PROJECT_ARCHIVE_MIME })
 }
 
-export function remapAssetPaths(markdown: string, replacements: ReadonlyMap<string, string>): string {
+function resolveArchivePath(value: string, directory = ''): string | null {
+  if (!value || /^[\\/]|^[a-z][a-z0-9+.-]*:/i.test(value) || value.includes('\\') || value.includes('\0')) return null
+  const parts = directory.split('/').filter(Boolean)
+  for (const part of value.split('/')) {
+    if (!part || part === '.') continue
+    if (part === '..') {
+      if (!parts.length) return null
+      parts.pop()
+    } else parts.push(part)
+  }
+  return parts.join('/') || null
+}
+
+function resolveArchiveUrl(value: string, directory: string): string | null {
+  const path = value.split(/[?#]/, 1)[0]
+  try {
+    return path.startsWith('/assets/') ? normalizeAssetPath(path)
+      : resolveArchivePath(decodeURIComponent(path), directory)
+  } catch { return null }
+}
+
+export function remapAssetPaths(markdown: string, replacements: ReadonlyMap<string, string>, archiveDirectory?: string): string {
   if (!replacements.size) return markdown
   // Exact URL ranges cover reference links and media without rewriting code.
   const edits: Array<{ from: number; to: number; path: string }> = []
   parseAssetMarkdown(markdown).iterate({ enter(node) {
     if (node.name !== 'URL') return
-    const original = normalizeAssetPath(unescapeAll(markdown.slice(node.from, node.to)))
+    const rawUrl = unescapeAll(markdown.slice(node.from, node.to))
+    const url = rawUrl.startsWith('<') && rawUrl.endsWith('>') ? rawUrl.slice(1, -1) : rawUrl
+    const end = url.search(/[?#]/)
+    const suffix = end < 0 ? '' : url.slice(end).replace(/[\s<>()\\]/g, strictEncodeURIComponent)
+    let original = normalizeAssetUrl(url)
+    if (archiveDirectory !== undefined) {
+      original = resolveArchiveUrl(url, archiveDirectory)
+    }
     const replacement = original && replacements.get(original)
-    if (replacement && replacement !== original) edits.push({ from: node.from, to: node.to, path: replacement })
+    if (replacement && normalizeAssetUrl(url) !== replacement) {
+      edits.push({ from: node.from, to: node.to, path: assetMarkdownUrl(replacement) + suffix })
+    }
   } })
   for (const { from, to, path } of edits.sort((a, b) => b.from - a.from)) {
-    markdown = markdown.slice(0, from) + assetMarkdownUrl(path) + markdown.slice(to)
+    markdown = markdown.slice(0, from) + path + markdown.slice(to)
   }
   return markdown
 }
@@ -420,11 +459,25 @@ export async function importProjectArchive(file: File): Promise<ProjectArchive> 
     import('fflate'),
     file.arrayBuffer(),
   ])
-  const entries = await unzipBounded(new Uint8Array(archive), {
+  const unpacked = await unzipBounded(new Uint8Array(archive), {
     maxTotalBytes: MAX_PROJECT_UNPACKED_BYTES,
     maxEntryBytes: MAX_LOCAL_ASSET_BYTES,
     maxEntries: MAX_PROJECT_ENTRIES,
   })
+  const files: Record<string, Uint8Array> = Object.create(null)
+  for (const [rawName, bytes] of Object.entries(unpacked)) {
+    const name = resolveArchivePath(rawName)
+    if (!name || rawName.endsWith('/') || name.split('/').some((part) => part === '__MACOSX' || part === '.DS_Store')) continue
+    if (Object.hasOwn(files, name)) throw new Error(translate('Archive is damaged or uses an unsupported format'))
+    files[name] = bytes
+  }
+  const names = Object.keys(files)
+  // ZIP tools commonly wrap the entire project in one or more folders.
+  let directory = names[0]?.slice(0, names[0].lastIndexOf('/') + 1) ?? ''
+  while (directory && names.some((name) => !name.startsWith(directory))) {
+    directory = directory.slice(0, directory.slice(0, -1).lastIndexOf('/') + 1)
+  }
+  const entries = Object.fromEntries(names.map((name) => [name.slice(directory.length), files[name]]))
 
   let manifest: ProjectManifest | null = null
   if (entries[PROJECT_MANIFEST]) {
@@ -435,9 +488,15 @@ export async function importProjectArchive(file: File): Promise<ProjectArchive> 
       throw new Error(translate('Project manifest is invalid'))
     }
   }
-  const markdownNames = Object.keys(entries).filter((name) => !name.includes('/') && /\.(?:md|markdown)$/i.test(name))
-  const documentName = manifest?.document && entries[manifest.document] ? manifest.document : markdownNames[0]
-  if (!documentName) throw new Error(translate('Project archive does not contain a Markdown document'))
+  const entryNames = Object.keys(entries)
+  const markdownNames = entryNames.filter((name) => /\.(?:md|markdown)$/i.test(name))
+  const htmlNames = entryNames.filter((name) => /\.html?$/i.test(name))
+  const manifestDocument = manifest ? resolveArchivePath(manifest.document) : null
+  const documentName = manifestDocument && Object.hasOwn(entries, manifestDocument) ? manifestDocument
+    : (!manifest ? htmlNames.find((name) => /^index\.html?$/i.test(name)) : undefined)
+      ?? markdownNames.find((name) => !name.includes('/')) ?? markdownNames[0]
+      ?? (!manifest ? htmlNames.find((name) => !name.includes('/')) ?? htmlNames[0] : undefined)
+  if (!documentName) throw new Error(translate('Project archive does not contain a Markdown or HTML document'))
 
   const existing = await listAssets()
   const usedPaths = new Set(existing.map((asset) => asset.path.toLocaleLowerCase()))
@@ -453,14 +512,15 @@ export async function importProjectArchive(file: File): Promise<ProjectArchive> 
   const now = Date.now()
   const importedPaths = new Set<string>()
   const importedAssets = Object.entries(entries).flatMap(([rawPath, bytes], index): StoredAsset[] => {
-    const originalPath = normalizeAssetPath(rawPath)
-    if (!originalPath || rawPath.endsWith('/')) return []
+    if (rawPath === documentName || rawPath === PROJECT_MANIFEST) return []
+    const originalPath = manifest ? normalizeAssetPath(rawPath) : rawPath
+    if (!originalPath) return []
     if (importedPaths.has(originalPath)) throw new Error(translate('Archive is damaged or uses an unsupported format'))
     importedPaths.add(originalPath)
-    const path = usedPaths.has(originalPath.toLocaleLowerCase())
+    const path = normalizeAssetPath(originalPath) !== originalPath || usedPaths.has(originalPath.toLocaleLowerCase())
       ? uniqueAssetPath(originalPath.split('/').at(-1)!, reservedPaths) : originalPath
     usedPaths.add(path.toLocaleLowerCase())
-    if (path !== originalPath) replacements.set(originalPath, path)
+    if (!manifest || path !== originalPath) replacements.set(originalPath, path)
     const metadata = manifestAssets.get(originalPath)
     const name = safeFilename(typeof metadata?.name === 'string' ? metadata.name : originalPath.split('/').at(-1) ?? 'asset')
     const type = typeof metadata?.type === 'string' && metadata.type.length <= 200 ? metadata.type : mimeTypeFromName(name)
@@ -480,12 +540,29 @@ export async function importProjectArchive(file: File): Promise<ProjectArchive> 
     }]
   })
   let markdown = fflate.strFromU8(entries[documentName])
-  const mode = normalizeDocumentMode(manifest?.mode)
+  let mode = normalizeDocumentMode(manifest?.mode)
+  let importSummary: ImportSummary | undefined
+  let embeddedAssets: StoredAsset[] = []
+  const documentDirectory = documentName.slice(0, documentName.lastIndexOf('/') + 1)
+  if (!manifest && /\.html?$/i.test(documentName)) {
+    const { importHtmlDocument } = await import('./htmlImport')
+    const converted = await importHtmlDocument(new File([entries[documentName]], documentName, { type: 'text/html' }), {
+      hasAsset: (url) => {
+        const path = resolveArchiveUrl(url, documentDirectory)
+        return path !== null && replacements.has(path)
+      },
+      reservedPaths,
+    })
+    markdown = converted.markdown
+    mode = converted.mode
+    embeddedAssets = converted.assets
+    importSummary = { fileName: documentName, restoredSource: converted.restoredSource, warnings: converted.warnings }
+  }
   if (replacements.size && mode === 'markdown') {
-    markdown = remapAssetPaths(markdown, replacements)
+    markdown = remapAssetPaths(markdown, replacements, manifest ? undefined : documentDirectory)
   }
   await putAssets(importedAssets)
-  return { markdown, mode, documentName, assets: importedAssets }
+  return { markdown, mode, documentName, assets: [...importedAssets, ...embeddedAssets], importSummary }
 }
 
 export async function requestPersistentStorage(): Promise<boolean> {

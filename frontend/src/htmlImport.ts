@@ -13,13 +13,13 @@ async function embeddedFile(url: string, name: string): Promise<File> {
   return new File([blob], name, { type: blob.type })
 }
 
-export async function importHtmlDocument(file: File) {
+export async function importHtmlDocument(file: File, archive?: { hasAsset: (url: string) => boolean; reservedPaths: ReadonlySet<string> }) {
   if (file.size > MAX_HTML_BYTES) throw new Error('HTML file exceeds 15 MiB')
   // Parse in an inert document; neither the original nor sanitized HTML enters
   // the live page. Saved source is data, never evaluated as JavaScript.
   const document = new DOMParser().parseFromString(await file.text(), 'text/html')
   const saved = document.querySelector('script#markword-source[type="application/json"]')
-  const body = DOMPurify.sanitize(document.body, {
+  const body = DOMPurify.sanitize(saved ? document.body : document.querySelector('main') ?? document.body, {
     RETURN_DOM_FRAGMENT: true,
     FORBID_TAGS: ['script', 'style', 'iframe', 'object', 'embed', 'form'],
     FORBID_ATTR: ['style', 'srcset'],
@@ -40,14 +40,17 @@ export async function importHtmlDocument(file: File) {
       if (path && paths.has(path) && url && /^data:/i.test(url) && !embedded.has(path)) embedded.set(path, url)
     })
     const files: File[] = []
+    const embeddedPaths: string[] = []
     for (const path of paths) {
+      if (!embedded.has(path) && archive?.hasAsset(assetMarkdownUrl(path))) continue
       const url = embedded.get(path)
       if (!url) throw new Error('Saved HTML attachment is missing')
       files.push(await embeddedFile(url, path.split('/').at(-1)!))
+      embeddedPaths.push(path)
     }
-    const assets = files.length ? await importLocalAssets(files) : []
-    const replacements = new Map([...paths].map((path, index) => [path, assets[index].path]))
-    return { markdown: remapAssetPaths(source.markdown, replacements), mode, restoredSource: true, warnings: [] as ImportWarning[] }
+    const assets = files.length ? await importLocalAssets(files, archive?.reservedPaths) : []
+    const replacements = new Map(embeddedPaths.map((path, index) => [path, assets[index].path]))
+    return { markdown: remapAssetPaths(source.markdown, replacements), mode, restoredSource: true, warnings: [] as ImportWarning[], assets }
   }
 
   const images = Array.from(body.querySelectorAll('img'))
@@ -73,13 +76,13 @@ export async function importHtmlDocument(file: File) {
       files.push(await embeddedFile(url, `${file.name.replace(/\.html?$/i, '')}-image-${index + 1}.${extension}`))
       image.setAttribute('src', assetMarkdownUrl(`assets/${prefix}-${index}`))
     } else if (/^https?:\/\//i.test(url)) remoteImages++
-    else missingImages.push((image.alt || url).slice(0, 200))
+    else if (!archive?.hasAsset(url)) missingImages.push((image.alt || url).slice(0, 200))
   }
   const markdown = htmlToMarkdown(body)
   if (!markdown.trim()) throw new Error('No convertible HTML content')
-  const assets = files.length ? await importLocalAssets(files) : []
+  const assets = files.length ? await importLocalAssets(files, archive?.reservedPaths) : []
   const replacements = new Map(assets.map((asset, index) => [`assets/${prefix}-${index}`, asset.path]))
   if (missingImages.length) warnings.push({ message: 'Images with missing or relative paths: {count}. They were not saved as local attachments.', count: missingImages.length, details: missingImages.filter(Boolean).slice(0, 20) })
   if (remoteImages) warnings.push({ message: 'Images using web addresses: {count}. They need a connection and were not saved as local attachments.', count: remoteImages })
-  return { markdown: remapAssetPaths(markdown, replacements), mode: 'markdown' as const, restoredSource: false, warnings }
+  return { markdown: remapAssetPaths(markdown, replacements), mode: 'markdown' as const, restoredSource: false, warnings, assets }
 }

@@ -1,7 +1,7 @@
 import DOMPurify from 'dompurify'
 import hljs from 'highlight.js/lib/common'
 import MarkdownIt from 'markdown-it'
-import { normalizeAssetPath } from './assets'
+import { normalizeAssetUrl } from './assets'
 import { translate } from './i18n'
 import type { DocumentMode } from './types'
 import type StateBlock from 'markdown-it/lib/rules_block/state_block.mjs'
@@ -289,7 +289,7 @@ function localMediaBlockRule(state: StateBlock, startLine: number, _endLine: num
   const line = state.src.slice(start, maximum).trim()
   const match = line.match(/^@\[(video|audio)]\((?:<([^>]+)>|([^\s)]+))\)$/i)
   if (!match) return false
-  const path = normalizeAssetPath(match[2] || match[3])
+  const path = normalizeAssetUrl(match[2] || match[3])
   if (!path) return false
   if (silent) return true
 
@@ -374,7 +374,7 @@ function removeTokenAttribute(token: Token, name: string) {
 const defaultImage = md.renderer.rules.image?.bind(md.renderer.rules)
 md.renderer.rules.image = (tokens, index, options, env, self) => {
   const token = tokens[index]
-  const path = normalizeAssetPath(token.attrGet('src'))
+  const path = normalizeAssetUrl(token.attrGet('src'))
   if (path) {
     removeTokenAttribute(token, 'src')
     token.attrSet('data-asset-path', path)
@@ -386,7 +386,7 @@ md.renderer.rules.image = (tokens, index, options, env, self) => {
 const defaultLinkOpen = md.renderer.rules.link_open?.bind(md.renderer.rules)
 md.renderer.rules.link_open = (tokens, index, options, env, self) => {
   const token = tokens[index]
-  const path = normalizeAssetPath(token.attrGet('href'))
+  const path = normalizeAssetUrl(token.attrGet('href'))
   if (path) {
     removeTokenAttribute(token, 'href')
     token.attrSet('data-asset-path', path)

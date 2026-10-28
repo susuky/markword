@@ -410,7 +410,8 @@ export default function App({ documentId, documentsOpen, onDocumentsOpenChange: 
         try {
           const project = await importProjectArchive(file)
           await refreshAssets()
-          await openDocument(project.markdown, project.mode, null, null, t('Opened project {file}', { file: file.name }), file.name)
+          await openDocument(project.markdown, project.mode, project.importSummary ?? null, null,
+            project.importSummary?.warnings.length ? '' : t('Opened project {file}', { file: file.name }), project.documentName)
         } catch (error) {
           showNotice(error instanceof Error ? error.message : t('Could not open project archive'))
         } finally {

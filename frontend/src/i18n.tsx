@@ -552,7 +552,7 @@ const ZH_TW: Record<string, string> = {
   'Project contents exceed 500 MB': '專案內容超過 500 MB',
   'Project archive expands beyond 500 MB': '專案解壓後超過 500 MB',
   'Project manifest is invalid': '專案資訊檔格式錯誤',
-  'Project archive does not contain a Markdown document': '專案壓縮檔內沒有 Markdown 文件',
+  'Project archive does not contain a Markdown or HTML document': '專案壓縮檔內沒有 Markdown 或 HTML 文件',
   'The server could not process the request': '伺服器暫時無法處理要求',
   'Light': '明亮',
   'Clear and neutral for everyday reading': '清晰中性的日常閱讀',
