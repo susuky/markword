@@ -3,6 +3,7 @@ import hljs from 'highlight.js/lib/common'
 import MarkdownIt from 'markdown-it'
 import { normalizeAssetUrl } from './assets'
 import { translate } from './i18n'
+import { parseTableLayout, type TableLayout } from './tableLayout'
 import type { DocumentMode } from './types'
 import type StateBlock from 'markdown-it/lib/rules_block/state_block.mjs'
 import type StateInline from 'markdown-it/lib/rules_inline/state_inline.mjs'
@@ -57,6 +58,57 @@ const md = new MarkdownIt({
 })
 
 md.enable('table')
+
+md.block.ruler.before('table', 'markword_table_layout', (state, startLine, _endLine, silent) => {
+  if (state.sCount[startLine] - state.blkIndent >= 4) return false
+  const content = state.src.slice(state.bMarks[startLine] + state.tShift[startLine], state.eMarks[startLine])
+  const layout = parseTableLayout(content)
+  if (!layout) return false
+  if (silent) return true
+  const token = state.push('markword_table_layout', '', 0)
+  token.block = true
+  token.map = [startLine, startLine + 1]
+  token.content = content
+  token.meta = layout
+  state.line = startLine + 1
+  return true
+}, { alt: ['paragraph', 'reference', 'blockquote', 'list'] })
+
+md.core.ruler.after('block', 'markword_table_layout', (state) => {
+  const style = (token: Token, value: string) => token.attrSet('style', [token.attrGet('style'), value].filter(Boolean).join(';'))
+  for (let index = 0; index < state.tokens.length - 1; index++) {
+    const metadata = state.tokens[index]
+    const table = state.tokens[index + 1]
+    if (metadata.type !== 'markword_table_layout' || table.type !== 'table_open') continue
+    metadata.hidden = true
+    if (table.map && metadata.map) table.map[0] = metadata.map[0]
+    const layout = metadata.meta as TableLayout
+    const headers: Token[] = []
+    let row = 0
+    for (let child = index + 2; child < state.tokens.length && state.tokens[child].type !== 'table_close'; child++) {
+      const token = state.tokens[child]
+      if (token.type === 'th_open') headers.push(token)
+      if (token.type === 'tr_open') {
+        const height = layout.heights?.[row++]
+        if (height) style(token, `height:${height}px`)
+      }
+    }
+    const widths = headers.map((_, column) => layout.widths?.[column] ?? 0)
+    if (!widths.some(Boolean)) continue
+    style(table, 'table-layout:fixed;overflow-wrap:anywhere')
+    if (widths.every(Boolean)) style(table, `width:${widths.reduce((total, width) => total + width, 0)}px;max-width:none`)
+    headers.forEach((header, column) => {
+      if (widths[column]) style(header, `width:${widths[column]}px;box-sizing:border-box`)
+    })
+  }
+})
+
+md.renderer.rules.markword_table_layout = (tokens, index) => {
+  const token = tokens[index]
+  if (token.hidden) return ''
+  const line = (token.map?.[0] ?? 0) + 1
+  return `<p data-source-start="${line}" data-source-end="${line}">${md.utils.escapeHtml(token.content)}</p>\n`
+}
 
 // Only this small, portable HTML container is accepted. Arbitrary HTML stays disabled.
 function toggleBlockRule(state: StateBlock, startLine: number, endLine: number, silent: boolean) {

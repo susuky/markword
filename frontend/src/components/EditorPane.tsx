@@ -12,6 +12,7 @@ import { useI18n } from '../i18n'
 import { continueMarkdownLine, removeMarkdownMarker, renumberAfterDeletion } from '../editorCommands'
 import type { DocumentMode } from '../types'
 import { tableAtPosition, tableMarkdown, type TableEdit } from '../tableEditing'
+import type { TableLayout } from '../tableLayout'
 import { TableEditor } from './TableEditor'
 
 function modeExtensions(mode: DocumentMode | 'html') {
@@ -47,6 +48,7 @@ export interface EditorHandle {
   foldAll: () => void
   unfoldAll: () => void
   editTable: (line?: number) => void
+  resizeTable: (line: number, layout: TableLayout, source: string) => boolean
 }
 
 interface EditorPaneProps {
@@ -129,6 +131,19 @@ export const EditorPane = forwardRef<EditorHandle, EditorPaneProps>(function Edi
     undo() { if (viewRef.current) undo(viewRef.current) },
     redo() { if (viewRef.current) redo(viewRef.current) },
     editTable,
+    resizeTable(line, layout, source) {
+      const view = viewRef.current
+      if (!view || modeRef.current !== 'markdown' || view.state.doc.toString() !== source || line < 1 || line > view.state.doc.lines) return false
+      const table = tableAtPosition(view.state, view.state.doc.line(line).from)
+      if (!table) return false
+      const insert = tableMarkdown({ ...table.data, ...layout }, table.prefix, table.continuation)
+      if (insert === source.slice(table.from, table.to)) return false
+      view.dispatch({
+        changes: { from: table.from, to: table.to, insert },
+        annotations: [Transaction.userEvent.of('input.table.resize'), isolateHistory.of('full')],
+      })
+      return true
+    },
     scrollToLine(line) {
       const view = viewRef.current
       if (!view) return

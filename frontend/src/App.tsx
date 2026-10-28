@@ -24,6 +24,7 @@ import { ExportPreview } from './components/ExportPreview'
 import { Modal } from './components/Modal'
 import { OutlinePanel, type OutlineHeading } from './components/OutlinePanel'
 import { PreviewPane, type PreviewHandle } from './components/PreviewPane'
+import type { TableLayout } from './tableLayout'
 import { RevisionPanel } from './components/RevisionPanel'
 import { ShortcutHelp } from './components/ShortcutHelp'
 import { StatsPopover } from './components/StatsPopover'
@@ -639,6 +640,10 @@ export default function App({ documentId, documentsOpen, onDocumentsOpenChange: 
     editorRef.current?.editTable(line)
   }, [])
 
+  const resizePreviewTable = useCallback((line: number, layout: TableLayout, source: string) => {
+    return editorRef.current?.resizeTable(line, layout, source) ?? false
+  }, [])
+
   const beginResize = (event: ReactPointerEvent<HTMLButtonElement>) => {
     if (!workspaceRef.current || window.matchMedia('(max-width: 900px)').matches) return
     event.currentTarget.setPointerCapture(event.pointerId)
@@ -966,7 +971,7 @@ export default function App({ documentId, documentsOpen, onDocumentsOpenChange: 
             <PreviewSettings theme={theme} onThemeChange={setTheme} markdownSize={previewTypography.markdownFontSize} mermaidSize={previewTypography.mermaidFontSize} onMarkdownSizeChange={setMarkdownFontSize} onMermaidSizeChange={setMermaidFontSize} onReset={resetPreviewFontSizes} />
             <button className={`toolbar-button sync-toggle ${syncEnabled ? 'is-active' : ''}`} type="button" aria-label={t('Toggle synchronized scrolling')} title={t(syncEnabled ? 'Disable synchronized scrolling' : 'Enable synchronized scrolling')} aria-pressed={syncEnabled} onClick={() => setSyncEnabled((enabled) => !enabled)}>{syncEnabled ? <Link2 size={17} aria-hidden="true" /> : <Unlink2 size={17} aria-hidden="true" />}</button>
           </div></header>
-          <PreviewPane ref={previewRef} mode={mode} markdown={visualEditing ? markdown : deferredMarkdown} theme={theme} markdownFontSize={previewTypography.markdownFontSize} mermaidFontSize={previewTypography.mermaidFontSize} assetVersion={assetVersion} onScrollLine={handlePreviewScroll} onLayout={handlePreviewLayout} onSourceLine={jumpToLine} onEditTable={editPreviewTable} editing={visualEditing} onVisualChange={changeVisualMarkdown} onUndo={() => editorRef.current?.undo()} onRedo={() => editorRef.current?.redo()} />
+          <PreviewPane ref={previewRef} mode={mode} markdown={visualEditing ? markdown : deferredMarkdown} theme={theme} markdownFontSize={previewTypography.markdownFontSize} mermaidFontSize={previewTypography.mermaidFontSize} assetVersion={assetVersion} onScrollLine={handlePreviewScroll} onLayout={handlePreviewLayout} onSourceLine={jumpToLine} onEditTable={editPreviewTable} onResizeTable={resizePreviewTable} editing={visualEditing} onVisualChange={changeVisualMarkdown} onUndo={() => editorRef.current?.undo()} onRedo={() => editorRef.current?.redo()} />
         </section>
 
         {dragActive ? <div className="drop-target" aria-hidden="true"><Paperclip size={34} /><strong>{t('Drop to open or insert files')}</strong><span>{t('Markdown, text, Mermaid, Word (.docx), HTML, project ZIP, and media')}</span></div> : null}

@@ -2,9 +2,10 @@ import { markdownLanguage } from '@codemirror/lang-markdown'
 import { ensureSyntaxTree } from '@codemirror/language'
 import type { EditorState } from '@codemirror/state'
 import DOMPurify from 'dompurify'
+import { parseTableLayout, tableLayoutComment, type TableLayout } from './tableLayout'
 
 export type TableAlignment = '' | 'left' | 'center' | 'right'
-export interface TableData {
+export interface TableData extends TableLayout {
   rows: string[][]
   alignments: TableAlignment[]
 }
@@ -28,7 +29,9 @@ export function tableAtPosition(state: EditorState, position: number): TableEdit
   while (node.name !== 'Table' && node.parent) node = node.parent
   if (node.name !== 'Table') {
     const line = state.doc.lineAt(position)
-    tree.iterate({ from: line.from, to: line.to, enter(entry) {
+    const marker = line.text.indexOf('<!--')
+    const end = marker >= 0 && parseTableLayout(line.text.slice(marker)) && line.number < state.doc.lines ? state.doc.line(line.number + 1).to : line.to
+    tree.iterate({ from: line.from, to: end, enter(entry) {
       if (entry.name === 'Table') { node = entry.node; return false }
     } })
   }
@@ -54,14 +57,34 @@ export function tableAtPosition(state: EditorState, position: number): TableEdit
     const marker = markers[column]?.trim() ?? ''
     return marker.startsWith(':') ? (marker.endsWith(':') ? 'center' : 'left') : marker.endsWith(':') ? 'right' : ''
   })
+  let from = state.doc.lineAt(node.from).from
+  let prefix = state.doc.sliceString(from, node.from)
+  let layout: TableLayout = {}
+  const headerLine = state.doc.lineAt(node.from).number
+  if (headerLine > 1) {
+    const previous = state.doc.line(headerLine - 1)
+    tree.iterate({ from: previous.from, to: previous.to, enter(entry) {
+      if (entry.name !== 'CommentBlock' || entry.from < previous.from || entry.to > previous.to) return
+      const parent = entry.node.parent
+      if (parent?.name !== node.parent?.name || parent?.from !== node.parent?.from || parent?.to !== node.parent?.to) return
+      const parsed = parseTableLayout(state.doc.sliceString(entry.from, entry.to))
+      if (!parsed) return
+      from = previous.from
+      prefix = state.doc.sliceString(previous.from, entry.from)
+      layout = {
+        ...(parsed.widths ? { widths: parsed.widths.slice(0, width) } : {}),
+        ...(parsed.heights ? { heights: parsed.heights.slice(0, rows.length) } : {}),
+      }
+    } })
+  }
   return {
-    from: state.doc.lineAt(node.from).from,
+    from,
     to: state.doc.lineAt(node.to).to,
     source: state.doc.toString(),
-    prefix: state.doc.sliceString(state.doc.lineAt(node.from).from, node.from),
+    prefix,
     continuation: state.doc.sliceString(state.doc.lineAt(separator.from).from, separator.from),
     existing: true,
-    data: { rows: rows.map((row) => Array.from({ length: width }, (_, column) => row[column] ?? '')), alignments },
+    data: { rows: rows.map((row) => Array.from({ length: width }, (_, column) => row[column] ?? '')), alignments, ...layout },
   }
 }
 
@@ -72,6 +95,8 @@ export function tableMarkdown(data: TableData, prefix = '', continuation = ''): 
   const rows = data.rows.map((row) => `| ${row.map(cellText).join(' | ')} |`)
   const separators = data.alignments.map((alignment) => ({ '': '---', left: ':---', center: ':---:', right: '---:' })[alignment])
   rows.splice(1, 0, `| ${separators.join(' | ')} |`)
+  const layout = tableLayoutComment(data)
+  if (layout) rows.unshift(layout)
   return rows.map((row, index) => `${index ? continuation : prefix}${row}`).join('\n')
 }
 

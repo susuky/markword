@@ -2,6 +2,7 @@ import { Columns3, Plus, Rows3, Trash2, X } from 'lucide-react'
 import { useEffect, useLayoutEffect, useRef, useState, type ClipboardEvent, type KeyboardEvent } from 'react'
 import { useI18n } from '../i18n'
 import { clipboardTable, MAX_TABLE_CELLS, TABLE_SIZE_ERROR, type TableAlignment, type TableData } from '../tableEditing'
+import { MAX_TABLE_DIMENSION, MIN_TABLE_COLUMN_WIDTH, MIN_TABLE_ROW_HEIGHT } from '../tableLayout'
 import { Modal } from './Modal'
 import './tableEditor.css'
 
@@ -33,8 +34,11 @@ export function TableEditor({ initial, existing, onApply, onClose }: {
   const resize = (rows: number, columns: number) => {
     if (rows * columns > MAX_TABLE_CELLS) { setMessage(t(TABLE_SIZE_ERROR)); return false }
     setData((current) => ({
+      ...current,
       rows: Array.from({ length: rows }, (_, row) => Array.from({ length: columns }, (_, column) => current.rows[row]?.[column] ?? '')),
       alignments: Array.from({ length: columns }, (_, column) => current.alignments[column] ?? ''),
+      widths: current.widths && Array.from({ length: columns }, (_, column) => current.widths?.[column] ?? 0),
+      heights: current.heights && Array.from({ length: rows }, (_, row) => current.heights?.[row] ?? 0),
     }))
     setMessage('')
     return true
@@ -68,16 +72,26 @@ export function TableEditor({ initial, existing, onApply, onClose }: {
       const columns = replace ? pasted[0].length : Math.max(width, column + pasted[0].length)
       if (rows * columns > MAX_TABLE_CELLS) throw new Error(TABLE_SIZE_ERROR)
       setData((current) => ({
+        ...current,
         rows: Array.from({ length: rows }, (_, y) => Array.from({ length: columns }, (_, x) =>
           pasted[y - row]?.[x - column] ?? current.rows[y]?.[x] ?? '',
         )),
         alignments: Array.from({ length: columns }, (_, x) => current.alignments[x] ?? ''),
+        widths: current.widths && Array.from({ length: columns }, (_, x) => current.widths?.[x] ?? 0),
+        heights: current.heights && Array.from({ length: rows }, (_, y) => current.heights?.[y] ?? 0),
       }))
       setMessage('')
     } catch (error) {
       event.preventDefault()
       setMessage(t(error instanceof Error ? error.message : 'Could not read the pasted table. Try copying the cells again.'))
     }
+  }
+
+  const setDimension = (key: 'widths' | 'heights', index: number, value: number) => {
+    setData((current) => ({
+      ...current,
+      [key]: Array.from({ length: key === 'widths' ? current.alignments.length : current.rows.length }, (_, position) => position === index ? (Number.isFinite(value) ? value : 0) : current[key]?.[position] ?? 0),
+    }))
   }
 
   const title = t(existing ? 'Edit table' : 'Insert table')
@@ -98,7 +112,7 @@ export function TableEditor({ initial, existing, onApply, onClose }: {
             <div className="table-editor__column">
               <span>{t('Column {number}', { number: column + 1 })}</span>
               <button type="button" className="table-icon-button" disabled={width === 1} aria-label={t('Delete column {number}', { number: column + 1 })} onClick={() => {
-                setData((current) => ({ rows: current.rows.map((row) => row.filter((_, x) => x !== column)), alignments: current.alignments.filter((_, x) => x !== column) }))
+                setData((current) => ({ ...current, rows: current.rows.map((row) => row.filter((_, x) => x !== column)), alignments: current.alignments.filter((_, x) => x !== column), widths: current.widths?.filter((_, x) => x !== column) }))
                 focusCell(0, Math.min(column, width - 2))
               }}><Trash2 size={15} aria-hidden="true" /></button>
             </div>
@@ -108,9 +122,20 @@ export function TableEditor({ initial, existing, onApply, onClose }: {
             }}>
               <option value="">{t('Default alignment')}</option><option value="left">{t('Align left')}</option><option value="center">{t('Align center')}</option><option value="right">{t('Align right')}</option>
             </select>
+            <div className="table-editor__dimension"><input type="number" min={MIN_TABLE_COLUMN_WIDTH} max={MAX_TABLE_DIMENSION} step="any"
+              aria-label={t('Column {number} width', { number: column + 1 })}
+              value={data.widths?.[column] || ''}
+              onChange={(event) => setDimension('widths', column, event.currentTarget.valueAsNumber)}
+            /><span aria-hidden="true">px</span></div>
           </th>)}<th className="table-editor__row-actions" /></tr></thead>
           <tbody>{data.rows.map((row, y) => <tr key={y} className={y === 0 ? 'table-editor__heading-row' : ''}>
-            <th scope="row" className="table-editor__row-label">{y === 0 ? t('Header') : y}</th>
+            <th scope="row" className="table-editor__row-label"><span>{y === 0 ? t('Header') : y}</span>
+              <div className="table-editor__dimension"><input type="number" min={MIN_TABLE_ROW_HEIGHT} max={MAX_TABLE_DIMENSION} step="any"
+                aria-label={t('Row {number} height', { number: y + 1 })}
+                value={data.heights?.[y] || ''}
+                onChange={(event) => setDimension('heights', y, event.currentTarget.valueAsNumber)}
+              /><span aria-hidden="true">px</span></div>
+            </th>
             {row.map((cell, x) => <td key={x}><textarea
               data-cell={`${y}-${x}`}
               aria-label={y === 0 ? t('Header, column {column}', { column: x + 1 }) : t('Row {row}, column {column}', { row: y, column: x + 1 })}
@@ -125,7 +150,7 @@ export function TableEditor({ initial, existing, onApply, onClose }: {
               onPaste={(event) => paste(event, y, x)}
             /></td>)}
             <td className="table-editor__row-actions">{y > 0 ? <button type="button" className="table-icon-button" aria-label={t('Delete row {number}', { number: y })} onClick={() => {
-              setData((current) => ({ ...current, rows: current.rows.filter((_, index) => index !== y) }))
+              setData((current) => ({ ...current, rows: current.rows.filter((_, index) => index !== y), heights: current.heights?.filter((_, index) => index !== y) }))
               focusCell(Math.min(y, data.rows.length - 2), 0)
             }}><Trash2 size={15} aria-hidden="true" /></button> : null}</td>
           </tr>)}</tbody>
@@ -135,6 +160,7 @@ export function TableEditor({ initial, existing, onApply, onClose }: {
       <footer className="table-editor__footer">
         <p>{t('Tab: next cell · Enter: next row · Shift+Enter: new line')}</p>
         <div><button type="button" onClick={onClose}>{t('Cancel')}</button><button type="button" className="table-editor__apply" onClick={() => {
+          if (Array.from(gridRef.current?.querySelectorAll<HTMLInputElement>('input[type="number"]') ?? []).some((input) => !input.reportValidity())) return
           if (!onApply(data)) setMessage(t('The document changed. Close this table and reopen it before applying changes.'))
         }}>{t(existing ? 'Apply changes' : 'Insert table')}</button></div>
       </footer>

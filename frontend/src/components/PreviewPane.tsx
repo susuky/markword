@@ -25,6 +25,8 @@ import { SourceBlockEditor } from './SourceBlockEditor'
 import { formatInlineSelection, readInlineSelection, restoreInlineSelection, type InlineFormat, type InlineSelection } from '../inlineFormatting'
 import { BlockControls } from './BlockControls'
 import { blockAction, documentBlocks, foldBlock } from '../blockOperations'
+import { prepareTableResize } from '../previewTableResize'
+import type { TableLayout } from '../tableLayout'
 
 export interface PreviewHandle {
   scrollToLine: (line: number, atEnd?: boolean) => void
@@ -42,6 +44,7 @@ interface PreviewPaneProps {
   onLayout: () => void
   onSourceLine?: (line: number) => void
   onEditTable?: (line: number) => void
+  onResizeTable?: (line: number, layout: TableLayout, source: string) => boolean
   editing?: boolean
   onVisualChange?: (next: string, previous: string, target: Element) => boolean
   onUndo?: () => void
@@ -179,7 +182,7 @@ function mermaidMedia(svg: SVGSVGElement, block: HTMLElement, theme: ThemeName, 
 }
 
 const PreviewPaneComponent = forwardRef<PreviewHandle, PreviewPaneProps>(function PreviewPane(
-  { markdown, mode, theme, markdownFontSize = 16, mermaidFontSize = 14, assetVersion = 0, onScrollLine, onLayout, onSourceLine, onEditTable, editing = false, onVisualChange, onUndo, onRedo },
+  { markdown, mode, theme, markdownFontSize = 16, mermaidFontSize = 14, assetVersion = 0, onScrollLine, onLayout, onSourceLine, onEditTable, onResizeTable, editing = false, onVisualChange, onUndo, onRedo },
   ref,
 ) {
   const { locale, t } = useI18n()
@@ -189,6 +192,10 @@ const PreviewPaneComponent = forwardRef<PreviewHandle, PreviewPaneProps>(functio
   const anchorsRef = useRef<SourceAnchor[]>([])
   const geometryDirtyRef = useRef(true)
   const layoutFrameRef = useRef<number | null>(null)
+  const tableResizingRef = useRef(false)
+  const tableResizeFocusRef = useRef<{ table: number; handle: string } | null>(null)
+  const markdownRef = useRef(markdown)
+  markdownRef.current = markdown
   const mermaidSvgCacheRef = useRef(new Map<string, string>())
   const [lightboxMedia, setLightboxMedia] = useState<LightboxMedia | null>(null)
   const emittedRef = useRef<string | null>(null)
@@ -323,6 +330,14 @@ const PreviewPaneComponent = forwardRef<PreviewHandle, PreviewPaneProps>(functio
 
   const retainSelectionForHistory = () => {
     const root = contentRef.current
+    const focused = document.activeElement as HTMLElement | null
+    const wrapper = focused?.closest('.preview-table')
+    if (root && wrapper && focused?.dataset.tableResize) {
+      const bookmark = { table: Array.from(root.querySelectorAll('.preview-table')).indexOf(wrapper), handle: focused.dataset.tableResize }
+      tableResizeFocusRef.current = bookmark
+      requestAnimationFrame(() => { if (tableResizeFocusRef.current === bookmark) tableResizeFocusRef.current = null })
+      return
+    }
     const selection = root ? readInlineSelection(root, true) : null
     const block = selection && root && rootBlock(root, selection.leaf)
     if (!selection || !block) return
@@ -337,7 +352,7 @@ const PreviewPaneComponent = forwardRef<PreviewHandle, PreviewPaneProps>(functio
     if (layoutFrameRef.current !== null) return
     layoutFrameRef.current = window.requestAnimationFrame(() => {
       layoutFrameRef.current = null
-      if (!editing || !contentRef.current?.contains(document.activeElement)) onLayout()
+      if (!tableResizingRef.current && (!editing || !contentRef.current?.contains(document.activeElement))) onLayout()
     })
   }, [editing, onLayout])
 
@@ -553,6 +568,7 @@ const PreviewPaneComponent = forwardRef<PreviewHandle, PreviewPaneProps>(functio
   useLayoutEffect(() => {
     if (!onEditTable || !contentRef.current) return
     const wrappers: HTMLElement[] = []
+    const disposeResize: Array<() => void> = []
     contentRef.current.querySelectorAll<HTMLTableElement>('table[data-source-start]').forEach((table, index) => {
       const wrapper = document.createElement('div')
       wrapper.className = 'preview-table'
@@ -564,17 +580,42 @@ const PreviewPaneComponent = forwardRef<PreviewHandle, PreviewPaneProps>(functio
       button.dataset.tableLine = table.dataset.sourceStart
       const scroll = document.createElement('div')
       scroll.className = 'preview-table__scroll'
+      const surface = document.createElement('div')
+      surface.className = 'preview-table__surface'
       table.before(wrapper)
-      scroll.append(table)
+      surface.append(table)
+      scroll.append(surface)
       wrapper.append(button, scroll)
       wrappers.push(wrapper)
+      if (onResizeTable) {
+        disposeResize.push(prepareTableResize(table, surface,
+          (axis, number) => axis === 'table' ? t('Resize table') : t(axis === 'column' ? 'Column {number} width' : 'Row {number} height', { number: number + 1 }),
+          (layout) => {
+            const focused = document.activeElement as HTMLElement | null
+            const handle = focused?.dataset.tableResize
+            if (handle) tableResizeFocusRef.current = { table: index, handle }
+            const accepted = onResizeTable(Number(table.dataset.sourceStart), layout, markdownRef.current)
+            if (!accepted) tableResizeFocusRef.current = null
+            return accepted
+          },
+          (active) => { tableResizingRef.current = active },
+        ))
+      }
+      const pending = tableResizeFocusRef.current
+      if (pending?.table === index) {
+        surface.querySelector<HTMLElement>(`[data-table-resize="${pending.handle}"]`)?.focus({ preventScroll: true })
+        tableResizeFocusRef.current = null
+      }
     })
     invalidateGeometry()
-    return () => wrappers.forEach((wrapper) => {
-      const table = wrapper.querySelector('table')
-      if (table) wrapper.replaceWith(table)
-    })
-  }, [rendering, invalidateGeometry, onEditTable, t])
+    return () => {
+      disposeResize.forEach((dispose) => dispose())
+      wrappers.forEach((wrapper) => {
+        const table = wrapper.querySelector('table')
+        if (table) wrapper.replaceWith(table)
+      })
+    }
+  }, [rendering, invalidateGeometry, onEditTable, onResizeTable, t])
 
   useLayoutEffect(() => {
     const content = contentRef.current

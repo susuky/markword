@@ -27,6 +27,14 @@ test('table parsing preserves empty cells, escaped pipes, alignments, and nested
     expect(parsed.data.alignments).toEqual(['left', 'right', 'center'])
     expect(tableMarkdown(parsed.data, parsed.prefix, parsed.continuation)).toBe(table)
     expect(document.slice(0, parsed.from) + table + document.slice(parsed.to)).toBe(document)
+    const sized = { ...parsed.data, widths: [140, 150, 160], heights: [45, 70] }
+    const sizedTable = tableMarkdown(sized, prefix, continuation)
+    const sizedState = EditorState.create({ doc: '# Heading\n\n' + sizedTable + '\n\nAfter', extensions: [markdown({ base: markdownLanguage })] })
+    for (const line of [3, 4]) {
+      const roundTrip = tableAtPosition(sizedState, sizedState.doc.line(line).from)!
+      expect(roundTrip.data).toEqual(sized)
+      expect(tableMarkdown(roundTrip.data, roundTrip.prefix, roundTrip.continuation)).toBe(sizedTable)
+    }
   }
   const state = EditorState.create({ doc: '```md\n| A | B |\n| - | - |\n```', extensions: [markdown({ base: markdownLanguage })] })
   expect(tableAtPosition(state, state.doc.line(2).from)).toBeNull()
@@ -125,6 +133,98 @@ test('preview buttons select the right table and do not appear in exported HTML'
   expect(html.match(/<table\b/g)).toHaveLength(2)
   expect(html).not.toContain('preview-table')
   expect(html).not.toContain('Edit table')
+})
+
+test('preview table dragging persists dimensions, supports undo, cancellation, and keyboard resizing', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', (error) => errors.push(error.message))
+  await page.goto('/')
+  await page.locator('.cm-content').fill(original)
+  const table = page.locator('.markdown-body table')
+  const widths = () => table.locator('th').evaluateAll((cells) => cells.map((cell) => cell.getBoundingClientRect().width))
+  const heights = () => table.locator('tr').evaluateAll((rows) => rows.map((row) => row.getBoundingClientRect().height))
+  const drag = async (handle: Locator, dx: number, dy: number, cancel = false) => {
+    await handle.scrollIntoViewIfNeeded()
+    const box = (await handle.boundingBox())!
+    const x = box.x + box.width / 2
+    const y = box.y + Math.min(box.height / 2, 12)
+    await page.mouse.move(x, y)
+    await page.mouse.down()
+    await page.mouse.move(x + dx, y + dy, { steps: 8 })
+    if (cancel) await page.keyboard.press('Escape')
+    await page.mouse.up()
+  }
+  const initial = await widths()
+  await drag(page.getByRole('separator', { name: 'Column 1 width', exact: true }), 36, 0)
+  await expect.poll(async () => (await widths())[0]).toBeCloseTo(initial[0] + 36, 0)
+  const columnSource = await source(page)
+  expect(columnSource).toContain('<!-- markword-table:')
+  expect(columnSource).toContain('保留這一段。')
+  const initialHeight = (await heights())[1]
+  await drag(page.getByRole('separator', { name: 'Row 2 height', exact: true }), 0, 32)
+  await expect.poll(async () => (await heights())[1]).toBeCloseTo(initialHeight + 32, 0)
+  const rowSource = await source(page)
+  await page.keyboard.press('Control+z')
+  await expect.poll(() => source(page)).toBe(columnSource)
+  await page.keyboard.press('Control+y')
+  await expect.poll(() => source(page)).toBe(rowSource)
+  await drag(page.getByRole('separator', { name: 'Column 1 width', exact: true }), 25, 0, true)
+  await expect.poll(() => source(page)).toBe(rowSource)
+  const beforeKeyboard = (await widths())[0]
+  await page.getByRole('separator', { name: 'Column 1 width', exact: true }).focus()
+  await page.keyboard.press('ArrowRight')
+  await expect.poll(async () => (await widths())[0]).toBeCloseTo(beforeKeyboard + 10, 0)
+  await expect(page.getByRole('separator', { name: 'Column 1 width', exact: true })).toBeFocused()
+  const beforeTable = (await table.boundingBox())!
+  await drag(page.getByRole('button', { name: 'Resize table', exact: true }), 40, 24)
+  await expect.poll(async () => (await table.boundingBox())!.width).toBeGreaterThan(beforeTable.width + 35)
+  await expect.poll(async () => (await table.boundingBox())!.height).toBeGreaterThan(beforeTable.height + 20)
+  const savedWidths = await widths()
+  const savedHeights = await heights()
+  await expect(page.locator('.save-status')).toHaveText('Saved locally')
+  await page.reload()
+  await expect.poll(widths).toEqual(savedWidths)
+  await expect.poll(heights).toEqual(savedHeights)
+  await expect(table).toContainText('怡君')
+  await expect(table).toContainText('進行中')
+  expect(errors).toEqual([])
+})
+
+test('table dimension inputs validate values, preserve sizes when editing, and export clean HTML', async ({ page }) => {
+  await page.goto('/')
+  await page.locator('.cm-content').fill(original)
+  await page.getByRole('button', { name: 'Edit table 1', exact: true }).click()
+  const dialog = page.getByRole('dialog', { name: 'Edit table', exact: true })
+  const width = dialog.getByRole('spinbutton', { name: 'Column 1 width', exact: true })
+  await width.fill('1')
+  await dialog.getByRole('button', { name: 'Apply changes', exact: true }).click()
+  await expect(dialog).toBeVisible()
+  await expect.poll(() => source(page)).toBe(original)
+  await width.fill('180')
+  await dialog.getByRole('spinbutton', { name: 'Row 2 height', exact: true }).fill('90')
+  await dialog.getByRole('button', { name: 'Apply changes', exact: true }).click()
+  const table = page.locator('.markdown-body table')
+  await expect(table.locator('th').first()).toHaveCSS('width', '180px')
+  await expect(table.locator('tr').nth(1)).toHaveCSS('height', '90px')
+  await page.getByRole('button', { name: 'Edit table 1', exact: true }).click()
+  await expect(dialog.getByRole('spinbutton', { name: 'Column 1 width', exact: true })).toHaveValue('180')
+  await dialog.getByRole('textbox', { name: 'Row 2, column 3', exact: true }).fill('已交付')
+  await dialog.getByRole('button', { name: 'Add row', exact: true }).click()
+  await dialog.getByRole('button', { name: 'Apply changes', exact: true }).click()
+  await expect(table.locator('th').first()).toHaveCSS('width', '180px')
+  await expect(table.locator('tr').nth(1)).toHaveCSS('height', '90px')
+  await expect(table).toContainText('已交付')
+  await page.getByRole('button', { name: 'Export', exact: true }).click()
+  const pending = page.waitForEvent('download')
+  await page.getByRole('button', { name: /Portable HTML Embeds/ }).click()
+  const stream = await (await pending).createReadStream()
+  const chunks: Buffer[] = []
+  for await (const chunk of stream!) chunks.push(Buffer.from(chunk))
+  const html = Buffer.concat(chunks).toString()
+  expect(html).toContain('width:180px')
+  expect(html).toContain('height:90px')
+  expect(html).not.toContain('preview-table__resize')
+  expect(html).not.toContain('data-table-resize')
 })
 
 test('table line breaks keep escaped HTML and inline code literal', async ({ page }) => {

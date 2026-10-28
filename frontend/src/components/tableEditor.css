@@ -14,6 +14,9 @@
 .table-editor thead th { position: sticky; z-index: 2; top: 0; padding: 8px 10px; background: var(--surface-soft); text-align: left; }
 .table-editor__column { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 4px; color: var(--muted); font-size: 14px; font-weight: 500; }
 .table-editor select { width: 100%; min-height: 32px; border: 1px solid var(--border); border-radius: 4px; padding: 3px 6px; background: var(--surface); color: inherit; font-size: 14px; }
+.table-editor__dimension { display: flex; align-items: center; gap: 4px; margin-top: 6px; color: var(--muted); font-size: 12px; font-weight: 400; }
+.table-editor__dimension input { width: 100%; min-width: 48px; min-height: 32px; padding: 3px 6px; border: 1px solid var(--border); border-radius: 4px; background: var(--surface); color: var(--text); font: inherit; }
+.table-editor__dimension input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .table-editor textarea { display: block; width: 100%; min-width: 160px; min-height: 48px; max-height: 180px; margin: 0; padding: 12px; border: 0; border-radius: 0; background: var(--surface); color: inherit; font: inherit; font-size: 16px; line-height: 1.5; resize: vertical; }
 .table-editor textarea:focus { position: relative; z-index: 1; outline: 2px solid var(--accent); outline-offset: -2px; background: #f6fbf8; }
 .table-editor__heading-row textarea { background: var(--accent-soft); font-weight: 650; }
@@ -33,7 +36,7 @@
   .table-editor__toolbar { flex-wrap: wrap; padding: 0 16px 14px; }
   .table-editor__toolbar > span { flex-basis: 100%; }
   .table-editor__footer { padding: 14px 16px; gap: 10px; }
-  .table-editor button, .table-editor select, .table-editor .table-icon-button { min-height: 44px; }
+  .table-editor button, .table-editor select, .table-editor .table-icon-button, .table-editor__dimension input { min-height: 44px; }
   .table-editor .table-icon-button { width: 44px; }
   .table-editor__column { gap: 4px; }
   .pane-tools .table-tool { width: 36px; padding: 0; }
