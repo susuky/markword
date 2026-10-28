@@ -24,6 +24,7 @@ async function undo(page: Page) {
 }
 async function source(page: Page) {
   await page.getByRole('button', { name: 'Split editing', exact: true }).click()
+  await expect(page.locator('.cm-content')).toBeVisible()
   return (await page.locator('.cm-content .cm-line').allTextContents()).join('\n')
 }
 
@@ -518,6 +519,7 @@ test('portable HTML retains folded state, prints every child, and restores the e
   await expect(reader.getByText('Deep child content.')).toBeVisible()
   await reader.close()
   await page.locator('input[type=file]').first().setInputFiles({ name: 'portable-toggles.html', mimeType: 'text/html', buffer: Buffer.from(html) })
+  await expect(page.locator('.toast')).toHaveText('Restored editable content from portable-toggles.html')
   await expect(body(page).locator('details')).toHaveCount(2)
   await expect(body(page).locator('details').first()).not.toHaveAttribute('open')
   expect(await source(page)).toBe(original)
