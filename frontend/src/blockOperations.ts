@@ -183,7 +183,7 @@ export function blockAction(source: string, blocks: DocumentBlock[], input: Docu
   return target ? moveBlocks(source, selected, target, action === 'indent' ? 'inside' : action === 'up' ? 'before' : 'after', defaultTitle) : null
 }
 
-export const CONVERT_TYPES: BlockType[] = ['text', 'h1', 'h2', 'h3', 'bullet', 'ordered', 'task', 'quote', 'code', 'toggle']
+export const CONVERT_TYPES: BlockType[] = ['text', 'h1', 'h2', 'h3', 'h4', 'bullet', 'ordered', 'task', 'quote', 'code', 'toggle']
 export function canConvertBlock(block: DocumentBlock, type: BlockType, blocks: DocumentBlock[], source: string) {
   if (type === 'toggle' || block.kind === 'details') return true
   if (!['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'li', 'blockquote', 'pre'].includes(block.kind)) return false
@@ -239,7 +239,7 @@ function convertOne(source: string, block: DocumentBlock, type: BlockType, defau
       const fence = '`'.repeat(longest + 1)
       result = `${fence}text${nl}${content}${nl}${fence}`
     }
-  } else if (['h1', 'h2', 'h3'].includes(type)) result = '#'.repeat(Number(type[1])) + ' ' + body.replace(/\r?\n/g, ' ')
+  } else if (['h1', 'h2', 'h3', 'h4'].includes(type)) result = '#'.repeat(Number(type[1])) + ' ' + body.replace(/\r?\n/g, ' ')
   else if (type === 'quote') result = body.split(/\r?\n/).map((line) => '> ' + line).join(nl)
   else if (['bullet', 'ordered', 'task'].includes(type)) {
     const marker = type === 'ordered' ? '1. ' : type === 'task' ? '- [ ] ' : '- '

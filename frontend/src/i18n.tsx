@@ -33,6 +33,7 @@ const ZH_TW: Record<string, string> = {
   'Heading 1': '大標題',
   'Heading 2': '中標題',
   'Heading 3': '小標題',
+  'Heading 4': '四級標題',
   'Bulleted list': '項目清單',
   'Numbered list': '編號清單',
   'To-do list': '待辦清單',

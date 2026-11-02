@@ -19,8 +19,8 @@ import { mermaidFontScale, normalizeMermaidLabelWidths, renderMathBlocks, render
 import { ImageLightbox, type LightboxMedia } from './ImageLightbox'
 import { editableCodeText, prepareMarkdownEditing, protectedMarkdownBlocks } from '../markdownEditing'
 import { isEditableLink } from '../htmlEditing'
-import { Plus, Trash2, Type, Heading1, Heading2, Heading3, List, ListOrdered, ListTodo, Quote, Code2, Table2, Minus, X, Bold, Italic, Code, Link, ChevronRight } from 'lucide-react'
-import { BLOCK_TYPES, insertBlock, deleteBlock, splitBlock, mergeBlock, ensureWritingLine, focusWritingLine, rootBlock, lineOffsets, type BlockChange, type BlockType } from '../markdownBlocks'
+import { Plus, Trash2, Type, Heading1, Heading2, Heading3, Heading4, List, ListOrdered, ListTodo, Quote, Code2, Table2, Minus, X, Bold, Italic, Code, Link, ChevronRight } from 'lucide-react'
+import { BLOCK_TYPES, insertBlock, deleteBlock, splitBlock, mergeBlock, ensureWritingLine, focusWritingLine, rootBlock, setTaskChecked, lineOffsets, type BlockChange, type BlockType } from '../markdownBlocks'
 import { SourceBlockEditor } from './SourceBlockEditor'
 import { formatInlineSelection, readInlineSelection, restoreInlineSelection, type InlineFormat, type InlineSelection } from '../inlineFormatting'
 import { BlockControls } from './BlockControls'
@@ -726,6 +726,14 @@ const PreviewPaneComponent = forwardRef<PreviewHandle, PreviewPaneProps>(functio
     return false
   }, [t, theme])
 
+  const handleTaskChange = (target: HTMLInputElement) => {
+    const line = Number(target.closest('li[data-source-start]')?.getAttribute('data-source-start'))
+    const next = Number.isInteger(line) ? setTaskChecked(markdown, line, target.checked) : null
+    if (next === null || (next !== markdown && !changeRef.current?.(next, markdown, target))) {
+      target.checked = !target.checked
+    }
+  }
+
   const handleClick = async (event: React.MouseEvent<HTMLElement>) => {
     const summary = (event.target as Element).closest<HTMLElement>('summary')
     if (summary && editing && contentRef.current) {
@@ -917,7 +925,7 @@ const PreviewPaneComponent = forwardRef<PreviewHandle, PreviewPaneProps>(functio
       }}>
         <div className="markdown-block-menu-heading"><strong>{t('Add content')}</strong><button type="button" aria-label={t('Close')} onClick={closeBlockMenu}><X size={16} /></button></div>
         {BLOCK_TYPES.map((type, index) => {
-          const Icon = [Type, Heading1, Heading2, Heading3, List, ListOrdered, ListTodo, Quote, Code2, Table2, Minus, ChevronRight][index]
+          const Icon = [Type, Heading1, Heading2, Heading3, Heading4, List, ListOrdered, ListTodo, Quote, Code2, Table2, Minus, ChevronRight][index]
           return <button key={type.id} data-block-type={type.id} type="button" onClick={() => addBlock(type.id, blockMenu.target, blockMenu.replace, blockMenu.position)}><Icon size={18} /><span>{t(type.label)}</span></button>
         })}
         {blockMenu.target ? <button type="button" className="markdown-block-delete" onClick={() => { if (contentRef.current) applyBlockChange(deleteBlock(contentRef.current, markdown, blockMenu.target!), blockMenu.target!) }}><Trash2 size={17} /><span>{t('Delete block')}</span></button> : null}
@@ -961,6 +969,10 @@ const PreviewPaneComponent = forwardRef<PreviewHandle, PreviewPaneProps>(functio
             }}
             onInput={editing ? (event) => {
               const target = event.target as HTMLElement
+              if (target instanceof HTMLInputElement && target.matches('.task-list-checkbox')) {
+                handleTaskChange(target)
+                return
+              }
               if (target instanceof HTMLTextAreaElement) resizeCodeEditor(target)
               publishVisualEdit(target)
             } : undefined}

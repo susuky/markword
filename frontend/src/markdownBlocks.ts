@@ -9,6 +9,7 @@ export const BLOCK_TYPES = [
   { id: 'h1', label: 'Heading 1', source: '# ' + CURSOR },
   { id: 'h2', label: 'Heading 2', source: '## ' + CURSOR },
   { id: 'h3', label: 'Heading 3', source: '### ' + CURSOR },
+  { id: 'h4', label: 'Heading 4', source: '#### ' + CURSOR },
   { id: 'bullet', label: 'Bulleted list', source: '- ' + CURSOR },
   { id: 'ordered', label: 'Numbered list', source: '1. ' + CURSOR },
   { id: 'task', label: 'To-do list', source: '- [ ] ' + CURSOR },
@@ -24,6 +25,19 @@ export function lineOffsets(source: string) {
   const starts = [0]
   for (let i = 0; i < source.length; i++) if (source[i] === '\n') starts.push(i + 1)
   return starts
+}
+
+// Change only the task marker, preserving list nesting, links and surrounding Markdown.
+export function setTaskChecked(source: string, line: number, checked: boolean): string | null {
+  const from = lineOffsets(source)[line - 1]
+  if (from === undefined) return null
+  const end = source.indexOf('\n', from)
+  const text = source.slice(from, end < 0 ? source.length : end)
+  const marker = text.match(/^((?:[ \t]*>[ \t]?)*[ \t]*(?:[-+*]|\d+[.)])[ \t]+\[)([ xX])(\])/)
+  if (!marker) return null
+  const position = from + marker[1].length
+  if ((source[position].toLowerCase() === 'x') === checked) return source
+  return source.slice(0, position) + (checked ? 'x' : ' ') + source.slice(position + 1)
 }
 
 export function rootBlock(root: HTMLElement, target: Element | null) {
