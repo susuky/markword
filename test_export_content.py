@@ -306,3 +306,31 @@ def test_commonmark_list_children_keep_exported_hierarchy(monkeypatch, tmp_path)
     doc = Document(app.export_word(source))
     levels = [p._p.pPr.numPr.ilvl.val for p in doc.paragraphs if p._p.pPr is not None and p._p.pPr.numPr is not None]
     assert {0, 1, 2} <= set(levels)
+
+
+def test_notion_short_task_markers_export_as_checkboxes_without_touching_code():
+    source = '''[] First
+[ ] Second
+[x] Finished
+
+> [] Quoted
+
+- [] Native list
+
+~~~text
+[] Literal in a fence
+[ ] Literal in a fence
+~~~
+
+    [] Indented code
+'''
+    soup = BeautifulSoup(export_markdown.render_export_body(source, THEMES['Light']), 'html.parser')
+    tasks = [item.get_text(' ', strip=True) for item in soup.select('li')]
+    assert '☐ First' in tasks
+    assert '☐ Second' in tasks
+    assert '☑ Finished' in tasks
+    assert any('Quoted' in item and '☐' in item for item in tasks)
+    assert '☐ Native list' in tasks
+    assert '[] Literal in a fence' in soup.get_text()
+    assert '[ ] Literal in a fence' in soup.get_text()
+    assert '[] Indented code' in soup.get_text()

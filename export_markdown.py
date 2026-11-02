@@ -79,6 +79,24 @@ class CommonMarkFences(Preprocessor):
         return lines
 
 
+class ExportShortTasks(Preprocessor):
+    def run(self, lines):
+        # Existing []/[ ] task shorthand must render consistently in PDF/Word.
+        # Fences were already stashed by CommonMarkFences; indented code is
+        # still guarded by the CommonMark parser's source ranges.
+        tokens = MarkdownIt('commonmark').parse('\n'.join(lines))
+        code = {line for token in tokens if token.type in ('fence', 'code_block') and token.map
+                for line in range(*token.map)}
+        for index, line in enumerate(lines):
+            if index in code:
+                continue
+            match = re.match(r'^((?:[ \t]*>[ \t]?)*)( {0,3})\[([ xX]?)\](?:[ \t]+(.*))?$', line)
+            if match:
+                prefix, spaces, state, description = match.groups()
+                lines[index] = prefix + spaces + '- [' + (state or ' ') + '] ' + (description or '')
+        return lines
+
+
 class CommonMarkLists(Preprocessor):
     def run(self, lines):
         # CommonMark list content starts after its marker (often two spaces).
@@ -225,6 +243,7 @@ class ExportSyntax(Extension):
     def extendMarkdown(self, md):
         md.ESCAPED_CHARS.append('$')
         md.preprocessors.register(CommonMarkFences(md), 'export_fences', 26)
+        md.preprocessors.register(ExportShortTasks(md), 'export_short_tasks', 25.5)
         md.preprocessors.register(CommonMarkLists(md), 'export_lists', 25)
         md.preprocessors.register(ExportToggles(md), 'export_toggles', 24)
         md.inlinePatterns.register(InlineMath(r'(?<!\$)\$(?!\$)', md), 'export_math', 185)
@@ -236,7 +255,7 @@ class TaskLists(Treeprocessor):
     def run(self, root):
         for item in root.iter('li'):
             first = item[0] if len(item) and item[0].tag == 'p' else item
-            match = re.match(r'^\[([ xX])\]\s+', first.text or '')
+            match = re.match(r'^\[([ xX]?)\](?:\s+|$)', first.text or '')
             if match:
                 first.text = ('☑ ' if match[1].lower() == 'x' else '☐ ') + first.text[match.end():]
 

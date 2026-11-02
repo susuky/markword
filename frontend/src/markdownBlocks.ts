@@ -33,11 +33,11 @@ export function setTaskChecked(source: string, line: number, checked: boolean): 
   if (from === undefined) return null
   const end = source.indexOf('\n', from)
   const text = source.slice(from, end < 0 ? source.length : end)
-  const marker = text.match(/^((?:[ \t]*>[ \t]?)*[ \t]*(?:[-+*]|\d+[.)])[ \t]+\[)([ xX])(\])/)
+  const marker = text.match(/^((?:[ \t]*>[ \t]?)*[ \t]*(?:(?:[-+*]|\d+[.)])[ \t]+)?\[)([ xX]?)(\])(?=[ \t]|$)/)
   if (!marker) return null
   const position = from + marker[1].length
-  if ((source[position].toLowerCase() === 'x') === checked) return source
-  return source.slice(0, position) + (checked ? 'x' : ' ') + source.slice(position + 1)
+  if ((marker[2].toLowerCase() === 'x') === checked) return source
+  return source.slice(0, position) + (checked ? 'x' : ' ') + source.slice(position + marker[2].length)
 }
 
 export function rootBlock(root: HTMLElement, target: Element | null) {

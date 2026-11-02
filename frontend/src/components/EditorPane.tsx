@@ -1,7 +1,7 @@
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown'
 import { html } from '@codemirror/lang-html'
 import { indentWithTab, insertNewline, insertNewlineKeepIndent, isolateHistory, undo, redo } from '@codemirror/commands'
-import { foldAll, indentUnit, unfoldAll } from '@codemirror/language'
+import { foldAll, indentUnit, syntaxTree, unfoldAll } from '@codemirror/language'
 import { openSearchPanel } from '@codemirror/search'
 import { Compartment, EditorSelection, EditorState, Prec, Transaction } from '@codemirror/state'
 import { EditorView, keymap } from '@codemirror/view'
@@ -9,7 +9,7 @@ import { basicSetup } from 'codemirror'
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useI18n } from '../i18n'
-import { continueMarkdownLine, removeMarkdownMarker, renumberAfterDeletion } from '../editorCommands'
+import { continueMarkdownLine, enterToggleSummary, removeMarkdownMarker, renumberAfterDeletion } from '../editorCommands'
 import type { DocumentMode } from '../types'
 import { tableAtPosition, tableMarkdown, type TableEdit } from '../tableEditing'
 import type { TableLayout } from '../tableLayout'
@@ -20,8 +20,53 @@ function modeExtensions(mode: DocumentMode | 'html') {
   return mode === 'markdown' ? [
     markdown({ base: markdownLanguage, addKeymap: false }),
     renumberAfterDeletion,
+    EditorView.inputHandler.of((view, from, to, text) => {
+      if (text !== ' ' || from !== to || view.composing) return false
+      const line = view.state.doc.lineAt(from)
+      const prefix = view.state.doc.sliceString(line.from, from)
+      const task = prefix.match(/^((?:[ \t]*>[ \t]?)*[ \t]*)\[([ xX]?)\]$/)
+      const quote = prefix.match(/^([ \t]*)"$/)
+      const toggle = prefix.match(/^([ \t]*)>$/)
+      if (!task && !quote && !toggle) return false
+      const syntax = syntaxTree(view.state).resolveInner(Math.max(line.from, from - 1), -1)
+      let node: typeof syntax | null = syntax
+      while (node) {
+        if (node.name === 'FencedCode' || node.name === 'CodeBlock') return false
+        node = node.parent
+      }
+      let insert: string
+      let cursor: number
+      let end = from
+      if (task) {
+        insert = task[1] + '- [' + (task[2] || ' ') + '] '
+        cursor = insert.length
+      } else if (quote) {
+        insert = quote[1] + '> '
+        cursor = insert.length
+        // CodeMirror auto-closes double quotes; consume the paired closing
+        // quote when the opening quote becomes a block shortcut.
+        if (view.state.doc.sliceString(from, from + 1) === '"') end = from + 1
+      } else {
+        // Notion's > shortcut creates a collapsible block. Imported "> text"
+        // still parses as a standard Markdown blockquote.
+        const indent = toggle![1]
+        const title = view.state.doc.sliceString(from, line.to)
+        const opening = indent + '<details open>\n' + indent + '<summary>'
+        insert = opening + title + '</summary>\n\n' + indent + '</details>'
+        cursor = opening.length
+        end = line.to
+      }
+      view.dispatch({
+        changes: { from: line.from, to: end, insert },
+        selection: EditorSelection.cursor(line.from + cursor),
+        scrollIntoView: true,
+        annotations: [Transaction.userEvent.of('input'), isolateHistory.of('full')],
+      })
+      return true
+    }),
     indentUnit.of('    '),
     Prec.high(keymap.of([
+      { key: 'Enter', run: enterToggleSummary },
       { key: 'Enter', run: continueMarkdownLine },
       { key: 'Enter', run: insertNewlineKeepIndent },
       { key: 'Shift-Enter', run: insertNewline },

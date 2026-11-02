@@ -869,10 +869,24 @@ const PreviewPaneComponent = forwardRef<PreviewHandle, PreviewPaneProps>(functio
       if (event.key === '/' && !target.closest('p, li, h1, h2, h3, h4, h5, h6')?.textContent?.trim()) {
         event.preventDefault(); openBlockMenu(target, true); return
       }
-      if (event.key === 'Enter' && !event.shiftKey) {
+      if (event.key === 'Enter') {
         event.preventDefault()
         if (event.ctrlKey || event.metaKey) target.blur()
-        else if (contentRef.current) applyBlockChange(splitBlock(contentRef.current, markdown, target), target)
+        else if (event.shiftKey) {
+          // One visual line break inside the existing Markdown block.
+          const selection = window.getSelection()
+          if (selection?.rangeCount && target.contains(selection.getRangeAt(0).commonAncestorContainer)) {
+            const range = selection.getRangeAt(0)
+            range.deleteContents()
+            const breakElement = document.createElement('br')
+            range.insertNode(breakElement)
+            range.setStartAfter(breakElement)
+            range.collapse(true)
+            selection.removeAllRanges()
+            selection.addRange(range)
+            publishVisualEdit(target)
+          }
+        } else if (contentRef.current) applyBlockChange(splitBlock(contentRef.current, markdown, target), target)
       }
       if (event.key === 'Backspace' && contentRef.current) {
         const change = mergeBlock(contentRef.current, markdown, target)

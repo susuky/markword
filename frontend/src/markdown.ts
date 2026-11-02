@@ -110,6 +110,50 @@ md.renderer.rules.markword_table_layout = (tokens, index) => {
   return `<p data-source-start="${line}" data-source-end="${line}">${md.utils.escapeHtml(token.content)}</p>\n`
 }
 
+// Also recognize the short task marker used in block editors, including imported
+// documents. Native Markdown list markers keep their usual CommonMark parsing.
+function shortTaskBlockRule(state: StateBlock, startLine: number, endLine: number, silent: boolean) {
+  const textAt = (line: number) => state.src.slice(state.bMarks[line] + state.tShift[line], state.eMarks[line])
+  const itemAt = (line: number) => textAt(line).match(/^\[([ xX]?)\](?:[ \t]+(.*))?$/)
+  // A native "- [ ]" item's content is parsed inside its list_item_open.
+  // Keep that item intact instead of wrapping it in a second task list.
+  if (state.sCount[startLine] - state.blkIndent >= 4
+    || state.tokens.at(-1)?.type === 'list_item_open'
+    || !itemAt(startLine)) return false
+  if (silent) return true
+
+  const indentation = state.sCount[startLine]
+  const items: Array<{ line: number; text: string }> = []
+  for (let line = startLine; line < endLine && state.sCount[line] === indentation; line++) {
+    const item = itemAt(line)
+    if (!item) break
+    items.push({ line, text: '[' + (item[1] || ' ') + '] ' + (item[2] ?? '') })
+  }
+  const last = startLine + items.length
+  const list = state.push('bullet_list_open', 'ul', 1)
+  list.block = true
+  list.map = [startLine, last]
+  for (const item of items) {
+    const opened = state.push('list_item_open', 'li', 1)
+    opened.block = true
+    opened.map = [item.line, item.line + 1]
+    const paragraph = state.push('paragraph_open', 'p', 1)
+    paragraph.hidden = true
+    paragraph.map = [item.line, item.line + 1]
+    const inline = state.push('inline', '', 0)
+    inline.content = item.text
+    inline.map = [item.line, item.line + 1]
+    inline.children = []
+    const closed = state.push('paragraph_close', 'p', -1)
+    closed.hidden = true
+    state.push('list_item_close', 'li', -1)
+  }
+  state.push('bullet_list_close', 'ul', -1)
+  state.line = last
+  return true
+}
+md.block.ruler.before('paragraph', 'markword_short_tasks', shortTaskBlockRule, { alt: ['paragraph', 'reference', 'blockquote', 'list'] })
+
 // Only this small, portable HTML container is accepted. Arbitrary HTML stays disabled.
 function toggleBlockRule(state: StateBlock, startLine: number, endLine: number, silent: boolean) {
   const env = state.env as MarkdownEnvironment
@@ -227,7 +271,7 @@ md.core.ruler.push('markword_task_lists', (state) => {
     const itemOpen = state.tokens[index - 2]
     if (itemOpen.type !== 'list_item_open') continue
     const text = inline.children?.find((child) => child.type === 'text')
-    const match = text?.content.match(/^\[([ xX])\](?:\s+|$)/)
+    const match = text?.content.match(/^\[([ xX]?)\](?:\s+|$)/)
     if (!text || !match) continue
     text.content = text.content.slice(match[0].length)
     const checkbox = new state.Token('task_checkbox', '', 0)

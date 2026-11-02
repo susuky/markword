@@ -1,7 +1,7 @@
 import { insertNewlineKeepIndent, isolateHistory } from '@codemirror/commands'
 import { deleteMarkupBackward, insertNewlineContinueMarkupCommand } from '@codemirror/lang-markdown'
 import { syntaxTree } from '@codemirror/language'
-import { ChangeSet, EditorState, Transaction, type ChangeSpec, type StateCommand } from '@codemirror/state'
+import { ChangeSet, EditorSelection, EditorState, Transaction, type ChangeSpec, type StateCommand } from '@codemirror/state'
 
 const continueMarkup = insertNewlineContinueMarkupCommand({ nonTightLists: false })
 const emptyListMarker = /^\s*(?:>\s*)*(?:[-+*](?: \[[ xX]\])?|\d+[.)])\s*$/
@@ -32,6 +32,34 @@ const continueMarkdownMarkup: StateCommand = ({ state, dispatch }) => continueMa
     }))
   },
 })
+
+export const enterToggleSummary: StateCommand = ({ state, dispatch }) => {
+  const selection = state.selection.main
+  if (!selection.empty) return false
+  const line = state.doc.lineAt(selection.head)
+  if (!/^\s*<summary>.*<\/summary>$/.test(line.text)) return false
+  const end = line.text.indexOf('</summary>')
+  const offset = selection.head - line.from
+  if (offset < line.text.indexOf('<summary>') + '<summary>'.length || offset > end) return false
+  if (line.number >= state.doc.lines) return false
+  const next = state.doc.line(line.number + 1)
+  if (next.text.trim()) return false
+
+  // The title stays in its summary line; Enter moves into the body's next
+  // paragraph, carrying any text that was after the cursor.
+  const tail = line.text.slice(offset, end)
+  const changes = state.changes([
+    { from: selection.head, to: line.from + end, insert: '' },
+    ...(tail ? [{ from: next.from, to: next.from, insert: tail }] : []),
+  ])
+  dispatch(state.update({
+    changes,
+    selection: EditorSelection.cursor(changes.mapPos(next.from, -1)),
+    scrollIntoView: true,
+    annotations: [Transaction.userEvent.of('input'), isolateHistory.of('full')],
+  }))
+  return true
+}
 
 export const continueMarkdownLine: StateCommand = (target) => {
   const { state } = target

@@ -64,6 +64,8 @@ The preview is editable by default. On desktop, click **Single-page editing** to
 
 The block menu includes paragraphs, four heading levels, bulleted/numbered/task lists, quotes, code, tables, and dividers. Paste or drop images and attachments into the workspace to add them.
 
+In the Markdown source editor, type `[] ` or `[ ] ` for a checkbox, `> ` for a toggle, or `" ` for a quote. Headings use `# ` through `#### `; lists use `- ` or `1. `. Legacy `[] Task` lines also render as clickable checkboxes. In the visual editor, Enter splits a block at the caret and Shift+Enter adds a line break inside the block.
+
 Edits update the same source and browser draft. Code highlighting returns when you leave a code block. Blocks containing formulas, footnote references, or media still use the source editor. Editing a block in the preview may normalize its Markdown, including list indentation, emphasis markers, or reference links; other blocks keep their original source.
 
 ### Edit HTML without writing markup
