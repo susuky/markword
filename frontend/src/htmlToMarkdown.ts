@@ -1,5 +1,14 @@
 import TurndownService from 'turndown'
 
+export function summaryToMarkdown(summary: HTMLElement | null, literalText = false) {
+  const heading = summary?.querySelector<HTMLElement>(':scope > h1, :scope > h2, :scope > h3, :scope > h4, :scope > h5, :scope > h6')
+  const content = document.createElement('div')
+  content.innerHTML = heading?.innerHTML ?? summary?.innerHTML ?? ''
+  const title = htmlToMarkdown(content, literalText).replace(/\r?\n/g, ' ').replaceAll('</summary>', '&lt;/summary&gt;')
+  const tag = heading?.tagName.toLowerCase()
+  return `<summary>${tag ? `<${tag}>${title}</${tag}>` : title}</summary>`
+}
+
 export function htmlToMarkdown(body: HTMLElement | DocumentFragment, literalText = false): string {
   const converter = new TurndownService({ headingStyle: 'atx', bulletListMarker: '-', codeBlockStyle: 'fenced' })
   if (literalText) {
@@ -10,16 +19,20 @@ export function htmlToMarkdown(body: HTMLElement | DocumentFragment, literalText
     filter: (node) => ['DEL', 'S', 'STRIKE'].includes(node.nodeName),
     replacement: (content) => `~~${content}~~`,
   })
+  converter.addRule('toggleSummary', {
+    filter: 'summary',
+    replacement: (_content, node) => summaryToMarkdown(node, literalText),
+  })
   converter.addRule('toggle', {
     filter: 'details',
     replacement: (_content, node) => {
       const element = node as HTMLElement
-      const summary = element.querySelector(':scope > summary')
+      const summary = element.querySelector<HTMLElement>(':scope > summary')
       const content = element.querySelector(':scope > .markdown-toggle-content')
       const copy = element.cloneNode(true) as HTMLElement
       copy.querySelector(':scope > summary')?.remove()
       const body = converter.turndown(content?.innerHTML ?? copy.innerHTML)
-      return `\n\n<details${element.hasAttribute('open') ? ' open' : ''}>\n<summary>${converter.turndown(summary?.innerHTML ?? '').replace(/\n/g, ' ')}</summary>\n\n${body}\n\n</details>\n\n`
+      return `\n\n<details${element.hasAttribute('open') ? ' open' : ''}>\n${summaryToMarkdown(summary, literalText)}\n\n${body}\n\n</details>\n\n`
     },
   })
   converter.addRule('taskCheckbox', {

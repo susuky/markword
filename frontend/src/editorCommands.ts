@@ -38,9 +38,11 @@ export const enterToggleSummary: StateCommand = ({ state, dispatch }) => {
   if (!selection.empty) return false
   const line = state.doc.lineAt(selection.head)
   if (!/^\s*<summary>.*<\/summary>$/.test(line.text)) return false
-  const end = line.text.indexOf('</summary>')
+  const heading = line.text.match(/^\s*<summary><h([1-6])>/)
+  const end = line.text.indexOf(heading ? `</h${heading[1]}></summary>` : '</summary>')
   const offset = selection.head - line.from
-  if (offset < line.text.indexOf('<summary>') + '<summary>'.length || offset > end) return false
+  const start = heading ? heading[0].length : line.text.indexOf('<summary>') + '<summary>'.length
+  if (end < 0 || offset < start || offset > end) return false
   if (line.number >= state.doc.lines) return false
   const next = state.doc.line(line.number + 1)
   if (next.text.trim()) return false

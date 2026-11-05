@@ -10,6 +10,11 @@ export function normalizeDocumentMode(value: unknown): DocumentMode {
   return value === 'text' || value === 'mermaid' ? value : 'markdown'
 }
 
+export function documentHeadingTitle(source: string) {
+  const heading = source.match(/^(?:#\s+(.+)|[ \t]*<summary><h1>(.*)<\/h1><\/summary>[ \t]*)$/m)
+  return (heading?.[1] ?? heading?.[2])?.replace(/[*_`~]/g, '').trim()
+}
+
 export function documentAsMarkdown(source: string, mode: DocumentMode) {
   if (mode === 'markdown') return source
   let fenceLength = 3

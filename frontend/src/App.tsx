@@ -29,7 +29,7 @@ import { RevisionPanel } from './components/RevisionPanel'
 import { ShortcutHelp } from './components/ShortcutHelp'
 import { StatsPopover } from './components/StatsPopover'
 import { IS_STATIC_DEPLOYMENT } from './deployment'
-import { DOCUMENT_MODES, documentAsMarkdown, normalizeDocumentMode } from './documentMode'
+import { DOCUMENT_MODES, documentAsMarkdown, documentHeadingTitle, normalizeDocumentMode } from './documentMode'
 import { useDebouncedStats } from './hooks/useDebouncedStats'
 import { useI18n } from './i18n'
 import { readImportSummary, type ImportSummary } from './importSummary'
@@ -70,7 +70,7 @@ const MAX_LOCAL_FILE_BYTES = 15 * 1024 * 1024
 class DocumentActionError extends Error {}
 
 function documentTitle(markdown: string, name?: string | null) {
-  const title = name?.trim() || markdown.match(/^#\s+(.+)$/m)?.[1]?.replace(/[*_`~]/g, '').trim() || 'markword-document'
+  const title = name?.trim() || documentHeadingTitle(markdown) || 'markword-document'
   return title.replace(/[\\/:*?"<>|\r\n\t]/g, '_').slice(0, 120) || 'markword-document'
 }
 
@@ -96,9 +96,11 @@ function collectHeadings(markdown: string): OutlineHeading[] {
     }
     if (fence) return
     const match = line.match(/^\s{0,3}(#{1,6})\s+(.+?)\s*#*\s*$/)
+      ?? line.match(/^\s*<summary>\s*<h([1-6])>(.*?)<\/h\1>\s*<\/summary>\s*$/i)
     if (!match) return
     const text = match[2].replace(/\[([^\]]+)]\([^)]*\)|[*_`~]/g, '$1').trim()
-    headings.push({ id: `${index + 1}-${headings.length}`, level: match[1].length, line: index + 1, text })
+    const level = match[1].startsWith('#') ? match[1].length : Number(match[1])
+    headings.push({ id: `${index + 1}-${headings.length}`, level, line: index + 1, text })
   })
   return headings
 }
@@ -394,7 +396,7 @@ export default function App({ documentId, documentsOpen, onDocumentsOpenChange: 
       if (!await backUpBeforeReplacing()) return
       const draft = await createWorkspaceDocument(content, {
         theme: currentDocumentRef.current.theme, mode: nextMode,
-        name: /^#\s+\S/m.test(content) ? null : fileName.replace(/\.[^.]+$/, '').slice(0, 120) || null,
+        name: documentHeadingTitle(content) ? null : fileName.replace(/\.[^.]+$/, '').slice(0, 120) || null,
         importSummary: summary ? JSON.stringify(summary) : null,
       })
       if (!canReplaceDocument()) return
@@ -945,7 +947,7 @@ export default function App({ documentId, documentsOpen, onDocumentsOpenChange: 
               </div>
             </div>
           </header>
-          <EditorPane ref={editorRef} mode={mode} value={markdown} onChange={changeMarkdown} onScrollLine={handleEditorScroll} typewriter={typewriterMode} onSlashCommand={() => setCommandOpen(true)} onPasteFiles={(files) => void handleAssetFiles(files)} />
+          <EditorPane ref={editorRef} documentId={documentId} mode={mode} value={markdown} onChange={changeMarkdown} onScrollLine={handleEditorScroll} typewriter={typewriterMode} onSlashCommand={() => setCommandOpen(true)} onPasteFiles={(files) => void handleAssetFiles(files)} />
         </section>
 
         <button className="splitter" type="button" onPointerDown={beginResize} onKeyDown={(event) => {

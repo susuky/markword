@@ -114,7 +114,7 @@ export default function HtmlEditorPage() {
     <div className={`html-workspace ${showSource ? '' : 'html-workspace--visual'} html-mobile-${mobileView}`}>
       <section className="html-source-pane" aria-label={t('HTML source')}>
         <header className="pane-header"><div className="pane-title"><Code2 size={17} aria-hidden="true" />{t('HTML source')}</div><button type="button" className="toolbar-button" onClick={() => editorRef.current?.search()}>{t('Search document')}</button></header>
-        <EditorPane ref={editorRef} mode="html" value={draft.content} onChange={changeContent} onScrollLine={() => {}} />
+        <EditorPane ref={editorRef} documentId="html-editor" mode="html" value={draft.content} onChange={changeContent} onScrollLine={() => {}} />
       </section>
       <HtmlPreview value={draft.content} onChange={changeContent} onDownload={download} />
     </div>

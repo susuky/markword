@@ -18,6 +18,10 @@ export const BLOCK_TYPES = [
   { id: 'table', label: 'Table', source: '|  |  |\n| --- | --- |\n|  |  |' },
   { id: 'divider', label: 'Divider', source: '---\n\n' + CURSOR },
   { id: 'toggle', label: 'Toggle', source: '<details open>\n<summary>' + CURSOR + '</summary>\n\n\n</details>' },
+  { id: 'toggle-h1', label: 'Toggle heading 1', source: '<details open>\n<summary><h1>' + CURSOR + '</h1></summary>\n\n\n</details>' },
+  { id: 'toggle-h2', label: 'Toggle heading 2', source: '<details open>\n<summary><h2>' + CURSOR + '</h2></summary>\n\n\n</details>' },
+  { id: 'toggle-h3', label: 'Toggle heading 3', source: '<details open>\n<summary><h3>' + CURSOR + '</h3></summary>\n\n\n</details>' },
+  { id: 'toggle-h4', label: 'Toggle heading 4', source: '<details open>\n<summary><h4>' + CURSOR + '</h4></summary>\n\n\n</details>' },
 ] as const
 export type BlockType = typeof BLOCK_TYPES[number]['id']
 
@@ -98,7 +102,7 @@ function clean(container: HTMLElement) {
 // Structural edits serialize only the containing block. Invisible definitions and other blocks stay byte-for-byte intact.
 export function splitBlock(root: HTMLElement, source: string, target: HTMLElement): BlockChange | null {
   const block = bounds(root, source, target)
-  let leaf = target.closest<HTMLElement>(LEAF)
+  let leaf = target.closest<HTMLElement>('summary') ?? target.closest<HTMLElement>(LEAF)
   // Loose Markdown lists wrap each item's writing line in a paragraph.
   if (leaf?.matches('p') && leaf.parentElement?.matches('li') && leaf === leaf.parentElement.firstElementChild) leaf = leaf.parentElement
   const selection = window.getSelection()

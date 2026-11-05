@@ -844,6 +844,11 @@ const PreviewPaneComponent = forwardRef<PreviewHandle, PreviewPaneProps>(functio
     }
     if (editing && target.isContentEditable) {
       if (event.nativeEvent.isComposing || event.keyCode === 229) return
+      const paragraph = target.closest<HTMLElement>('p')
+      if (event.key === ' ' && !event.ctrlKey && !event.metaKey && !event.altKey && paragraph?.textContent === '>' && !paragraph.closest('li, summary, blockquote') && contentRef.current) {
+        const caret = readInlineSelection(contentRef.current, true)
+        if (caret?.range.collapsed && caret.from === 1) { event.preventDefault(); addBlock('toggle', paragraph, true); return }
+      }
       if (event.key === 'Tab' && target.closest('li') && contentRef.current) {
         const blocks = documentBlocks(contentRef.current, markdown)
         const block = blocks.find((item) => item.anchor === target.closest('li'))
@@ -939,7 +944,7 @@ const PreviewPaneComponent = forwardRef<PreviewHandle, PreviewPaneProps>(functio
       }}>
         <div className="markdown-block-menu-heading"><strong>{t('Add content')}</strong><button type="button" aria-label={t('Close')} onClick={closeBlockMenu}><X size={16} /></button></div>
         {BLOCK_TYPES.map((type, index) => {
-          const Icon = [Type, Heading1, Heading2, Heading3, Heading4, List, ListOrdered, ListTodo, Quote, Code2, Table2, Minus, ChevronRight][index]
+          const Icon = [Type, Heading1, Heading2, Heading3, Heading4, List, ListOrdered, ListTodo, Quote, Code2, Table2, Minus][index] ?? ChevronRight
           return <button key={type.id} data-block-type={type.id} type="button" onClick={() => addBlock(type.id, blockMenu.target, blockMenu.replace, blockMenu.position)}><Icon size={18} /><span>{t(type.label)}</span></button>
         })}
         {blockMenu.target ? <button type="button" className="markdown-block-delete" onClick={() => { if (contentRef.current) applyBlockChange(deleteBlock(contentRef.current, markdown, blockMenu.target!), blockMenu.target!) }}><Trash2 size={17} /><span>{t('Delete block')}</span></button> : null}
@@ -969,6 +974,11 @@ const PreviewPaneComponent = forwardRef<PreviewHandle, PreviewPaneProps>(functio
             onFocus={(event) => { activeBlockRef.current = contentRef.current && rootBlock(contentRef.current, event.target as Element) }}
             onDoubleClick={handleDoubleClick}
             onKeyDown={handleKeyDown}
+            onKeyUp={editing ? (event) => {
+              // Native summary activation on Space must not steal the title's caret.
+              const target = event.target as HTMLElement
+              if (event.key === ' ' && target.isContentEditable && target.closest('summary')) event.preventDefault()
+            } : undefined}
             onCompositionStart={() => { composingRef.current = true; setInlineSelection(null) }}
             onCompositionEnd={() => { composingRef.current = false }}
             onBlur={(event) => {

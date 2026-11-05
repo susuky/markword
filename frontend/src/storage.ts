@@ -1,5 +1,6 @@
 import { translate } from './i18n'
 import { IS_STATIC_DEPLOYMENT } from './deployment'
+import { documentHeadingTitle } from './documentMode'
 
 export const usesSharedWorkspace = !IS_STATIC_DEPLOYMENT
 
@@ -182,7 +183,7 @@ export function subscribeToDocuments(listener: () => void) {
 export function documentName(draft: Pick<StoredDraft, 'content' | 'metadata'>) {
   const name = typeof draft.metadata.name === 'string' && draft.metadata.name.trim()
     ? draft.metadata.name.trim()
-    : draft.content.match(/^#\s+(.+)$/m)?.[1]?.replace(/[*_`~]/g, '').trim() || translate('Untitled document')
+    : documentHeadingTitle(draft.content) || translate('Untitled document')
   return name.slice(0, 120)
 }
 

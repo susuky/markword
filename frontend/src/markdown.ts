@@ -185,10 +185,16 @@ function toggleBlockRule(state: StateBlock, startLine: number, endLine: number, 
   if (opening[1]) token.attrSet('open', '')
   const heading = state.push('markword_summary_open', 'summary', 1)
   heading.map = [startLine + 1, startLine + 2]
+  const summaryHeading = summary[1].match(/^<h([1-6])>(.*)<\/h\1>$/)
+  if (summaryHeading) {
+    const title = state.push('heading_open', 'h' + summaryHeading[1], 1)
+    title.map = heading.map
+  }
   const inline = state.push('inline', '', 0)
-  inline.content = summary[1]
+  inline.content = summaryHeading?.[2] ?? summary[1]
   inline.map = heading.map
   inline.children = []
+  if (summaryHeading) state.push('heading_close', 'h' + summaryHeading[1], -1)
   state.push('markword_summary_close', 'summary', -1)
   const content = state.push('markword_toggle_content_open', 'div', 1)
   content.attrSet('class', 'markdown-toggle-content')

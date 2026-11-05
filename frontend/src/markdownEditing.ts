@@ -1,4 +1,4 @@
-import { htmlToMarkdown } from './htmlToMarkdown'
+import { htmlToMarkdown, summaryToMarkdown } from './htmlToMarkdown'
 import { renderMarkdown } from './markdown'
 
 const TEXT_SELECTOR = '[data-markdown-edit-text]'
@@ -73,7 +73,7 @@ export function prepareMarkdownEditing(root: HTMLElement, initialSource: string,
     }
     const leaves = [element, ...element.querySelectorAll<HTMLElement>('p, li, h1, h2, h3, h4, h5, h6, summary')]
     for (const leaf of leaves) {
-      if (!leaf.matches('p, li, h1, h2, h3, h4, h5, h6, summary') || leaf.querySelector(':scope > p')) continue
+      if (!leaf.matches('p, li, h1, h2, h3, h4, h5, h6, summary') || leaf.querySelector(':scope > p, :scope > h1, :scope > h2, :scope > h3, :scope > h4, :scope > h5, :scope > h6')) continue
       // A new list item can have children but still needs its own blank writing line.
       if (Array.from(leaf.childNodes).some((node) => !(node instanceof HTMLElement && node.matches('ul, ol')) && node.textContent?.trim())) continue
       const text = document.createTextNode(''); leaf.insertBefore(text, leaf.querySelector(':scope > ul, :scope > ol')); texts.push(text)
@@ -105,8 +105,8 @@ export function prepareMarkdownEditing(root: HTMLElement, initialSource: string,
       const container = document.createElement('div')
       container.append(clone)
       const previous = source.slice(block.from, block.to)
-      let converted = (block.element.matches('pre') && codes[0] ? fencedCode(previous, editableCodeText(codes[0])) : null) ?? htmlToMarkdown(container, true)
-      if (block.element.matches('summary')) converted = '<summary>' + converted.replace(/\r?\n/g, ' ').replaceAll('</summary>', '&lt;/summary&gt;') + '</summary>'
+      const converted = block.element.matches('summary') ? summaryToMarkdown(clone, true)
+        : (block.element.matches('pre') && codes[0] ? fencedCode(previous, editableCodeText(codes[0])) : null) ?? htmlToMarkdown(container, true)
       const replacement = converted + (previous.match(/(?:\r?\n[ \t]*)+$/)?.[0] ?? '')
       const next = source.slice(0, block.from) + replacement + source.slice(block.to)
       if (!onChange(next, source)) return false

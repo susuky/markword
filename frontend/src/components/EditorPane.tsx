@@ -1,7 +1,7 @@
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown'
 import { html } from '@codemirror/lang-html'
 import { indentWithTab, insertNewline, insertNewlineKeepIndent, isolateHistory, undo, redo } from '@codemirror/commands'
-import { foldAll, indentUnit, syntaxTree, unfoldAll } from '@codemirror/language'
+import { foldAll, foldEffect, foldedRanges, indentUnit, syntaxTree, unfoldAll } from '@codemirror/language'
 import { openSearchPanel } from '@codemirror/search'
 import { Compartment, EditorSelection, EditorState, Prec, Transaction } from '@codemirror/state'
 import { EditorView, keymap } from '@codemirror/view'
@@ -10,10 +10,19 @@ import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useSta
 import { createPortal } from 'react-dom'
 import { useI18n } from '../i18n'
 import { continueMarkdownLine, enterToggleSummary, removeMarkdownMarker, renumberAfterDeletion } from '../editorCommands'
+import { loadEditorFolding, saveEditorFolding } from '../editorFolding'
 import type { DocumentMode } from '../types'
 import { tableAtPosition, tableMarkdown, type TableEdit } from '../tableEditing'
 import type { TableLayout } from '../tableLayout'
 import { TableEditor } from './TableEditor'
+
+function documentChange(previous: string, value: string) {
+  // Keep unchanged positions mapped to themselves, including folds and scroll anchors.
+  let from = 0, to = previous.length, end = value.length
+  while (from < to && from < end && previous[from] === value[from]) from++
+  while (to > from && end > from && previous[to - 1] === value[end - 1]) { to--; end-- }
+  return { from, to, insert: value.slice(from, end) }
+}
 
 function modeExtensions(mode: DocumentMode | 'html') {
   if (mode === 'html') return [html(), Prec.high(keymap.of([indentWithTab]))]
@@ -97,6 +106,7 @@ export interface EditorHandle {
 }
 
 interface EditorPaneProps {
+  documentId: string
   mode: DocumentMode | 'html'
   value: string
   onChange: (value: string) => void
@@ -108,7 +118,7 @@ interface EditorPaneProps {
 
 export const EditorPane = forwardRef<EditorHandle, EditorPaneProps>(function EditorPane(
   {
-    value, mode, onChange, onScrollLine, typewriter = false,
+    documentId, value, mode, onChange, onScrollLine, typewriter = false,
     onSlashCommand, onPasteFiles,
   },
   ref,
@@ -162,14 +172,10 @@ export const EditorPane = forwardRef<EditorHandle, EditorPaneProps>(function Edi
       if (!view) return
       const previous = view.state.doc.toString()
       if (value === previous) return
-      // Keep unchanged positions mapped to themselves, including the scroll anchor.
-      let from = 0, to = previous.length, end = value.length
-      while (from < to && from < end && previous[from] === value[from]) from++
-      while (to > from && end > from && previous[to - 1] === value[end - 1]) { to--; end-- }
       const isolate = visualEditTargetRef.current !== target
       visualEditTargetRef.current = target
       view.dispatch({
-        changes: { from, to, insert: value.slice(from, end) },
+        changes: documentChange(previous, value),
         annotations: [Transaction.userEvent.of('input.preview'), ...(isolate ? [isolateHistory.of('before')] : [])],
       })
     },
@@ -266,6 +272,11 @@ export const EditorPane = forwardRef<EditorHandle, EditorPaneProps>(function Edi
           },
         }),
         EditorView.updateListener.of((update) => {
+          const folds = foldedRanges(update.state)
+          const previousFolds = foldedRanges(update.startState)
+          if ((folds.size || previousFolds.size) && (update.docChanged || folds !== previousFolds)) {
+            saveEditorFolding(documentId, update.state)
+          }
           if (update.docChanged) {
             if (update.transactions.some((transaction) => !transaction.isUserEvent('input.preview'))) visualEditTargetRef.current = null
             const nextValue = update.state.doc.toString()
@@ -308,11 +319,13 @@ export const EditorPane = forwardRef<EditorHandle, EditorPaneProps>(function Edi
     })
     const view = new EditorView({ state, parent: hostRef.current })
     viewRef.current = view
+    const folding = loadEditorFolding(documentId, state)
+    if (folding.length) view.dispatch({ effects: folding.map((range) => foldEffect.of(range)) })
     return () => {
       view.destroy()
       viewRef.current = null
     }
-  }, [])
+  }, [documentId])
 
   useEffect(() => {
     viewRef.current?.dispatch({ effects: languageRef.current.reconfigure(modeExtensions(mode)) })
@@ -326,7 +339,7 @@ export const EditorPane = forwardRef<EditorHandle, EditorPaneProps>(function Edi
     const view = viewRef.current
     if (!view || value === externalValueRef.current) return
     externalValueRef.current = value
-    view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: value } })
+    view.dispatch({ changes: documentChange(view.state.doc.toString(), value) })
   }, [value])
 
   return <>

@@ -94,13 +94,15 @@ function previousSibling(blocks: DocumentBlock[], selected: DocumentBlock[]) {
 
 function titleSource(block: DocumentBlock, source: string) {
   const raw = reindent(source.slice(block.from, block.to).trimEnd(), indentation(block, source), 0)
-  if (!['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6'].includes(block.kind) || raw.includes('\n')) return null
-  return raw.replace(/^#{1,6}\s+/, '').replace(/\s+#+\s*$/, '')
+  if (/^h[1-6]$/.test(block.kind)) return raw.replace(/^#{1,6}[ \t]+/, '').replace(/[ \t]+#+[ \t]*$/, '').replace(/\r?\n[ \t]*[=-]+[ \t]*$/, '').replace(/\r?\n/g, ' ')
+  return block.kind === 'p' && !raw.includes('\n') ? raw : null
 }
 
-export function toggleSource(title: string, body: string, source = '', open = true) {
+export function toggleSource(title: string, body: string, source = '', open = true, headingLevel = 0) {
   const nl = newline(source)
-  return `<details${open ? ' open' : ''}>${nl}<summary>${title.replaceAll('</summary>', '&lt;/summary&gt;')}</summary>${nl}${nl}${body.trimEnd()}${nl}${nl}</details>${nl}`
+  const value = title.replaceAll('</summary>', '&lt;/summary&gt;')
+  const summary = headingLevel ? `<h${headingLevel}>${value}</h${headingLevel}>` : value
+  return `<details${open ? ' open' : ''}>${nl}<summary>${summary}</summary>${nl}${nl}${body.trimEnd()}${nl}${nl}</details>${nl}`
 }
 
 export function moveBlocks(source: string, selectedInput: DocumentBlock[], target: DocumentBlock, placement: BlockPlacement, defaultTitle: string): BlockChange | null {
@@ -138,7 +140,7 @@ export function moveBlocks(source: string, selectedInput: DocumentBlock[], targe
     }
     const title = titleSource(target, source)
     const original = title === null ? reindent(source.slice(target.from, target.to), indentation(target, source), 0) + newline(source) : ''
-    const replacement = reindent(toggleSource(title ?? defaultTitle, original + body, source), 0, indentation(target, source))
+    const replacement = reindent(toggleSource(title ?? defaultTitle, original + body, source, true, /^h[1-6]$/.test(target.kind) ? Number(target.kind[1]) : 0), 0, indentation(target, source))
     return edit(source, [...selected.map((block) => ({ from: block.from, to: block.to, content: '' })), { from: target.from, to: target.to, content: replacement }], target.from)
   }
   // Dropping a parent beside its own child would overlap source edits.
@@ -183,9 +185,9 @@ export function blockAction(source: string, blocks: DocumentBlock[], input: Docu
   return target ? moveBlocks(source, selected, target, action === 'indent' ? 'inside' : action === 'up' ? 'before' : 'after', defaultTitle) : null
 }
 
-export const CONVERT_TYPES: BlockType[] = ['text', 'h1', 'h2', 'h3', 'h4', 'bullet', 'ordered', 'task', 'quote', 'code', 'toggle']
+export const CONVERT_TYPES: BlockType[] = ['text', 'h1', 'h2', 'h3', 'h4', 'bullet', 'ordered', 'task', 'quote', 'code', 'toggle', 'toggle-h1', 'toggle-h2', 'toggle-h3', 'toggle-h4']
 export function canConvertBlock(block: DocumentBlock, type: BlockType, blocks: DocumentBlock[], source: string) {
-  if (type === 'toggle' || block.kind === 'details') return true
+  if (type.startsWith('toggle') || block.kind === 'details') return true
   if (!['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'li', 'blockquote', 'pre'].includes(block.kind)) return false
   if (block.anchor.querySelector('img, .dynamic-source-block, .footnote-ref, .local-asset-link')) return false
   if (/^[ \t]*(?:>[ \t]*)*(?:[-+*]\s+|\d+[.)]\s+)?\[[^\]\n]+\]:/m.test(source.slice(block.from, block.to))) return false
@@ -196,22 +198,29 @@ export function canConvertBlock(block: DocumentBlock, type: BlockType, blocks: D
 function convertOne(source: string, block: DocumentBlock, type: BlockType, defaultTitle: string) {
   const nl = newline(source)
   const raw = reindent(source.slice(block.from, block.to).trimEnd(), indentation(block, source), 0)
-  if (type === 'toggle') {
-    if (block.kind === 'details') return source.slice(block.from, block.to)
+  if (type.startsWith('toggle')) {
+    const headingLevel = type.startsWith('toggle-h') ? Number(type.at(-1)) : /^h[1-6]$/.test(block.kind) ? Number(block.kind[1]) : 0
+    if (block.kind === 'details') {
+      const lines = raw.split(/\r?\n/)
+      const summary = lines[1].replace(/^<summary>|<\/summary>$/g, '')
+      const title = summary.match(/^<h([1-6])>(.*)<\/h\1>$/)?.[2] ?? summary
+      return reindent(toggleSource(title, lines.slice(2, -1).join(nl), source, block.anchor.hasAttribute('open'), headingLevel), 0, indentation(block, source)) + nl
+    }
     if (block.kind === 'li') {
       const width = raw.match(/^(?:[-+*]|\d+[.)])\s+/)?.[0].length ?? 2
       const lines = raw.split(/\r?\n/)
       const title = lines[0].replace(/^(?:[-+*]|\d+[.)])\s+(?:\[[ xX]\]\s*)?/, '')
-      return reindent(toggleSource(title, reindent(lines.slice(1).join(nl), width, 0), source), 0, indentation(block, source)) + nl
+      return reindent(toggleSource(title, reindent(lines.slice(1).join(nl), width, 0), source, true, headingLevel), 0, indentation(block, source)) + nl
     }
     const title = titleSource(block, source)
-    return reindent(toggleSource(title ?? defaultTitle, title === null ? raw : '', source), 0, indentation(block, source)) + nl
+    return reindent(toggleSource(title ?? defaultTitle, title === null ? raw : '', source, true, headingLevel), 0, indentation(block, source)) + nl
   }
   let body = raw
   let children = ''
   if (block.kind === 'details') {
     const lines = raw.split(/\r?\n/)
     body = lines[1].replace(/^<summary>|<\/summary>$/g, '')
+    body = body.match(/^<h([1-6])>(.*)<\/h\1>$/)?.[2] ?? body
     children = lines.slice(2, -1).join(nl).trim()
   } else if (block.kind === 'li') {
     const marker = raw.match(/^(?:[-+*]|\d+[.)])\s+(?:\[[ xX]\]\s*)?/)?.[0] ?? ''
@@ -224,7 +233,7 @@ function convertOne(source: string, block: DocumentBlock, type: BlockType, defau
       return ' '.repeat(indentation(block, source)) + prefix + lines[0] + (lines.length > 1 ? nl + reindent(lines.slice(1).join(nl), width, indentation(block, source) + contentWidth) : '') + nl
     }
     body = body.replace(new RegExp(`^ {1,${width}}`, 'gm'), '')
-  } else if (/^h[1-6]$/.test(block.kind)) body = raw.replace(/^#{1,6}\s+/, '').replace(/\s+#+\s*$/, '')
+  } else if (/^h[1-6]$/.test(block.kind)) body = titleSource(block, source)!
   else if (block.kind === 'blockquote') body = raw.replace(/^ {0,3}> ?/gm, '')
   else if (block.kind === 'pre' && type !== 'code') {
     const container = document.createElement('p')
