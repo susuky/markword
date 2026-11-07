@@ -38,12 +38,11 @@ export default function Workspace() {
   const { locale, t } = useI18n()
   const htmlPage = useSyncExternalStore(subscribeToRoute, () => window.location.hash === '#/html')
   const initialSample = useRef(SAMPLE_MARKDOWN[locale])
-  const [selection, setSelection] = useState<{ id: string; revealSummary?: boolean; notice?: string } | null>(null)
+  const [selection, setSelection] = useState<string | null>(null)
   const [documentsOpen, setDocumentsOpen] = useState(() => loadPreference('documents-open', false))
   const linkedFiles = useRef(new Map<string, LinkedFile>())
   const [updateAvailable, setUpdateAvailable] = useState(false)
   useEffect(() => { savePreference('documents-open', documentsOpen) }, [documentsOpen])
-  useEffect(() => { if (htmlPage) setSelection((current) => current ? { id: current.id } : null) }, [htmlPage])
   useEffect(() => {
     const onUpdate = () => setUpdateAvailable(true)
     window.addEventListener('markword:update-available', onUpdate)
@@ -62,14 +61,15 @@ export default function Workspace() {
     let preferred = CURRENT_DRAFT_ID
     try { preferred = loadPreference('active-document', CURRENT_DRAFT_ID) } catch { /* Draft recovery does not depend on preferences. */ }
     void chooseWorkspaceDocument(preferred, initialSample.current)
-      .then((id) => { if (!cancelled) setSelection({ id }) })
-      .catch(() => { if (!cancelled) setSelection({ id: CURRENT_DRAFT_ID }) })
+      .then((id) => { if (!cancelled) setSelection(id) })
+      .catch(() => { if (!cancelled) setSelection(CURRENT_DRAFT_ID) })
     return () => { cancelled = true }
   }, [])
-  const selectDocument = useCallback((id: string, revealSummary = false, notice = '') => {
+  const selectDocument = useCallback((id: string) => {
     try { savePreference('active-document', id) } catch { /* The document can still be opened. */ }
-    setSelection({ id, revealSummary, notice })
+    setSelection(id)
   }, [])
+  const getLinkedFile = useCallback((id: string) => linkedFiles.current.get(id) ?? null, [])
   const rememberLinkedFile = useCallback((id: string, file: LinkedFile | null) => {
     if (file) linkedFiles.current.set(id, file)
     else linkedFiles.current.delete(id)
@@ -78,8 +78,8 @@ export default function Workspace() {
     ? <HtmlEditorBoundary fallback={<HtmlEditorLoadError />}>
       <Suspense fallback={<div className="app-loading">{t('Opening HTML editor…')}</div>}><HtmlEditorPage /></Suspense>
     </HtmlEditorBoundary>
-    : selection ? <App key={selection.id} documentId={selection.id} revealImportSummary={selection.revealSummary} initialNotice={selection.notice}
-      initialLinkedFile={linkedFiles.current.get(selection.id) ?? null} onDocumentChange={selectDocument} onLinkedFileChange={rememberLinkedFile}
+    : selection ? <App initialDocumentId={selection} getLinkedFile={getLinkedFile}
+      onDocumentSelect={selectDocument} onLinkedFileChange={rememberLinkedFile}
       documentsOpen={documentsOpen} onDocumentsOpenChange={setDocumentsOpen}
       updateAvailable={updateAvailable} onUpdateAvailableChange={setUpdateAvailable} />
       : <div className="app-loading">{t('Opening documents…')}</div>

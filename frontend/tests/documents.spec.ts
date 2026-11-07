@@ -62,6 +62,91 @@ test('documents keep pending edits, separate revisions, and remember the last do
   expect(errors).toEqual([])
 })
 
+test('switching documents keeps the page and filtered list steady through a failed read and retry', async ({ page }, testInfo) => {
+  await page.goto('/')
+  const original = '# Switch note original\n\nKeep these edits while opening another document.'
+  await page.locator('.cm-content').fill(original)
+  await expect(page.locator('.save-status')).toHaveText('Saved locally')
+  const targetId = await page.evaluate(async () => {
+    const module = '/src/storage.ts'
+    const storage = await import(/* @vite-ignore */ module)
+    const assetsModule = '/src/assets.ts'
+    const assets = await import(/* @vite-ignore */ assetsModule)
+    await assets.importLocalAssets([new File(['New attachment'], 'switch.txt', { type: 'text/plain' })])
+    const drafts = []
+    for (let i = 0; i < 24; i++) {
+      drafts.push(await storage.createWorkspaceDocument(`# Switch note ${i}\n\nContent ${i}.`, { mode: 'markdown' }))
+    }
+    return drafts[11].id as string
+  })
+  await showDocuments(page)
+  const search = library(page).getByRole('searchbox', { name: 'Search documents', exact: true })
+  await search.fill('Switch note')
+  const list = library(page).locator('.document-list')
+  await expect(list.locator('.document-list__open')).toHaveCount(25)
+  const target = documentRow(page, 'Switch note 11').locator('.document-list__open')
+  await target.scrollIntoViewIfNeeded()
+  const scrollTop = await list.evaluate((element) => element.scrollTop)
+  expect(scrollTop).toBeGreaterThan(0)
+  const continuity = await page.evaluateHandle(() => {
+    const state = {
+      shell: document.querySelector('.app-shell')!,
+      header: document.querySelector('.app-header')!,
+      panel: document.querySelector('#workspace-documents')!,
+      list: document.querySelector('.document-list')!,
+      loadingSeen: false,
+    }
+    const observer = new MutationObserver((records) => {
+      state.loadingSeen ||= records.some((record) => Array.from(record.addedNodes).some((node) =>
+        node instanceof Element && (node.matches('.app-loading') || Boolean(node.querySelector('.app-loading')))))
+    })
+    observer.observe(document.body, { childList: true, subtree: true })
+    return { state, observer }
+  })
+  let failRead = true
+  let reading = false
+  let releaseRead!: () => void
+  const readReady = new Promise<void>((resolve) => { releaseRead = resolve })
+  await page.route(`**/api/workspace/drafts/${targetId}`, async (route) => {
+    if (route.request().method() === 'GET') {
+      if (failRead) { await route.fulfill({ status: 503, json: { detail: 'Read temporarily unavailable' } }); return }
+      reading = true
+      await readReady
+    }
+    await route.continue()
+  })
+  await target.click()
+  await expect(library(page).getByRole('alert')).toContainText('Could not')
+  await expect.poll(() => source(page)).toBe(original)
+  const pending = original + '\n\nAn edit after the failed read.'
+  await page.locator('.cm-content').fill(pending)
+  failRead = false
+  await library(page).getByRole('button', { name: 'Try again', exact: true }).click()
+  await expect.poll(() => reading).toBe(true)
+  await expect.poll(() => source(page)).toBe(pending)
+  await expect(target).toBeDisabled()
+  await expect(page.locator('.pane--editor')).toHaveAttribute('inert', '')
+  expect(await page.locator('.cm-content').evaluate((element) => {
+    element.focus()
+    return document.activeElement === element
+  })).toBe(false)
+  await expect(page.locator('.app-loading')).toHaveCount(0)
+  releaseRead()
+  await expect.poll(() => source(page)).toBe('# Switch note 11\n\nContent 11.')
+  await expect(target).toBeEnabled()
+  await expect(page.locator('.asset-trigger small')).toHaveText('1')
+  await expect(search).toHaveValue('Switch note')
+  expect(await list.evaluate((element) => element.scrollTop)).toBeCloseTo(scrollTop, 0)
+  expect(await continuity.evaluate(({ state, observer }) => {
+    observer.disconnect()
+    return { connected: [state.shell, state.header, state.panel, state.list].every((element) => element.isConnected), loadingSeen: state.loadingSeen }
+  })).toEqual({ connected: true, loadingSeen: false })
+  await continuity.dispose()
+  await expect(page.locator('.save-status')).toHaveText('Saved locally')
+  await page.mouse.move(1260, 700)
+  await page.screenshot({ path: testInfo.outputPath('document-switch.png') })
+})
+
 test('renaming, searching, copying, trashing, and restoring preserve the source', async ({ page }) => {
   await page.goto('/')
   const original = '# Meeting\n\n**Original source** stays unchanged.'

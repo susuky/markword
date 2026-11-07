@@ -106,24 +106,21 @@ function collectHeadings(markdown: string): OutlineHeading[] {
 }
 
 interface AppProps {
-  documentId: string
+  initialDocumentId: string
   documentsOpen: boolean
   onDocumentsOpenChange: (open: boolean) => void
-  revealImportSummary?: boolean
-  initialNotice?: string
   updateAvailable: boolean
   onUpdateAvailableChange: (available: boolean) => void
-  initialLinkedFile: LinkedFile | null
-  onDocumentChange: (id: string, revealSummary?: boolean, notice?: string) => void
+  getLinkedFile: (id: string) => LinkedFile | null
+  onDocumentSelect: (id: string) => void
   onLinkedFileChange: (id: string, file: LinkedFile | null) => void
 }
 
-export default function App({ documentId, documentsOpen, onDocumentsOpenChange: setDocumentsOpen, revealImportSummary = false, initialNotice = '', initialLinkedFile, onDocumentChange, onLinkedFileChange, updateAvailable, onUpdateAvailableChange: setUpdateAvailable }: AppProps) {
+export default function App({ initialDocumentId, documentsOpen, onDocumentsOpenChange: setDocumentsOpen, getLinkedFile, onDocumentSelect, onLinkedFileChange, updateAvailable, onUpdateAvailableChange: setUpdateAvailable }: AppProps) {
   const { locale, setLocale, t } = useI18n()
-  const initialSampleRef = useRef(IS_STATIC_DEPLOYMENT && documentId === CURRENT_DRAFT_ID ? SAMPLE_MARKDOWN[locale] : '')
+  const initialSampleRef = useRef(IS_STATIC_DEPLOYMENT && initialDocumentId === CURRENT_DRAFT_ID ? SAMPLE_MARKDOWN[locale] : '')
   const [mode, setMode] = useState<DocumentMode>('markdown')
   const [markdown, setMarkdown] = useState(initialSampleRef.current)
-  const deferredMarkdown = useDeferredValue(markdown)
   const [theme, setTheme] = useState<ThemeName>(() => loadPreference('theme', 'Light'))
   const [split, setSplit] = useState(() => loadPreference('split', 49))
   const [statsOpen, setStatsOpen] = useState(false)
@@ -172,7 +169,7 @@ export default function App({ documentId, documentsOpen, onDocumentsOpenChange: 
   const wordImportBusyRef = useRef(false)
   const fileBusyRef = useRef(false)
   const [fileBusy, setFileBusy] = useState<'opening' | 'saving' | null>(null)
-  const [linkedFile, setLinkedFile] = useState<LinkedFile | null>(initialLinkedFile)
+  const [linkedFile, setLinkedFile] = useState<LinkedFile | null>(() => getLinkedFile(initialDocumentId))
   const [fileError, setFileError] = useState('')
   const [fileSaveFailed, setFileSaveFailed] = useState(false)
   const [clientExporting, setClientExporting] = useState<'html' | 'project' | null>(null)
@@ -181,7 +178,11 @@ export default function App({ documentId, documentsOpen, onDocumentsOpenChange: 
   const [updateBusy, setUpdateBusy] = useState(false)
   const [updateError, setUpdateError] = useState('')
   const [persistenceStatus, setPersistenceStatus] = useState<PersistenceStatus>('idle')
-  const [persistence] = useState(() => new DraftPersistenceSession({ documentId, onStatusChange: setPersistenceStatus }))
+  const [persistence, setPersistence] = useState(() => new DraftPersistenceSession({ documentId: initialDocumentId, onStatusChange: setPersistenceStatus }))
+  const initialPersistence = useRef(persistence).current
+  const documentId = persistence.documentId
+  const deferredDocument = useDeferredValue(useMemo(() => ({ documentId, markdown }), [documentId, markdown]))
+  const deferredMarkdown = deferredDocument.documentId === documentId ? deferredDocument.markdown : markdown
   const documentVersionRef = useRef(0)
   const importSummaryData = importSummary ? JSON.stringify(importSummary) : null
   const currentDocumentRef = useRef({ markdown, mode, theme, importSummary: importSummaryData, name })
@@ -236,7 +237,7 @@ export default function App({ documentId, documentsOpen, onDocumentsOpenChange: 
   useEffect(() => {
     let cancelled = false
     void Promise.all([
-      persistence.initialize(initialSampleRef.current, { theme: 'Light' }),
+      initialPersistence.initialize(initialSampleRef.current, { theme: 'Light' }),
       listAssets().catch(() => []),
     ]).then(([draft, storedAssets]) => {
       if (cancelled) return
@@ -244,14 +245,12 @@ export default function App({ documentId, documentsOpen, onDocumentsOpenChange: 
       changeMode(normalizeDocumentMode(draft.metadata.mode))
       const summary = readImportSummary(draft.metadata.importSummary)
       setImportSummary(summary)
-      setImportSummaryOpen(revealImportSummary && Boolean(summary?.warnings.length))
       setDocumentName(typeof draft.metadata.name === 'string' ? draft.metadata.name : null)
       setAssets(storedAssets)
       const savedTheme = draft.metadata.theme
       if (isThemeName(savedTheme)) setTheme(savedTheme)
       setHydrated(true)
       setStorageReady(true)
-      persistence.start()
     }).catch(() => {
       if (!cancelled) {
         setPersistenceStatus('error')
@@ -260,9 +259,13 @@ export default function App({ documentId, documentsOpen, onDocumentsOpenChange: 
     })
     return () => {
       cancelled = true
-      persistence.stop()
     }
-  }, [changeMarkdown, changeMode, persistence, revealImportSummary])
+  }, [changeMarkdown, changeMode, initialPersistence])
+
+  useEffect(() => {
+    if (storageReady) persistence.start()
+    return () => persistence.stop()
+  }, [persistence, storageReady])
 
   useEffect(() => {
     if (storageReady) persistence.update(markdown, { theme, mode, importSummary: importSummaryData, name })
@@ -303,7 +306,38 @@ export default function App({ documentId, documentsOpen, onDocumentsOpenChange: 
     }, 3000)
   }, [])
 
-  useEffect(() => { if (initialNotice) showNotice(initialNotice) }, [initialNotice, showNotice])
+  const onDocumentChange = useCallback(async (id: string, revealSummary = false, message = '') => {
+    const version = documentVersionRef.current
+    const nextPersistence = new DraftPersistenceSession({ documentId: id, onStatusChange: setPersistenceStatus })
+    const [draft, storedAssets] = await Promise.all([
+      nextPersistence.initialize(),
+      listAssets().catch(() => []),
+    ])
+    if (version !== documentVersionRef.current) throw new DocumentActionError(t('Your document changed while switching. Your edits are kept; try again.'))
+
+    // Commit the session and its content together; the workspace stays mounted while reading.
+    setPersistence(nextPersistence)
+    changeMarkdown(draft.content)
+    changeMode(normalizeDocumentMode(draft.metadata.mode))
+    const summary = readImportSummary(draft.metadata.importSummary)
+    setImportSummary(summary)
+    setImportSummaryOpen(revealSummary && Boolean(summary?.warnings.length))
+    setDocumentName(typeof draft.metadata.name === 'string' ? draft.metadata.name : null)
+    setAssets(storedAssets)
+    if (isThemeName(draft.metadata.theme)) setTheme(draft.metadata.theme)
+    setLinkedFile(getLinkedFile(id))
+    setStorageReady(true)
+    setActiveLine(1)
+    writingPaneRef.current = null
+    setMobileOutlineOpen(false)
+    setStatsOpen(false)
+    setRevisionsOpen(false)
+    setExportPreviewOpen(false)
+    setFileError('')
+    setFileSaveFailed(false)
+    showNotice(message)
+    onDocumentSelect(id)
+  }, [changeMarkdown, changeMode, getLinkedFile, onDocumentSelect, showNotice, t])
 
   useEffect(() => () => {
     if (noticeTimerRef.current !== null) window.clearTimeout(noticeTimerRef.current)
@@ -401,7 +435,7 @@ export default function App({ documentId, documentsOpen, onDocumentsOpenChange: 
       })
       if (!canReplaceDocument()) return
       onLinkedFileChange(draft.id, linked)
-      onDocumentChange(draft.id, Boolean(summary?.warnings.length), message)
+      await onDocumentChange(draft.id, Boolean(summary?.warnings.length), message)
     }
     try {
       const picked = inputFile ? null : await pickLocalFile(t('Documents and projects'))
@@ -533,7 +567,7 @@ export default function App({ documentId, documentsOpen, onDocumentsOpenChange: 
       if (!storageReady) {
         const version = documentVersionRef.current
         const draft = await createWorkspaceDocument(current.markdown, { theme: current.theme, mode: current.mode, importSummary: current.importSummary, name: current.name })
-        if (version === documentVersionRef.current) onDocumentChange(draft.id, false, t('Saved locally'))
+        if (version === documentVersionRef.current) await onDocumentChange(draft.id, false, t('Saved locally'))
         else showNotice(t('Copy saved'))
         return
       }
@@ -545,7 +579,7 @@ export default function App({ documentId, documentsOpen, onDocumentsOpenChange: 
         const version = documentVersionRef.current
         persistence.update(latest.markdown, { theme: latest.theme, mode: latest.mode, importSummary: latest.importSummary, name: latest.name })
         const copy = await persistence.createCopy({ name: t('Copy of {name}', { name: storedDocumentName({ content: latest.markdown, metadata: { name: latest.name } }) }).slice(0, 120) })
-        if (version === documentVersionRef.current) onDocumentChange(copy.id, false, t('Copy saved'))
+        if (version === documentVersionRef.current) await onDocumentChange(copy.id, false, t('Copy saved'))
         else showNotice(t('Copy saved'))
       }
     } catch {
@@ -698,7 +732,7 @@ export default function App({ documentId, documentsOpen, onDocumentsOpenChange: 
     }
   }, [])
 
-  const runDocumentAction = useCallback(async (operation: (draft: StoredDraft, select: (id: string) => void) => Promise<void>, copyCurrent = false) => {
+  const runDocumentAction = useCallback(async (operation: (draft: StoredDraft, select: (id: string) => Promise<void>) => Promise<void>, copyCurrent = false) => {
     if (!storageReady) throw new DocumentActionError(t('Could not save your current document. Download a backup before switching.'))
     if (document.querySelector('.markdown-link-form')) throw new DocumentActionError(t('Apply or cancel the link edit before changing documents.'))
     if (fileBusyRef.current || wordImportBusyRef.current || assetBusy || clientExporting) {
@@ -725,7 +759,7 @@ export default function App({ documentId, documentsOpen, onDocumentsOpenChange: 
       }
       const select = (id: string) => {
         if (version !== documentVersionRef.current) throw new DocumentActionError(t('Your document changed while switching. Your edits are kept; try again.'))
-        onDocumentChange(id)
+        return onDocumentChange(id)
       }
       if (version !== documentVersionRef.current) throw new DocumentActionError(t('Your document changed while switching. Your edits are kept; try again.'))
       await operation(draft, select)
@@ -742,21 +776,21 @@ export default function App({ documentId, documentsOpen, onDocumentsOpenChange: 
   }, [assetBusy, clientExporting, onDocumentChange, persistence, storageReady, t])
 
   const createDocument = useCallback(() => runDocumentAction(async (_draft, select) => {
-    select((await createWorkspaceDocument('', { mode: 'markdown', theme: currentDocumentRef.current.theme, name: null })).id)
+    await select((await createWorkspaceDocument('', { mode: 'markdown', theme: currentDocumentRef.current.theme, name: null })).id)
   }), [runDocumentAction])
 
   const openDocument = (id: string) => id === documentId ? Promise.resolve() : runDocumentAction(async (_draft, select) => {
     const target = await getCurrentDraft(id)
     if (!target || target.trashedAt) throw new DocumentActionError(t('This document is unavailable. Refresh the list and try again.'))
-    select(id)
+    await select(id)
   })
 
   const duplicateDocument = (id: string) => runDocumentAction(async (draft, select) => {
-    if (id === documentId) { select(draft.id); return }
+    if (id === documentId) { await select(draft.id); return }
     const original = await getCurrentDraft(id)
     if (!original || original.trashedAt) throw new DocumentActionError(t('Document not found'))
     const copy = await createWorkspaceDocument(original.content, { ...original.metadata, name: t('Copy of {name}', { name: storedDocumentName(original) }).slice(0, 120) })
-    select(copy.id)
+    await select(copy.id)
   }, id === documentId)
 
   const renameDocument = (id: string, nextName: string, version: number) => runDocumentAction(async (draft) => {
@@ -776,7 +810,7 @@ export default function App({ documentId, documentsOpen, onDocumentsOpenChange: 
       if (!nextId) nextId = (await createWorkspaceDocument('', { mode: 'markdown', theme: currentDocumentRef.current.theme })).id
     }
     await setDocumentTrashed(id, true, id === documentId ? draft.version ?? 0 : version)
-    if (nextId) select(nextId)
+    if (nextId) await select(nextId)
   })
 
   const restoreDocument = (id: string, version: number) => runDocumentAction(async () => {
@@ -947,7 +981,7 @@ export default function App({ documentId, documentsOpen, onDocumentsOpenChange: 
               </div>
             </div>
           </header>
-          <EditorPane ref={editorRef} documentId={documentId} mode={mode} value={markdown} onChange={changeMarkdown} onScrollLine={handleEditorScroll} typewriter={typewriterMode} onSlashCommand={() => setCommandOpen(true)} onPasteFiles={(files) => void handleAssetFiles(files)} />
+          <EditorPane key={documentId} ref={editorRef} documentId={documentId} mode={mode} value={markdown} onChange={changeMarkdown} onScrollLine={handleEditorScroll} typewriter={typewriterMode} onSlashCommand={() => setCommandOpen(true)} onPasteFiles={(files) => void handleAssetFiles(files)} />
         </section>
 
         <button className="splitter" type="button" onPointerDown={beginResize} onKeyDown={(event) => {
@@ -973,7 +1007,7 @@ export default function App({ documentId, documentsOpen, onDocumentsOpenChange: 
             <PreviewSettings theme={theme} onThemeChange={setTheme} markdownSize={previewTypography.markdownFontSize} mermaidSize={previewTypography.mermaidFontSize} onMarkdownSizeChange={setMarkdownFontSize} onMermaidSizeChange={setMermaidFontSize} onReset={resetPreviewFontSizes} />
             <button className={`toolbar-button sync-toggle ${syncEnabled ? 'is-active' : ''}`} type="button" aria-label={t('Toggle synchronized scrolling')} title={t(syncEnabled ? 'Disable synchronized scrolling' : 'Enable synchronized scrolling')} aria-pressed={syncEnabled} onClick={() => setSyncEnabled((enabled) => !enabled)}>{syncEnabled ? <Link2 size={17} aria-hidden="true" /> : <Unlink2 size={17} aria-hidden="true" />}</button>
           </div></header>
-          <PreviewPane ref={previewRef} mode={mode} markdown={visualEditing ? markdown : deferredMarkdown} theme={theme} markdownFontSize={previewTypography.markdownFontSize} mermaidFontSize={previewTypography.mermaidFontSize} assetVersion={assetVersion} onScrollLine={handlePreviewScroll} onLayout={handlePreviewLayout} onSourceLine={jumpToLine} onEditTable={editPreviewTable} onResizeTable={resizePreviewTable} editing={visualEditing} onVisualChange={changeVisualMarkdown} onUndo={() => editorRef.current?.undo()} onRedo={() => editorRef.current?.redo()} />
+          <PreviewPane key={documentId} ref={previewRef} mode={mode} markdown={visualEditing ? markdown : deferredMarkdown} theme={theme} markdownFontSize={previewTypography.markdownFontSize} mermaidFontSize={previewTypography.mermaidFontSize} assetVersion={assetVersion} onScrollLine={handlePreviewScroll} onLayout={handlePreviewLayout} onSourceLine={jumpToLine} onEditTable={editPreviewTable} onResizeTable={resizePreviewTable} editing={visualEditing} onVisualChange={changeVisualMarkdown} onUndo={() => editorRef.current?.undo()} onRedo={() => editorRef.current?.redo()} />
         </section>
 
         {dragActive ? <div className="drop-target" aria-hidden="true"><Paperclip size={34} /><strong>{t('Drop to open or insert files')}</strong><span>{t('Markdown, text, Mermaid, Word (.docx), HTML, project ZIP, and media')}</span></div> : null}
