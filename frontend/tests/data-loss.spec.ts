@@ -132,7 +132,8 @@ for (const file of slowFiles) {
     await page.getByRole('button', { name: 'Preview theme: Light', exact: true }).click()
     await page.locator('.theme-menu__grid button').nth(1).click()
     const original = 'Latest text before opening another document'
-    const imported = file.name.endsWith('.docx') ? 'Imported source' : '# Imported source'
+    const isHtml = file.name.endsWith('.html')
+    const imported = isHtml ? file.buffer.toString() : file.name.endsWith('.docx') ? 'Imported source' : '# Imported source'
     await page.locator('.cm-content').fill(original)
     await page.locator('input[type=file]').first().setInputFiles(file)
     await expect(page.locator('.cm-content')).toHaveText(imported)
@@ -245,11 +246,13 @@ test('updates wait for a pending import to finish', async ({ page }) => {
   await notifyUpdate(page)
   await expect(updateDialog(page).getByRole('button', { name: 'Save and update', exact: true })).toBeDisabled()
   await page.evaluate(() => window.dataLossHarness.releaseRead?.())
+  await expect(page.frameLocator('iframe').locator('h1')).toHaveText('Imported source')
   await expect(updateDialog(page).getByRole('button', { name: 'Save and update', exact: true })).toBeEnabled()
   const reloaded = page.waitForEvent('load')
   await updateDialog(page).getByRole('button', { name: 'Save and update', exact: true }).click()
   await reloaded
-  await expect(page.locator('.cm-content')).toHaveText('# Imported source')
+  await expect(page.getByRole('combobox', { name: 'Document mode' })).toHaveValue('html')
+  await expect(page.locator('.cm-content')).toHaveText(slowFiles[1].buffer.toString())
 })
 
 test('draft loading blocks editing and file shortcuts until hydration completes', async ({ page }) => {

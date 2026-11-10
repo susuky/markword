@@ -24,7 +24,7 @@ function documentChange(previous: string, value: string) {
   return { from, to, insert: value.slice(from, end) }
 }
 
-function modeExtensions(mode: DocumentMode | 'html') {
+function modeExtensions(mode: DocumentMode) {
   if (mode === 'html') return [html(), Prec.high(keymap.of([indentWithTab]))]
   return mode === 'markdown' ? [
     markdown({ base: markdownLanguage, addKeymap: false }),
@@ -107,7 +107,7 @@ export interface EditorHandle {
 
 interface EditorPaneProps {
   documentId: string
-  mode: DocumentMode | 'html'
+  mode: DocumentMode
   value: string
   onChange: (value: string) => void
   onScrollLine: (line: number, atEnd: boolean) => void
@@ -289,6 +289,12 @@ export const EditorPane = forwardRef<EditorHandle, EditorPaneProps>(function Edi
           }
         }),
         EditorView.domEventHandlers({
+          drop: (event) => {
+            if (!event.dataTransfer?.files.length) return false
+            // The workspace opens files; CodeMirror must not insert their text first.
+            event.preventDefault()
+            return true
+          },
           paste: (event) => {
             const files = Array.from(event.clipboardData?.files ?? [])
             if (!files.length) return false

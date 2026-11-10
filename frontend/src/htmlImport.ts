@@ -27,7 +27,7 @@ export async function importHtmlDocument(file: File, archive?: { hasAsset: (url:
   })
   if (saved) {
     const source = JSON.parse(saved.textContent || '') as { version?: unknown; markdown?: unknown; mode?: unknown }
-    if (source?.version !== 1 || typeof source.markdown !== 'string' || typeof source.mode !== 'string' || !['markdown', 'text', 'mermaid'].includes(source.mode)) {
+    if (source?.version !== 1 || typeof source.markdown !== 'string' || typeof source.mode !== 'string' || !['markdown', 'text', 'mermaid', 'html'].includes(source.mode)) {
       throw new Error('Invalid saved HTML document')
     }
     const mode = source.mode as DocumentMode

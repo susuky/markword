@@ -2,7 +2,7 @@
 
 **English** | [繁體中文](README.zh-TW.md)
 
-Markword is a browser-based Markdown and HTML editor. Write Markdown directly in an editable preview, add content with a block menu, or keep the source beside your document. The separate HTML workspace lets you open a page and change its text and links without writing HTML.
+Markword is a browser-based Markdown and HTML editor. Write Markdown directly in an editable preview, add content with a block menu, or keep the source beside your document. HTML documents use the same workspace and document list, with an editable page preview.
 
 ![Markword writing workspace](assets/markword_preview.png)
 
@@ -46,7 +46,7 @@ In the Pages edition, download portable HTML and use your browser to print it as
 
 ### Markdown: single-page or split editing
 
-Click **Open**, drop a document into the workspace, or start writing. In this workspace, HTML and Word files convert to Markdown; review the result because complex layouts may change.
+Click **Open**, drop a document into the workspace, or start writing. HTML files open in the HTML editor with their original layout. Word files convert to Markdown; review the result because complex layouts may change.
 
 The preview is editable by default. On desktop, click **Single-page editing** to hide the source, or **Split editing** to bring it back. On mobile, use the **Editor** and **Preview** tabs. The toolbar button beside **Export** collapses or expands the workspace tools and remembers your choice.
 
@@ -70,27 +70,25 @@ Edits update the same source and browser draft. Code highlighting returns when y
 
 ### Edit HTML without writing markup
 
-Choose **HTML editor** from the **Markdown** menu above the source pane in split view, or append `#/html` to the app URL. This workspace has its own browser draft, separate from Markdown.
+Open or drop an `.html`/`.htm` file to create an HTML document in the current workspace. Your document list and other documents stay available. To edit HTML already in the source pane, choose **HTML editor** from the document mode menu; switching modes keeps the current content.
 
-1. **Open a page**: choose an `.html`/`.htm` file, or use **Paste HTML** for a complete page or fragment, including HTML from an AI conversation.
+1. **Open a page**: choose an `.html`/`.htm` file, or paste a complete page or fragment into the source pane and select HTML mode.
 2. **Edit the preview**: click text and type, then press `Enter` to finish. Select a link to change its address. The source stays in sync; hide it on desktop or switch tabs on mobile.
-3. **Download your changes**: use **Undo** or **Redo** as needed, then **Download** or `Ctrl/Cmd+S` to save an HTML file.
-
-![HTML source beside a directly editable page](assets/markword-html-editor.png)
+3. **Save or download**: `Ctrl/Cmd+S` saves the document. Use **Export** to download HTML or a project ZIP.
 
 The downloaded file retains its original styles and scripts. The editing preview disables scripts and supports changes to static text and existing links.
 
 Relative-path resources are not imported with the HTML file; use embedded assets or full URLs. Visual edits may normalize markup whitespace and quoting.
 
-Opening HTML in the Markdown workspace still converts it to Markdown. Switch to the HTML editor first to keep the page as HTML.
+Markword portable HTML restores its embedded editable source and document mode. Existing drafts from the former separate HTML page appear in the document list.
 
 ## Saving and exporting
 
-In the local Markdown workspace, **Save** or `Ctrl/Cmd+S` saves directly to the shared local database. Conflicting edits are saved as a separate copy. The document sidebar stays open when switching, creating, importing, or copying documents. Use **Export → Save as…** to write a file, or download a format below. The Pages edition retains browser file saving and downloads.
+In the local workspace, **Save** or `Ctrl/Cmd+S` saves directly to the shared local database. Conflicting edits are saved as a separate copy. The document sidebar stays open when switching, creating, importing, or copying documents. Use **Export → Save as…** to write a file, or download a format below. The Pages edition retains browser file saving and downloads.
 
 | Format | Use it for |
 | --- | --- |
-| Markdown / text / Mermaid | Editable source; local attachments are separate |
+| Markdown / text / Mermaid / HTML | Editable source; local attachments are separate |
 | Project ZIP | Back up the current document and its referenced local attachments, then reopen them for editing |
 | Portable HTML | Share an offline-readable document with its source and referenced local attachments |
 | PDF / Word | Print or deliver a document; Word uses a fixed layout |
@@ -99,9 +97,9 @@ In the local Markdown workspace, **Save** or `Ctrl/Cmd+S` saves directly to the 
 
 | Shortcut | Action |
 | --- | --- |
-| `Ctrl/Cmd+S` | Save the local Markdown document, or download the current HTML page |
-| `Ctrl/Cmd+F` | Search and replace in the Markdown workspace |
-| `Ctrl/Cmd+K` | Open the Markdown workspace command palette |
+| `Ctrl/Cmd+S` | Save the current document |
+| `Ctrl/Cmd+F` | Search and replace in the source editor |
+| `Ctrl/Cmd+K` | Open the workspace command palette |
 
 ### Drafts and backups
 
@@ -110,7 +108,7 @@ The local edition stores documents, trash, revisions, and attachments in `data/m
 For a full local backup, stop the service and copy the `data` directory; Docker uses the `markword-data` volume. To export a single document:
 
 - **Markdown**: export a project ZIP to keep the current document and its referenced local attachments. ZIPs do not include revision history or other documents.
-- **HTML**: download the page from the HTML editor. Its separate draft is not included in a Markdown project ZIP.
+- **HTML**: download the original HTML source or a project ZIP. Reopening the ZIP preserves HTML mode, styles, and scripts.
 
 Editing and format conversion run in the browser. The local edition saves documents, revisions, and attachments to the connected Markword service and its SQLite database. That service also handles PDF/Word export.
 

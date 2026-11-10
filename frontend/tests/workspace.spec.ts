@@ -98,22 +98,22 @@ test('mobile outline, preview, assets, and language controls remain reachable', 
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
 })
 
-test('an unavailable HTML editor offers a safe return and a working retry', async ({ page }) => {
-  await page.route('**/HtmlEditorPage*', (route) => route.abort('failed'))
+test('switching to the HTML editor does not require a late module download', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
   await page.goto('/')
-  const draft = '# Keep this draft\n\nWriting before a connection failure.'
-  await page.locator('.cm-content').fill(draft)
+  const content = '<h1>Keep my HTML</h1>'
+  await page.locator('.cm-content').fill(content)
   await expect(page.locator('.save-status')).toHaveText('Saved locally')
-  await page.getByRole('combobox', { name: 'Document mode' }).selectOption('html-page')
-  await expect(page.getByRole('heading', { name: 'The HTML editor could not be opened' })).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Try again', exact: true })).toBeVisible()
-  await page.getByRole('button', { name: 'Return to Markdown', exact: true }).click()
-  await expect.poll(() => page.locator('.cm-line').allTextContents().then((lines) => lines.join('\n'))).toBe(draft)
-  await page.getByRole('combobox', { name: 'Document mode' }).selectOption('html-page')
-  await expect(page.getByRole('heading', { name: 'The HTML editor could not be opened' })).toBeVisible()
-  await page.unroute('**/HtmlEditorPage*')
-  await page.getByRole('button', { name: 'Try again', exact: true }).click()
-  await expect(page.getByRole('button', { name: 'Open HTML file', exact: true })).toBeVisible()
-  await page.goto('/#/')
-  await expect.poll(() => page.locator('.cm-line').allTextContents().then((lines) => lines.join('\n'))).toBe(draft)
+  // An open tab can outlive the build that supplied its module URLs.
+  await page.route('**/*HtmlPreview*', route => route.fulfill({
+    contentType: 'text/html', body: '<!doctype html><title>Markword</title>',
+  }))
+  await page.getByRole('combobox', { name: 'Document mode', exact: true }).selectOption('html')
+  await expect(page.getByRole('heading', { name: 'The HTML editor could not be opened' })).toHaveCount(0)
+  await expect(page).toHaveURL(/\/$/)
+  await expect(page.frameLocator('iframe').locator('h1')).toHaveText('Keep my HTML')
+  await page.getByRole('combobox', { name: 'Document mode', exact: true }).selectOption('markdown')
+  await expect(page.locator('.cm-content')).toHaveText(content)
+  expect(errors).toEqual([])
 })

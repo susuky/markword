@@ -25,7 +25,7 @@ interface AssetPanelProps {
   onDelete: (asset: StoredAsset) => void
   onDownload: (asset: StoredAsset) => void
   onExportProject: () => void
-  onInsert: (asset: StoredAsset) => void
+  onInsert?: (asset: StoredAsset) => void
 }
 
 interface StorageDetails {
@@ -119,7 +119,7 @@ export function AssetPanel({
                 <code>{asset.path}</code>
               </div>
               <div className="asset-item__actions">
-                <button type="button" disabled={busy} className="asset-insert" onClick={(event) => { event.currentTarget.closest('dialog')?.close(); onInsert(asset) }}>{t('Insert')}</button>
+                {onInsert ? <button type="button" disabled={busy} className="asset-insert" onClick={(event) => { event.currentTarget.closest('dialog')?.close(); onInsert(asset) }}>{t('Insert')}</button> : null}
                 <button type="button" disabled={busy} onClick={() => onDownload(asset)} aria-label={t('Download {file}', { file: asset.name })} title={t('Download')}><Download size={15} /></button>
                 <button type="button" disabled={busy} className="asset-delete" onClick={() => onDelete(asset)} aria-label={t('Delete {file}', { file: asset.name })} title={t('Delete')}><Trash2 size={15} /></button>
               </div>

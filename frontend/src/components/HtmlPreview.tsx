@@ -1,17 +1,17 @@
-import { Eye, Link2, X } from 'lucide-react'
+import { Link2, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { createHtmlEditingDocument, isEditableLink, serializeHtml } from '../htmlEditing'
 import { useI18n } from '../i18n'
 
-export function HtmlPreview({ value, onChange, onDownload }: { value: string; onChange: (value: string) => void; onDownload: () => void }) {
+export function HtmlPreview({ value, onChange, onSave, onOpenFile, onUndo, onRedo }: { value: string; onChange: (value: string) => void; onSave: () => void; onOpenFile: (file: File) => void; onUndo: () => void; onRedo: () => void }) {
   const { t } = useI18n()
   const frameRef = useRef<HTMLIFrameElement>(null)
   const modelRef = useRef<ReturnType<typeof createHtmlEditingDocument> | null>(null)
   const emittedRef = useRef<string | null>(null)
   const changeRef = useRef(onChange)
   changeRef.current = onChange
-  const downloadRef = useRef(onDownload)
-  downloadRef.current = onDownload
+  const actionsRef = useRef({ onSave, onOpenFile, onUndo, onRedo })
+  actionsRef.current = { onSave, onOpenFile, onUndo, onRedo }
   const disposeRef = useRef<(() => void) | undefined>(undefined)
   const [link, setLink] = useState<{ id: string; url: string } | null>(null)
   const [linkError, setLinkError] = useState(false)
@@ -59,7 +59,12 @@ export function HtmlPreview({ value, onChange, onDownload }: { value: string; on
       const keydown = (event: KeyboardEvent) => {
         if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
           event.preventDefault()
-          downloadRef.current()
+          actionsRef.current.onSave()
+        }
+        if ((event.ctrlKey || event.metaKey) && ['z', 'y'].includes(event.key.toLowerCase())) {
+          event.preventDefault()
+          if (event.key.toLowerCase() === 'y' || event.shiftKey) actionsRef.current.onRedo()
+          else actionsRef.current.onUndo()
         }
         if (event.key === 'Enter' && !event.isComposing && (event.target as HTMLElement).isContentEditable) {
           event.preventDefault()
@@ -70,12 +75,23 @@ export function HtmlPreview({ value, onChange, onDownload }: { value: string; on
         if (!event.isComposing && ['insertParagraph', 'insertLineBreak'].includes(event.inputType)) event.preventDefault()
       }
       const submit = (event: Event) => event.preventDefault()
+      const dragover = (event: DragEvent) => {
+        if (event.dataTransfer?.types.includes('Files')) event.preventDefault()
+      }
+      const drop = (event: DragEvent) => {
+        const file = event.dataTransfer?.files[0]
+        if (!file) return
+        event.preventDefault()
+        actionsRef.current.onOpenFile(file)
+      }
       document.addEventListener('input', input)
       document.addEventListener('click', click)
       document.addEventListener('auxclick', click)
       document.addEventListener('keydown', keydown)
       document.addEventListener('beforeinput', beforeInput)
       document.addEventListener('submit', submit)
+      document.addEventListener('dragover', dragover)
+      document.addEventListener('drop', drop)
       dispose = () => {
         document.removeEventListener('input', input)
         document.removeEventListener('click', click)
@@ -83,6 +99,8 @@ export function HtmlPreview({ value, onChange, onDownload }: { value: string; on
         document.removeEventListener('keydown', keydown)
         document.removeEventListener('beforeinput', beforeInput)
         document.removeEventListener('submit', submit)
+        document.removeEventListener('dragover', dragover)
+        document.removeEventListener('drop', drop)
       }
     }
     frame.addEventListener('load', attach)
@@ -93,8 +111,6 @@ export function HtmlPreview({ value, onChange, onDownload }: { value: string; on
   useEffect(() => () => disposeRef.current?.(), [])
 
   return <section className="html-preview-pane" aria-label={t('Editable preview')}>
-    <header className="pane-header"><div className="pane-title"><Eye size={17} aria-hidden="true" />{t('Editable preview')}</div><span className="html-editing-label">{t('Click text to edit')}</span></header>
-    <p className="html-editing-hint">{t('Click text to edit. Press Enter to finish. Select a link to change its address.')}</p>
     {link && <form className="html-link-form" onSubmit={(event) => {
       event.preventDefault()
       if (!isEditableLink(link.url)) { setLinkError(true); return }

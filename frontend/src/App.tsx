@@ -18,6 +18,7 @@ import { AssetPanel } from './components/AssetPanel'
 import { CommandPalette, type CommandAction } from './components/CommandPalette'
 import { EditorPane, type EditorHandle } from './components/EditorPane'
 import { DocumentPanel } from './components/DocumentPanel'
+import { HtmlPreview } from './components/HtmlPreview'
 import { ImportSummaryPanel } from './components/ImportSummaryPanel'
 import { ExportMenu, PreviewSettings, ToolbarMenu } from './components/DocumentMenus'
 import { ExportPreview } from './components/ExportPreview'
@@ -151,6 +152,7 @@ export default function App({ initialDocumentId, documentsOpen, onDocumentsOpenC
   const [syncEnabled, setSyncEnabled] = useState(() => loadPreference('sync-enabled', true))
   const [mobileView, setMobileView] = useState<'editor' | 'preview'>('editor')
   const visualEditing = mode === 'markdown'
+  const canHideSource = visualEditing || mode === 'html'
   const [showVisualSource, setShowVisualSource] = useState(() => loadPreference<unknown>('show-source', !loadPreference('live-editing', false)) !== false)
   const [toolbarCollapsed, setToolbarCollapsed] = useState(() => loadPreference('toolbar-collapsed', false))
   const toggleSource = useCallback(() => { setShowVisualSource((shown) => !shown); setMobileView('preview') }, [])
@@ -382,7 +384,7 @@ export default function App({ initialDocumentId, documentsOpen, onDocumentsOpenC
     setMobileView('editor')
   }, [])
 
-  const handleAssetFiles = useCallback(async (files: readonly File[], insert = true) => {
+  const handleAssetFiles = useCallback(async (files: readonly File[], insert = mode !== 'html') => {
     if (!files.length || assetBusy || wordImportBusyRef.current) return
     setAssetBusy(true)
     try {
@@ -396,7 +398,7 @@ export default function App({ initialDocumentId, documentsOpen, onDocumentsOpenC
     } finally {
       setAssetBusy(false)
     }
-  }, [assetBusy, insertAssets, refreshAssets, showNotice, t])
+  }, [assetBusy, insertAssets, mode, refreshAssets, showNotice, t])
 
   const loadFile = useCallback(async (inputFile?: File) => {
     if (!hydrated || fileBusyRef.current || wordImportBusyRef.current || assetBusy) return
@@ -405,7 +407,7 @@ export default function App({ initialDocumentId, documentsOpen, onDocumentsOpenC
     setFileBusy('opening')
     const openingVersion = documentVersionRef.current
     const canReplaceDocument = () => {
-      if (document.querySelector('dialog.source-block-overlay[open], dialog.table-editor-overlay[open], .markdown-link-form')) {
+      if (document.querySelector('dialog.source-block-overlay[open], dialog.table-editor-overlay[open], .markdown-link-form, .html-link-form')) {
         window.dispatchEvent(new Event('markword:open-deferred'))
         showNotice(t('The file has not been opened. Apply or cancel this edit, then open the file again.'))
         return false
@@ -470,8 +472,16 @@ export default function App({ initialDocumentId, documentsOpen, onDocumentsOpenC
       }
       if (/\.html?$/i.test(file.name)) {
         setAssetBusy(true)
-        showNotice(t('Converting HTML…'))
         try {
+          const content = await file.text()
+          const html = new DOMParser().parseFromString(content, 'text/html')
+          if (!html.querySelector('script#markword-source[type="application/json"]')) {
+            await openDocument(content, 'html', null,
+              picked && canSaveLocalFile ? { handle: picked.handle, content, byteLength: file.size, mode: 'html' } : null,
+              t('Opened {file}', { file: file.name }), file.name)
+            return
+          }
+          showNotice(t('Converting HTML…'))
           const { importHtmlDocument } = await import('./htmlImport')
           const converted = await importHtmlDocument(file)
           await refreshAssets()
@@ -525,8 +535,8 @@ export default function App({ initialDocumentId, documentsOpen, onDocumentsOpenC
     const documentFile = files.find((file) => /\.(?:md|markdown|txt|mmd|mermaid|docx|doc|html|htm|zip)$/i.test(file.name))
     const assetFiles = files.filter((file) => file !== documentFile)
     if (documentFile) await loadFile(documentFile)
-    if (assetFiles.length) await handleAssetFiles(assetFiles, !documentFile)
-  }, [handleAssetFiles, loadFile])
+    if (assetFiles.length) await handleAssetFiles(assetFiles, !documentFile && mode !== 'html')
+  }, [handleAssetFiles, loadFile, mode])
 
   const downloadSource = useCallback(() => {
     downloadBlob(markdown, `${DOCUMENT_MODES[mode].mime};charset=utf-8`, `${documentTitle(markdown, name)}.${DOCUMENT_MODES[mode].extension}`)
@@ -591,6 +601,7 @@ export default function App({ initialDocumentId, documentsOpen, onDocumentsOpenC
   }, [assetBusy, clientExporting, onDocumentChange, persistence, saveFile, showNotice, storageReady, t])
 
   const downloadHtml = useCallback(async () => {
+    if (mode === 'html') { downloadSource(); return }
     if (clientExporting) return
     setClientExporting('html')
     try {
@@ -603,7 +614,7 @@ export default function App({ initialDocumentId, documentsOpen, onDocumentsOpenC
     } finally {
       setClientExporting(null)
     }
-  }, [clientExporting, exportSettings, exportStyle, locale, markdown, mode, name, previewTypography.mermaidFontSize, showNotice, t, theme])
+  }, [clientExporting, downloadSource, exportSettings, exportStyle, locale, markdown, mode, name, previewTypography.mermaidFontSize, showNotice, t, theme])
 
   const downloadProject = useCallback(async (scope: 'all' | 'document' = 'document') => {
     if (clientExporting) return
@@ -700,7 +711,7 @@ export default function App({ initialDocumentId, documentsOpen, onDocumentsOpenC
   }
 
   const handleExport = useCallback(async (format: 'pdf' | 'docx') => {
-    if (IS_STATIC_DEPLOYMENT || !markdown.trim() || exporting) return
+    if (IS_STATIC_DEPLOYMENT || mode === 'html' || !markdown.trim() || exporting) return
     setExporting(format)
     setNotice('')
     try {
@@ -734,7 +745,7 @@ export default function App({ initialDocumentId, documentsOpen, onDocumentsOpenC
 
   const runDocumentAction = useCallback(async (operation: (draft: StoredDraft, select: (id: string) => Promise<void>) => Promise<void>, copyCurrent = false) => {
     if (!storageReady) throw new DocumentActionError(t('Could not save your current document. Download a backup before switching.'))
-    if (document.querySelector('.markdown-link-form')) throw new DocumentActionError(t('Apply or cancel the link edit before changing documents.'))
+    if (document.querySelector('.markdown-link-form, .html-link-form')) throw new DocumentActionError(t('Apply or cancel the link edit before changing documents.'))
     if (fileBusyRef.current || wordImportBusyRef.current || assetBusy || clientExporting) {
       throw new DocumentActionError(t('Finish the current operation before switching documents.'))
     }
@@ -828,28 +839,29 @@ export default function App({ initialDocumentId, documentsOpen, onDocumentsOpenC
     { id: 'new-document', label: t('New document'), keywords: 'create blank 新建 文件', run: () => { void createDocument().catch((error: Error) => showNotice(error.message)) } },
     { id: 'open', label: t('Open document or project'), description: t('Open Markdown, text, Mermaid, Word, HTML, or a Markword ZIP'), keywords: 'file upload import word docx html project 匯入 轉換 檔案 專案', run: () => void loadFile() },
     { id: 'assets', label: t('Manage local assets'), description: t('Images, video, audio, and attachments'), keywords: 'asset media image video attachment 圖片 影片 附件', run: () => setAssetsOpen(true) },
-    { id: 'insert-asset', label: t('Insert: Local asset'), description: t('Import files from this device'), keywords: '/ asset media image video attachment 圖片 影片 附件', run: () => assetInputRef.current?.click() },
+    ...(mode !== 'html' ? [{ id: 'insert-asset', label: t('Insert: Local asset'), description: t('Import files from this device'), keywords: '/ asset media image video attachment 圖片 影片 附件', run: () => assetInputRef.current?.click() }] : []),
     { id: 'save-md', label: !IS_STATIC_DEPLOYMENT ? t('Save') : canSaveLocalFile ? t('Save file') : t('Download {format}', { format: t(DOCUMENT_MODES[mode].label) }), keywords: 'file save 儲存', run: () => void saveDocument() },
     ...(canSaveLocalFile ? [{ id: 'save-as', label: t('Save as…'), description: t('Choose a file name and location'), keywords: 'save copy 另存新檔', run: () => void saveFile(true) }] : []),
     { id: 'download-source', label: t('Download source'), description: t('Keep the editable source'), keywords: 'download export 匯出 下載', run: downloadSource },
     { id: 'save-project', label: t('Download project ZIP'), description: t('Document and referenced local assets'), keywords: 'export zip share 匯出 分享', run: () => void downloadProject() },
     { id: 'save-asset-library', label: t('Download document and asset library ZIP'), description: t('Current document and all local assets; revisions not included'), keywords: 'export zip backup library 匯出 備份 資產庫', run: () => void downloadProject('all') },
-    { id: 'save-html', label: t('Download portable HTML'), description: t('Read offline or reopen with editable source and local assets'), keywords: 'export self contained 匯出', run: () => void downloadHtml() },
+    { id: 'save-html', label: t(mode === 'html' ? 'Download HTML' : 'Download portable HTML'), keywords: 'export self contained 匯出', run: () => void downloadHtml() },
     { id: 'search', label: t('Search document'), run: () => runInSource(() => editorRef.current?.search()) },
-    ...(mode === 'markdown' ? [{ id: 'live-editing', label: t(showVisualSource ? 'Single-page editing' : 'Split editing'), keywords: 'single split source 單頁 雙欄 原始碼', run: toggleSource }] : []),
-    { id: 'insert-heading', label: t('Insert: Heading 2'), description: t('## Heading'), keywords: '/ heading 標題', run: () => runInSource(() => editorRef.current?.insert(`\n${t('## Heading')}\n`, 4)) },
+    ...(canHideSource ? [{ id: 'live-editing', label: t(showVisualSource ? 'Single-page editing' : 'Split editing'), keywords: 'single split source 單頁 雙欄 原始碼', run: toggleSource }] : []),
+    ...(mode !== 'html' ? [{ id: 'insert-heading', label: t('Insert: Heading 2'), description: t('## Heading'), keywords: '/ heading 標題', run: () => runInSource(() => editorRef.current?.insert(`\n${t('## Heading')}\n`, 4)) }] : []),
     ...(mode === 'markdown' ? [{ id: 'insert-table', label: t('Insert: Table'), description: t('Edit cells, rows, and columns'), keywords: '/ table 表格', run: () => editorRef.current?.editTable() }] : []),
-    { id: 'insert-code', label: t('Insert: Code block'), description: t('Fenced code block'), keywords: '/ code 程式碼', run: () => runInSource(() => editorRef.current?.insert('\n```text\n\n```\n', 9)) },
+    ...(mode !== 'html' ? [{ id: 'insert-code', label: t('Insert: Code block'), description: t('Fenced code block'), keywords: '/ code 程式碼', run: () => runInSource(() => editorRef.current?.insert('\n```text\n\n```\n', 9)) },
     { id: 'insert-mermaid', label: t('Insert: Mermaid diagram'), description: t('Basic flowchart'), keywords: '/ diagram 圖表', run: () => runInSource(() => editorRef.current?.insert(mode === 'mermaid' ? `flowchart TD\n  A[${t('Start')}] --> B[${t('Done')}]\n` : `\n\`\`\`mermaid\ngraph TD\n  A[${t('Start')}] --> B[${t('Done')}]\n\`\`\`\n`)) },
+    ] : []),
     { id: 'focus', label: t(focusMode ? 'Exit focus mode' : 'Enter focus mode'), run: () => setFocusMode((enabled) => !enabled) },
     { id: 'typewriter', label: t(typewriterMode ? 'Disable typewriter mode' : 'Enable typewriter mode'), run: () => setTypewriterMode((enabled) => !enabled) },
-    { id: 'sync', label: t(syncEnabled ? 'Disable synchronized scrolling' : 'Enable synchronized scrolling'), run: () => setSyncEnabled((enabled) => !enabled) },
+    ...(mode !== 'html' ? [{ id: 'sync', label: t(syncEnabled ? 'Disable synchronized scrolling' : 'Enable synchronized scrolling'), run: () => setSyncEnabled((enabled) => !enabled) }] : []),
     { id: 'fold', label: t('Fold all sections'), run: () => runInSource(() => editorRef.current?.foldAll()) },
     { id: 'unfold', label: t('Unfold all sections'), run: () => runInSource(() => editorRef.current?.unfoldAll()) },
     { id: 'snapshot', label: t('Create current revision'), description: t('Save to local revision history'), run: () => void createManualSnapshot() },
     { id: 'revisions', label: t('Open revision history'), description: t('Preview, download, or restore an older revision'), run: () => setRevisionsOpen(true) },
     { id: 'shortcuts', label: t('Show keyboard shortcuts'), run: () => setHelpOpen(true) },
-  ].map((action) => ({ ...action, shortcut: formatShortcut(shortcuts[action.id]) })), [createDocument, createManualSnapshot, downloadHtml, downloadSource, downloadProject, focusMode, loadFile, mode, runInSource, saveDocument, saveFile, setDocumentsOpen, shortcuts, showNotice, showVisualSource, syncEnabled, t, toggleSource, typewriterMode])
+  ].map((action) => ({ ...action, shortcut: formatShortcut(shortcuts[action.id]) })), [canHideSource, createDocument, createManualSnapshot, downloadHtml, downloadSource, downloadProject, focusMode, loadFile, mode, runInSource, saveDocument, saveFile, setDocumentsOpen, shortcuts, showNotice, showVisualSource, syncEnabled, t, toggleSource, typewriterMode])
 
   useEffect(() => {
     if (!hydrated) return
@@ -888,7 +900,7 @@ export default function App({ initialDocumentId, documentsOpen, onDocumentsOpenC
   }
 
   return (
-    <main className={`app-shell productivity-shell ${focusMode ? 'is-focus-mode' : ''} ${typewriterMode ? 'is-typewriter-mode' : ''} ${toolbarCollapsed ? 'is-toolbar-collapsed' : ''} ${visualEditing && !showVisualSource ? 'is-visual-only' : ''}`}>
+    <main className={`app-shell productivity-shell ${focusMode ? 'is-focus-mode' : ''} ${typewriterMode ? 'is-typewriter-mode' : ''} ${toolbarCollapsed ? 'is-toolbar-collapsed' : ''} ${canHideSource && !showVisualSource ? 'is-visual-only' : ''}`}>
       <input ref={fileInputRef} className="visually-hidden-file" type="file" disabled={importingWord} accept=".md,.markdown,.txt,.mmd,.mermaid,.docx,.html,.htm,.zip,text/plain,text/markdown,text/html,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/zip" onChange={(event) => {
         const file = event.target.files?.[0]
         if (file) void loadFile(file)
@@ -923,7 +935,7 @@ export default function App({ initialDocumentId, documentsOpen, onDocumentsOpenC
           <button className="toolbar-button revision-trigger" type="button" onClick={() => setRevisionsOpen(true)} aria-label={t('Revision history')}><History size={17} aria-hidden="true" /><span>{t('Revision history')}</span></button>
         </div>
         <div className="workspace-toolbar__group">
-          {visualEditing ? <button className={`toolbar-button view-mode-trigger ${!showVisualSource ? 'is-active' : ''}`} type="button" onClick={toggleSource} aria-pressed={!showVisualSource} aria-label={t(showVisualSource ? 'Single-page editing' : 'Split editing')} title={t(showVisualSource ? 'Single-page editing' : 'Split editing')}><PanelsTopLeft size={17} aria-hidden="true" /><span>{t(showVisualSource ? 'Single-page editing' : 'Split editing')}</span></button> : null}
+          {canHideSource ? <button className={`toolbar-button view-mode-trigger ${!showVisualSource ? 'is-active' : ''}`} type="button" onClick={toggleSource} aria-pressed={!showVisualSource} aria-label={t(showVisualSource ? 'Single-page editing' : 'Split editing')} title={t(showVisualSource ? 'Single-page editing' : 'Split editing')}><PanelsTopLeft size={17} aria-hidden="true" /><span>{t(showVisualSource ? 'Single-page editing' : 'Split editing')}</span></button> : null}
           <button className="toolbar-button utility-command" type="button" onClick={() => setCommandOpen(true)} aria-label={t('Command palette')}><Command size={16} aria-hidden="true" /><span>{t('Find a command')}</span>{shortcuts.commands && <kbd>{formatShortcut(shortcuts.commands)}</kbd>}</button>
           <button className={`toolbar-button focus-trigger ${focusMode ? 'is-active' : ''}`} type="button" onClick={() => { setMobileView('editor'); setFocusMode((enabled) => !enabled) }} aria-pressed={focusMode} aria-label={t('Toggle focus mode')}><Maximize2 size={16} aria-hidden="true" /><span>{t('Focus')}</span></button>
         </div>
@@ -966,11 +978,9 @@ export default function App({ initialDocumentId, documentsOpen, onDocumentsOpenC
             <div className="pane-title">
               <FileText size={16} aria-hidden="true" />{t('Editor')}
               <select className="document-mode" aria-label={t('Document mode')} value={mode} onChange={(event) => {
-                if (event.target.value === 'html-page') window.location.hash = '/html'
-                else changeMode(normalizeDocumentMode(event.target.value))
+                changeMode(normalizeDocumentMode(event.target.value))
               }}>
                 {(Object.keys(DOCUMENT_MODES) as DocumentMode[]).map((value) => <option key={value} value={value}>{t(DOCUMENT_MODES[value].label)}</option>)}
-                <option value="html-page">{t('HTML editor')}</option>
               </select>
             </div>
             <div className="editor-pane-actions">
@@ -981,7 +991,7 @@ export default function App({ initialDocumentId, documentsOpen, onDocumentsOpenC
               </div>
             </div>
           </header>
-          <EditorPane key={documentId} ref={editorRef} documentId={documentId} mode={mode} value={markdown} onChange={changeMarkdown} onScrollLine={handleEditorScroll} typewriter={typewriterMode} onSlashCommand={() => setCommandOpen(true)} onPasteFiles={(files) => void handleAssetFiles(files)} />
+          <EditorPane key={documentId} ref={editorRef} documentId={documentId} mode={mode} value={markdown} onChange={changeMarkdown} onScrollLine={handleEditorScroll} typewriter={typewriterMode} onSlashCommand={() => setCommandOpen(true)} onPasteFiles={mode === 'html' ? undefined : (files) => void handleAssetFiles(files)} />
         </section>
 
         <button className="splitter" type="button" onPointerDown={beginResize} onKeyDown={(event) => {
@@ -1004,10 +1014,15 @@ export default function App({ initialDocumentId, documentsOpen, onDocumentsOpenC
                 </div>}
               </ToolbarMenu>
             </div> : null}
+            {mode === 'html' ? <>
+              <button type="button" className="toolbar-button" aria-label={t('Undo')} title={t('Undo')} onClick={() => editorRef.current?.undo()}><Undo2 size={17} aria-hidden="true" /></button>
+              <button type="button" className="toolbar-button" aria-label={t('Redo')} title={t('Redo')} onClick={() => editorRef.current?.redo()}><Redo2 size={17} aria-hidden="true" /></button>
+            </> : <>
             <PreviewSettings theme={theme} onThemeChange={setTheme} markdownSize={previewTypography.markdownFontSize} mermaidSize={previewTypography.mermaidFontSize} onMarkdownSizeChange={setMarkdownFontSize} onMermaidSizeChange={setMermaidFontSize} onReset={resetPreviewFontSizes} />
             <button className={`toolbar-button sync-toggle ${syncEnabled ? 'is-active' : ''}`} type="button" aria-label={t('Toggle synchronized scrolling')} title={t(syncEnabled ? 'Disable synchronized scrolling' : 'Enable synchronized scrolling')} aria-pressed={syncEnabled} onClick={() => setSyncEnabled((enabled) => !enabled)}>{syncEnabled ? <Link2 size={17} aria-hidden="true" /> : <Unlink2 size={17} aria-hidden="true" />}</button>
+            </>}
           </div></header>
-          <PreviewPane key={documentId} ref={previewRef} mode={mode} markdown={visualEditing ? markdown : deferredMarkdown} theme={theme} markdownFontSize={previewTypography.markdownFontSize} mermaidFontSize={previewTypography.mermaidFontSize} assetVersion={assetVersion} onScrollLine={handlePreviewScroll} onLayout={handlePreviewLayout} onSourceLine={jumpToLine} onEditTable={editPreviewTable} onResizeTable={resizePreviewTable} editing={visualEditing} onVisualChange={changeVisualMarkdown} onUndo={() => editorRef.current?.undo()} onRedo={() => editorRef.current?.redo()} />
+          {mode === 'html' ? <HtmlPreview key={documentId} value={markdown} onChange={changeMarkdown} onSave={() => void saveDocument()} onOpenFile={(file) => void loadFile(file)} onUndo={() => editorRef.current?.undo()} onRedo={() => editorRef.current?.redo()} /> : <PreviewPane key={documentId} ref={previewRef} mode={mode} markdown={visualEditing ? markdown : deferredMarkdown} theme={theme} markdownFontSize={previewTypography.markdownFontSize} mermaidFontSize={previewTypography.mermaidFontSize} assetVersion={assetVersion} onScrollLine={handlePreviewScroll} onLayout={handlePreviewLayout} onSourceLine={jumpToLine} onEditTable={editPreviewTable} onResizeTable={resizePreviewTable} editing={visualEditing} onVisualChange={changeVisualMarkdown} onUndo={() => editorRef.current?.undo()} onRedo={() => editorRef.current?.redo()} />}
         </section>
 
         {dragActive ? <div className="drop-target" aria-hidden="true"><Paperclip size={34} /><strong>{t('Drop to open or insert files')}</strong><span>{t('Markdown, text, Mermaid, Word (.docx), HTML, project ZIP, and media')}</span></div> : null}
@@ -1039,7 +1054,7 @@ export default function App({ initialDocumentId, documentsOpen, onDocumentsOpenC
         onDelete={(asset) => void removeLocalAsset(asset)}
         onDownload={downloadLocalAsset}
         onExportProject={() => void downloadProject('all')}
-        onInsert={(asset) => { insertAssets([asset]); setAssetsOpen(false) }}
+        onInsert={mode === 'html' ? undefined : (asset) => { insertAssets([asset]); setAssetsOpen(false) }}
       />
       {revisionsOpen ? (
         <Modal onClose={() => setRevisionsOpen(false)} label={t('Revision history')} className="revision-overlay">

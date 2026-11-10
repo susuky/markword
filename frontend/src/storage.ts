@@ -280,9 +280,18 @@ function createRevisionId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2)}`
 }
 
+function normalizeLegacyHtmlDraft(draft: StoredDraft): StoredDraft {
+  if (draft.metadata.mode || (draft.id !== 'html' && typeof draft.metadata.filename !== 'string')) return draft
+  const filename = typeof draft.metadata.filename === 'string' ? draft.metadata.filename : 'page.html'
+  return {
+    ...draft,
+    metadata: { ...draft.metadata, mode: 'html', name: draft.metadata.name || filename.replace(/\.html?$/i, '') },
+  }
+}
+
 export async function getCurrentDraft(id = CURRENT_DRAFT_ID): Promise<StoredDraft | null> {
   if (usesSharedWorkspace) {
-    try { return await sharedJSON<StoredDraft>(`/drafts/${encodeURIComponent(id)}`) }
+    try { return normalizeLegacyHtmlDraft(await sharedJSON<StoredDraft>(`/drafts/${encodeURIComponent(id)}`)) }
     catch (error) { if (error instanceof WorkspaceError && error.status === 404) return null; throw error }
   }
   const database = await openDatabase()
@@ -291,7 +300,7 @@ export async function getCurrentDraft(id = CURRENT_DRAFT_ID): Promise<StoredDraf
     transaction.objectStore(DRAFT_STORE).get(id) as IDBRequest<StoredDraft | undefined>,
   )
   await transactionComplete(transaction)
-  return result ?? null
+  return result ? normalizeLegacyHtmlDraft(result) : null
 }
 
 export async function loadCurrentDraft(
@@ -329,7 +338,7 @@ export async function saveCurrentDraft(
     const draft = await sharedJSON<StoredDraft>(`/drafts/${encodeURIComponent(id)}`, {
       method: 'POST', body: JSON.stringify({ content, metadata, expectedVersion }),
     }, true)
-    if (id !== 'html') notifyDocuments()
+    notifyDocuments()
     return draft
   }
   const database = await openDatabase()
@@ -361,20 +370,21 @@ export async function saveCurrentDraft(
   }
   store.put(draft)
   await complete
-  if (id !== 'html') notifyDocuments()
+  notifyDocuments()
   return draft
 }
 
 export async function listWorkspaceDrafts(): Promise<StoredDraft[]> {
   if (usesSharedWorkspace) {
     const drafts = await sharedJSON<StoredDraft[]>('/drafts')
-    return drafts.filter((draft) => draft.id !== 'html').sort((left, right) => right.updatedAt - left.updatedAt)
+    return drafts.map(normalizeLegacyHtmlDraft).sort((left, right) => right.updatedAt - left.updatedAt)
   }
   const database = await openDatabase()
   const transaction = database.transaction(DRAFT_STORE, 'readonly')
   const drafts = await requestResult(transaction.objectStore(DRAFT_STORE).getAll() as IDBRequest<StoredDraft[]>)
   await transactionComplete(transaction)
-  return drafts.filter((draft) => draft.id === CURRENT_DRAFT_ID || draft.id.startsWith('doc-'))
+  return drafts.filter((draft) => draft.id === CURRENT_DRAFT_ID || draft.id === 'html' || draft.id.startsWith('doc-'))
+    .map(normalizeLegacyHtmlDraft)
     .sort((left, right) => right.updatedAt - left.updatedAt)
 }
 

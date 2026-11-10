@@ -380,7 +380,7 @@ export async function createProjectArchive(markdown: string, title: string, asse
     import('fflate'),
     Promise.all(assets.map(async (asset) => [asset.path, new Uint8Array(await asset.blob.arrayBuffer())] as const)),
   ])
-  const documentName = `${safeFilename(title).replace(/\.(?:md|markdown|txt|mmd|mermaid)$/i, '') || 'markword-document'}.${DOCUMENT_MODES[mode].extension}`
+  const documentName = `${safeFilename(title).replace(/\.(?:md|markdown|txt|mmd|mermaid|html|htm)$/i, '') || 'markword-document'}.${DOCUMENT_MODES[mode].extension}`
   const manifest: ProjectManifest = {
     mode,
     version: 1,

@@ -62,7 +62,7 @@ test('each document remembers its own nested folds after switching and reloading
   expect(errors).toEqual([])
 })
 
-test('folds survive editing before them, display changes and a trip to the HTML editor', async ({ page }) => {
+test('folds survive editing before them, display changes and switching HTML mode', async ({ page }) => {
   await page.goto('/')
   await editor(page).fill('Preface.\n\n## Folded section\n\nHidden content.\n\n## Next\n\nVisible content.\n')
   await page.locator('.cm-foldGutter [title="Fold line"]:visible').first().click()
@@ -88,9 +88,10 @@ test('folds survive editing before them, display changes and a trip to the HTML 
   await expect(folds(page)).toHaveCount(1)
   await page.getByRole('combobox', { name: 'Document mode', exact: true }).selectOption('markdown')
   await expect(page.locator('.save-status')).toHaveText('Saved locally')
-  await page.getByRole('combobox', { name: 'Document mode', exact: true }).selectOption('html-page')
-  await expect(page).toHaveTitle('HTML editor · Markword')
-  await page.getByRole('link', { name: 'Markdown', exact: true }).click()
+  await page.getByRole('combobox', { name: 'Document mode', exact: true }).selectOption('html')
+  await expect(page).toHaveTitle('Markword')
+  await expect(page).toHaveURL(/\/$/)
+  await page.getByRole('combobox', { name: 'Document mode', exact: true }).selectOption('markdown')
   await expect(folds(page)).toHaveCount(1)
   await expect(editor(page)).not.toContainText('Hidden content.')
   await page.reload()

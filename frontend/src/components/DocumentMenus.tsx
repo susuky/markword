@@ -102,8 +102,8 @@ export function ExportMenu({ mode, disabled, exporting, clientExporting, exportS
   return (
     <ToolbarMenu primary disabled={disabled || busy} label={t(busy ? 'Preparing download…' : 'Export')} trigger={<><Download size={17} aria-hidden="true" /><span>{t(busy ? 'Preparing download…' : 'Export')}</span></>}>
       {(close) => <div className="export-menu" role="dialog" aria-label={t('Download and export')}>
-        <div className="menu-heading"><strong>{t('Download and export')}</strong><span>{t('Layouts apply to HTML and PDF')}</span></div>
-        <details className="export-style-picker">
+        <div className="menu-heading"><strong>{t('Download and export')}</strong>{mode !== 'html' ? <span>{t('Layouts apply to HTML and PDF')}</span> : null}</div>
+        {mode !== 'html' ? <details className="export-style-picker">
           <summary>
             <span>{t('Document layout')}</span>
             <strong>{t(EXPORT_STYLES[exportStyle].label)}</strong>
@@ -112,22 +112,22 @@ export function ExportMenu({ mode, disabled, exporting, clientExporting, exportS
           <div>{(Object.keys(EXPORT_STYLES) as ExportStyleName[]).map((name) => <button key={name} type="button" className={name === exportStyle ? 'is-selected' : ''} aria-pressed={name === exportStyle} onClick={() => onStyleChange(name)}>
             <strong>{t(EXPORT_STYLES[name].label)}</strong><small>{t(EXPORT_STYLES[name].description)}</small>
           </button>)}</div>
-        </details>
+        </details> : null}
         <div className="export-menu__section">
-          <button type="button" onClick={() => { close(); onPreview() }}><Settings2 size={18} aria-hidden="true" /><span><strong>{t('Export settings and preview')}</strong><small>{t('Check paper size, margins and font size before downloading')}</small></span></button>
+          {mode !== 'html' ? <button type="button" onClick={() => { close(); onPreview() }}><Settings2 size={18} aria-hidden="true" /><span><strong>{t('Export settings and preview')}</strong><small>{t('Check paper size, margins and font size before downloading')}</small></span></button> : null}
           <span>{t('Source and web')}</span>
           {onSaveAs ? <button type="button" onClick={() => { close(); onSaveAs() }}><Save size={18} aria-hidden="true" /><span><strong>{t('Save as…')}</strong><small>{t('Choose a file name and location')}</small></span></button> : null}
-          <button type="button" onClick={() => { close(); onSource() }}><FileDown size={18} aria-hidden="true" /><span><strong>{t(DOCUMENT_MODES[mode].label)}</strong><small>{t('Keep the editable source')}</small></span></button>
+          <button type="button" onClick={() => { close(); onSource() }}><FileDown size={18} aria-hidden="true" /><span><strong>{mode === 'html' ? 'HTML' : t(DOCUMENT_MODES[mode].label)}</strong><small>{t('Keep the editable source')}</small></span></button>
           <button type="button" onClick={() => { close(); onProject('document') }}><Archive size={18} aria-hidden="true" /><span><strong>{t('Project ZIP')}</strong><small>{t('Document and referenced local assets')}</small></span></button>
           <button type="button" onClick={() => { close(); onProject('all') }}><Archive size={18} aria-hidden="true" /><span><strong>{t('Document + asset library ZIP')}</strong><small>{t('Current document and all local assets; revisions not included')}</small></span></button>
-          <button type="button" onClick={() => { close(); onHtml() }}><Code2 size={18} aria-hidden="true" /><span><strong>{t('Portable HTML')}</strong><small>{t('Embeds the {style} layout, editable source and local assets', { style: t(EXPORT_STYLES[exportStyle].label) })}</small></span></button>
+          {mode !== 'html' ? <button type="button" onClick={() => { close(); onHtml() }}><Code2 size={18} aria-hidden="true" /><span><strong>{t('Portable HTML')}</strong><small>{t('Embeds the {style} layout, editable source and local assets', { style: t(EXPORT_STYLES[exportStyle].label) })}</small></span></button> : null}
         </div>
-        <div className="export-menu__section">
+        {mode !== 'html' ? <div className="export-menu__section">
           <span>{t('Document formats')}</span>
           <button type="button" disabled={IS_STATIC_DEPLOYMENT} onClick={() => { close(); onExport('pdf') }}><Download size={18} aria-hidden="true" /><span><strong>PDF</strong><small>{IS_STATIC_DEPLOYMENT ? t('Not available here. Download HTML and print to PDF.') : hasAssets ? t('Supports PNG, JPEG, GIF, WebP and BMP images') : t('Uses the {style} print layout', { style: t(EXPORT_STYLES[exportStyle].label) })}</small></span></button>
           <button type="button" disabled={IS_STATIC_DEPLOYMENT} onClick={() => { close(); onExport('docx') }}><FileText size={18} aria-hidden="true" /><span><strong>Word</strong><small>{IS_STATIC_DEPLOYMENT ? t('Word export is not available in this edition.') : hasAssets ? t('Supports PNG, JPEG, GIF, WebP and BMP images') : t('Uses the current palette and remains editable')}</small></span></button>
           {hasAssets && !IS_STATIC_DEPLOYMENT ? <span>{t('For video, audio and other attachments, use a ZIP.')}</span> : null}
-        </div>
+        </div> : null}
       </div>}
     </ToolbarMenu>
   )

@@ -4,6 +4,7 @@ import { strToU8, zipSync } from 'fflate'
 
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jF9sAAAAASUVORK5CYII=', 'base64')
 const htmlFile = (html: string, name = 'Notes.html') => ({ name, mimeType: 'text/html', buffer: Buffer.from(html) })
+const htmlProject = (html: string, name = 'Notes.html') => ({ name: 'Notes.zip', mimeType: 'application/zip', buffer: Buffer.from(zipSync({ [name]: strToU8(html) })) })
 const source = (page: Page) => page.locator('.editor-host .cm-line').allTextContents().then((lines) => lines.join('\n'))
 
 async function bytes(download: Download) {
@@ -19,13 +20,28 @@ async function exportHtml(page: Page) {
   return bytes(await download)
 }
 
-test('HTML files convert content and embedded images without executing markup, and retain the pre-open draft', async ({ page }, testInfo) => {
+async function downloadSource(page: Page) {
+  await page.getByRole('button', { name: 'Command palette', exact: true }).click()
+  await page.getByRole('textbox', { name: 'Search commands', exact: true }).fill('Download source')
+  const pending = page.waitForEvent('download')
+  await page.keyboard.press('Enter')
+  return pending
+}
+
+async function openDocument(page: Page, name: string) {
+  const panel = page.getByRole('complementary', { name: 'Documents', exact: true })
+  if (!await panel.isVisible()) await page.locator('.header-actions').getByRole('button', { name: 'Documents', exact: true }).click()
+  await panel.locator('.document-list__open').filter({ has: page.getByText(name, { exact: true }) }).click()
+  await expect(page.locator('.document-heading')).toContainText(name)
+}
+
+test('HTML projects convert content and embedded images without executing markup, and retain the pre-open draft', async ({ page }, testInfo) => {
   const errors: string[] = []
   page.on('pageerror', (error) => errors.push(error.message))
   await page.goto('/')
   await expect(page).toHaveTitle('Markword')
   await page.locator('.cm-content').fill('# Keep my earlier draft')
-  const file = htmlFile(`<!doctype html><html><head><style>body{color:red}</style></head><body>
+  const file = htmlProject(`<!doctype html><html><head><style>body{color:red}</style></head><body>
     <h1>HTML meeting notes</h1><p><strong>重要事項</strong> and <em>review</em> <del>old</del>.</p>
     <blockquote>Keep the date.</blockquote><ul><li><input type="checkbox" checked>Done</li><li><input type="checkbox">Review</li></ul>
     <p><a href="https://example.com/">Reference</a></p><pre><code class="language-js">const value = 1;</code></pre>
@@ -126,18 +142,48 @@ for (const mode of ['text', 'mermaid'] as const) {
   })
 }
 
-test('HTML drops work and invalid, missing-attachment, or oversized files preserve the draft', async ({ page }) => {
+test('HTML drops select HTML mode in the same workspace and preserve the Markdown document', async ({ page }, testInfo) => {
+  const errors: string[] = []
+  page.on('pageerror', (error) => errors.push(error.message))
   await page.goto('/')
-  await expect(page.locator('.cm-content')).toBeEditable()
-  await page.evaluate(() => {
+  const original = '# Keep this Markdown draft'
+  await page.locator('.cm-content').fill(original)
+  const html = '<!doctype html><html><head><style>h1{color:rgb(24,72,56)}</style></head><body><h1>Dropped HTML</h1><p>Keep this content.</p><script>window.htmlAttack=true</script></body></html>'
+  const transfer = await page.evaluateHandle((html) => {
     const transfer = new DataTransfer()
-    transfer.items.add(new File(['<h1>Dropped HTML</h1><p>Keep this content.</p>'], 'Dropped.html', { type: 'text/html' }))
-    document.querySelector('.workspace')!.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: transfer }))
-  })
-  await expect(page.locator('.markdown-body h1')).toHaveText('Dropped HTML')
+    transfer.items.add(new File([html], 'Dropped.html', { type: 'text/html' }))
+    return transfer
+  }, html)
+  const editor = page.locator('.cm-content')
+  const box = (await editor.boundingBox())!
+  await editor.dispatchEvent('drop', { dataTransfer: transfer, clientX: box.x + box.width / 2, clientY: box.y + box.height / 2 })
+  await transfer.dispose()
+  await expect(page).toHaveURL(/\/$/)
+  await expect(page).toHaveTitle('Markword')
+  await expect(page.getByRole('combobox', { name: 'Document mode', exact: true })).toHaveValue('html')
+  await expect(page.locator('.document-heading')).toContainText('Dropped')
+  await expect(page.frameLocator('iframe').locator('h1')).toHaveText('Dropped HTML')
+  await expect(page.frameLocator('iframe').locator('h1')).toHaveCSS('color', 'rgb(24, 72, 56)')
+  await expect(page.frameLocator('iframe').locator('script')).toHaveCount(0)
+  expect(await page.evaluate(() => Reflect.get(window, 'htmlAttack'))).toBeUndefined()
+  const download = await downloadSource(page)
+  expect(download.suggestedFilename()).toBe('Dropped.html')
+  expect((await bytes(download)).toString()).toBe(html)
+  await page.reload()
+  await expect(page.frameLocator('iframe').locator('h1')).toHaveText('Dropped HTML')
+  await expect(page.locator('.save-status')).toHaveText('Saved locally')
+  await page.screenshot({ path: testInfo.outputPath('html-drop-desktop.png') })
+  await openDocument(page, 'Keep this Markdown draft')
+  await expect(page.getByRole('combobox', { name: 'Document mode', exact: true })).toHaveValue('markdown')
+  await expect.poll(() => source(page)).toBe(original)
+  expect(errors).toEqual([])
+})
+
+test('invalid portable HTML, missing attachments, and oversized files preserve the draft', async ({ page }) => {
+  await page.goto('/')
+  await page.locator('.cm-content').fill('# Keep this Markdown draft')
   const original = await source(page)
   for (const file of [
-    htmlFile('<script>window.htmlAttack=true</script>'),
     htmlFile('<script type="application/json" id="markword-source">{"version":99,"markdown":"lost","mode":"markdown"}</script>'),
     htmlFile('<script type="application/json" id="markword-source">{"version":1,"markdown":"lost","mode":["markdown"]}</script>'),
     htmlFile('<script type="application/json" id="markword-source">{"version":1,"markdown":"![Missing](./assets/missing.png)","mode":"markdown"}</script>'),
@@ -150,48 +196,77 @@ test('HTML drops work and invalid, missing-attachment, or oversized files preser
   }
 })
 
-test('HTML opens through the native picker and saving selects a Markdown target', async ({ page }) => {
+test('multiple HTML files keep separate documents and pending edits alongside Markdown', async ({ page }) => {
+  await page.goto('/')
+  const original = '# Keep Markdown too'
+  await page.locator('.cm-content').fill(original)
+  await page.locator('input[type=file]').first().setInputFiles(htmlFile('<h1>Earlier HTML</h1>', 'Earlier.html'))
+  await expect(page.getByRole('combobox', { name: 'Document mode' })).toHaveValue('html')
+  await page.frameLocator('iframe').locator('h1 [contenteditable]').fill('Earlier edited HTML')
+  const next = '<h1>Next HTML</h1>'
+  await page.locator('input[type=file]').first().setInputFiles(htmlFile(next, 'Next.htm'))
+  await expect(page.frameLocator('iframe').locator('h1')).toHaveText('Next HTML')
+  await expect(page).toHaveURL(/\/$/)
+  await openDocument(page, 'Earlier')
+  await expect(page.getByRole('combobox', { name: 'Document mode' })).toHaveValue('html')
+  await expect(page.frameLocator('iframe').locator('h1')).toHaveText('Earlier edited HTML')
+  await expect(page.locator('.document-list__open')).toHaveCount(3)
+  await openDocument(page, 'Keep Markdown too')
+  await expect(page.getByRole('combobox', { name: 'Document mode' })).toHaveValue('markdown')
+  await expect.poll(() => source(page)).toBe(original)
+  await openDocument(page, 'Next')
+  await expect(page.getByRole('combobox', { name: 'Document mode' })).toHaveValue('html')
+  expect((await bytes(await downloadSource(page))).toString()).toBe(next)
+  await page.reload()
+  await expect(page.getByRole('combobox', { name: 'Document mode' })).toHaveValue('html')
+  await expect(page.frameLocator('iframe').locator('h1')).toHaveText('Next HTML')
+  await openDocument(page, 'Earlier')
+  await expect(page.frameLocator('iframe').locator('h1')).toHaveText('Earlier edited HTML')
+})
+
+test('HTML opens through the native picker and downloads the original HTML file', async ({ page }) => {
   await page.addInitScript(() => {
     Object.defineProperty(window, 'showOpenFilePicker', { configurable: true, value: async (options: unknown) => {
       Reflect.set(window, 'htmlPickerOptions', options)
       return [{ getFile: async () => new File(['<h1>Picked HTML</h1>'], 'Original.html', { type: 'text/html' }) }]
     } })
-    Object.defineProperty(window, 'showSaveFilePicker', { configurable: true, value: async (options: unknown) => {
-      Reflect.set(window, 'htmlSaveOptions', options)
-      throw new DOMException('Cancelled', 'AbortError')
-    } })
   })
   await page.goto('/')
   await page.getByRole('button', { name: 'Open document or project', exact: true }).click()
-  await expect(page.locator('.markdown-body h1')).toHaveText('Picked HTML')
+  await expect(page).toHaveURL(/\/$/)
+  await expect(page.frameLocator('iframe').locator('h1')).toHaveText('Picked HTML')
   expect(await page.evaluate(() => Reflect.get(window, 'htmlPickerOptions').types[0].accept['text/html'])).toEqual(['.html', '.htm'])
-  await page.getByRole('button', { name: 'Export', exact: true }).click()
-  await page.getByRole('button', { name: 'Save as… Choose a file name and location', exact: true }).click()
-  await expect.poll(() => page.evaluate(() => Reflect.get(window, 'htmlSaveOptions')?.suggestedName)).toBe('Picked HTML.md')
-  expect(await source(page)).toBe('# Picked HTML')
+  const download = await downloadSource(page)
+  expect(download.suggestedFilename()).toBe('Original.html')
+  expect((await bytes(download)).toString()).toBe('<h1>Picked HTML</h1>')
 })
 
-test('HTML import summary remains readable on mobile in Traditional Chinese', async ({ page }, testInfo) => {
+test('HTML mode stays in the workspace on mobile in Traditional Chinese', async ({ page }, testInfo) => {
   const errors: string[] = []
   page.on('pageerror', (error) => errors.push(error.message))
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto('/')
   await page.getByRole('button', { name: 'Switch to Traditional Chinese', exact: true }).click()
-  await page.locator('input[type=file]').first().setInputFiles(htmlFile('<h1>HTML 匯入示範</h1><p>保留標題、<strong>重要內容</strong>與表格，轉換後可繼續編輯。</p><table><tr><th>項目</th><th>狀態</th></tr><tr><td colspan="2">檢查轉換結果</td></tr></table>'))
-  await expect(page.getByRole('complementary', { name: '匯入摘要', exact: true })).toContainText('1 個合併儲存格')
-  await expect(page.locator('.toast')).toHaveCount(0)
+  await page.locator('input[type=file]').first().setInputFiles(htmlFile('<h1>HTML 匯入示範</h1><p>保留標題、<strong>重要內容</strong>與表格。</p><table><tr><th>項目</th><th>狀態</th></tr><tr><td colspan="2">檢查版面</td></tr></table>', 'Notes.HTM'))
+  await expect(page).toHaveURL(/\/$/)
+  await expect(page).toHaveTitle('Markword')
+  await expect(page.getByRole('combobox', { name: '文件模式', exact: true })).toHaveValue('html')
+  await expect(page.locator('.document-heading')).toContainText('Notes')
   await page.getByRole('tab', { name: '預覽', exact: true }).click()
-  await expect(page.locator('.markdown-body h1')).toHaveText('HTML 匯入示範')
+  await expect(page.frameLocator('iframe').locator('h1')).toHaveText('HTML 匯入示範')
+  await expect(page.frameLocator('iframe').locator('td')).toHaveAttribute('colspan', '2')
+  await expect(page.locator('.save-status')).toHaveText('已儲存在本機')
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
   await page.screenshot({ path: testInfo.outputPath('html-import-mobile.png') })
-  await page.getByRole('button', { name: '匯出', exact: true }).click()
-  await expect(page.getByRole('dialog', { name: '下載與匯出', exact: true })).toContainText('可編輯原文與本機附件')
+  await page.getByRole('tab', { name: '編輯', exact: true }).click()
+  await expect(page.locator('.cm-content')).toBeVisible()
+  await expect(page.locator('.cm-content')).toContainText('HTML 匯入示範')
   expect(errors).toEqual([])
 })
 
-test('HTML import details survive reload and follow the imported document', async ({ page }) => {
+test('HTML project import details survive reload and follow the imported document', async ({ page }) => {
   await page.goto('/')
-  await page.locator('input[type=file]').first().setInputFiles(htmlFile('<h1>Import review</h1><p style="color:red">Check the appearance.</p><table><tr><td colspan="2">Merged content</td></tr></table><img alt="Chart from the original" src="images/chart.png"><form>Interactive content</form>', 'Review.html'))
+  await page.locator('input[type=file]').first().setInputFiles(htmlProject('<h1>Import review</h1><p style="color:red">Check the appearance.</p><table><tr><td colspan="2">Merged content</td></tr></table><img alt="Chart from the original" src="images/chart.png"><form>Interactive content</form>', 'Review.html'))
   const summary = page.getByRole('complementary', { name: 'Import summary', exact: true })
   await expect(summary).toContainText('Review.html')
   await expect(summary).toContainText('Merged table cells: 1')
@@ -209,7 +284,7 @@ test('HTML import details survive reload and follow the imported document', asyn
   await expect(summary).toContainText('Chart from the original')
   await page.keyboard.press('Escape')
 
-  await page.locator('input[type=file]').first().setInputFiles(htmlFile('<script>Only a script</script>', 'Invalid.html'))
+  await page.locator('input[type=file]').first().setInputFiles(htmlFile('<script type="application/json" id="markword-source">{}</script>', 'Invalid.html'))
   await expect(page.locator('.toast')).toContainText('Your current document is unchanged')
   await trigger.click()
   await expect(summary).toContainText('Review.html')
