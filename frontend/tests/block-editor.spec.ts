@@ -7,7 +7,7 @@ const controls = (page: Page) => page.getByRole('toolbar', { name: 'Block action
 async function single(page: Page, source: string) {
   await page.goto('/')
   await page.locator('.cm-content').fill(source)
-  await page.getByRole('button', { name: 'Single-page editing', exact: true }).click()
+  await page.getByRole('button', { name: 'Write', exact: true }).click()
   await expect(page.locator('[data-block-handle]').first()).toBeVisible()
 }
 async function handle(page: Page, element: Locator) {
@@ -16,6 +16,7 @@ async function handle(page: Page, element: Locator) {
   return page.locator(`[data-block-handle="${line}"]`)
 }
 async function select(page: Page, element: Locator, modifiers: ('Shift' | 'Control')[] = []) {
+  await element.scrollIntoViewIfNeeded()
   await (await handle(page, element)).click({ modifiers })
 }
 async function undo(page: Page) {
@@ -23,7 +24,7 @@ async function undo(page: Page) {
   await page.getByRole('button', { name: 'Undo', exact: true }).click()
 }
 async function source(page: Page) {
-  await page.getByRole('button', { name: 'Split editing', exact: true }).click()
+  await page.getByRole('button', { name: 'Split', exact: true }).click()
   await expect(page.locator('.cm-content')).toBeVisible()
   return (await page.locator('.cm-content .cm-line').allTextContents()).join('\n')
 }
@@ -356,6 +357,7 @@ test('cancelling a drag clears its marker and the next drag still works', async 
   const items = body(page).locator('li')
   const from = await handle(page, items.nth(1))
   const to = await handle(page, items.nth(3))
+  await from.hover()
   const a = await from.boundingBox(), b = await to.boundingBox()
   expect(a && b).toBeTruthy()
   await page.mouse.move(a!.x + 14, a!.y + 14)

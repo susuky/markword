@@ -42,7 +42,7 @@ for (const mode of ['split', 'unsynchronized', 'single', 'mobile', 'bottom', 'ty
     const original = mode === 'table' ? source.replace('![圖示]', '| A | B |\n| --- | --- |\n| One | Two |\n\n![圖示]') : source
     await page.locator('.cm-content').fill(original)
     await expect.poll(() => page.locator('.markdown-body img').evaluate(image => (image as HTMLImageElement).naturalWidth)).toBe(900)
-    if (mode === 'single') await page.getByRole('button', { name: 'Single-page editing', exact: true }).click()
+    if (mode === 'single') await page.getByRole('button', { name: 'Write', exact: true }).click()
     if (mode === 'mobile') await page.getByRole('tab', { name: 'Preview', exact: true }).click()
     if (mode === 'unsynchronized') await page.getByRole('button', { name: 'Toggle synchronized scrolling', exact: true }).click()
     if (mode === 'typewriter') await page.getByRole('button', { name: 'Typewriter mode', exact: true }).click()

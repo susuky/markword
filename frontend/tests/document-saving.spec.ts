@@ -33,12 +33,12 @@ test('retrying a failed new-document action saves the latest edits before switch
   await expect(page.locator('.save-status')).toHaveText('Saved locally')
   failWrites = true
   await page.locator('.cm-content').fill('# Pending note\n\nKeep this edit.')
-  await page.locator('.header-actions').getByRole('button', { name: 'Documents', exact: true }).click()
-  await page.locator('.header-actions').getByRole('button', { name: 'New document', exact: true }).click()
+  await page.locator('.activity-rail').getByRole('button', { name: 'Documents', exact: true }).click()
+  await page.locator('.activity-rail').getByRole('button', { name: 'New document', exact: true }).click()
   await expect(page.locator('.toast')).toContainText('Could not save your current document')
   await page.locator('.cm-content').fill('# Pending note\n\nThe latest edit after failure.')
   failWrites = false
-  await page.locator('.header-actions').getByRole('button', { name: 'New document', exact: true }).click()
+  await page.locator('.activity-rail').getByRole('button', { name: 'New document', exact: true }).click()
   await expect(library(page)).toBeVisible()
   await expect.poll(() => source(page)).toBe('')
   await library(page).locator('.document-list__open').filter({ hasText: 'Pending note' }).click()
@@ -59,7 +59,7 @@ test('canceling a failed rename clears the pending retry', async ({ page }) => {
     const storage = await import(/* @vite-ignore */ module)
     await storage.createWorkspaceDocument('# Rename target', { mode: 'markdown' })
   })
-  await page.locator('.header-actions').getByRole('button', { name: 'Documents', exact: true }).click()
+  await page.locator('.activity-rail').getByRole('button', { name: 'Documents', exact: true }).click()
   const row = library(page).locator('.document-list > li').filter({ hasText: 'Rename target' })
   await row.locator('summary').click()
   await row.getByRole('button', { name: 'Rename', exact: true }).click()
@@ -82,7 +82,7 @@ test('retrying a document list conflict uses the refreshed document version', as
     const storage = await import(/* @vite-ignore */ module)
     return (await storage.createWorkspaceDocument('# Rename target', { mode: 'markdown' })).id as string
   })
-  await page.locator('.header-actions').getByRole('button', { name: 'Documents', exact: true }).click()
+  await page.locator('.activity-rail').getByRole('button', { name: 'Documents', exact: true }).click()
   const row = library(page).locator('.document-list > li').filter({ hasText: 'Rename target' })
   await row.locator('summary').click()
   await row.getByRole('button', { name: 'Rename', exact: true }).click()
@@ -131,7 +131,7 @@ for (const mobile of [false, true]) {
     const local = '# My current edits\n\nKeep this separate copy.'
     await page.locator('.cm-content').fill(local)
     await expect(page.locator('.save-status')).toContainText(mobile ? '其他分頁已更新' : 'Changed elsewhere')
-    await page.locator('.header-actions').getByRole('button', { name: mobile ? '文件' : 'Documents', exact: true }).click()
+    await page.locator('.activity-rail').getByRole('button', { name: mobile ? '文件' : 'Documents', exact: true }).click()
     await expect(library(page).getByRole('alert')).toContainText(mobile ? '其他分頁' : 'Another tab')
     await page.screenshot({ path: `/tmp/markword-save-conflict-${mobile ? 'mobile' : 'desktop'}.png` })
     await library(page).getByRole('button', { name: mobile ? '另存副本' : 'Save a copy', exact: true }).click()

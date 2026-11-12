@@ -9,7 +9,7 @@ const source = (page: Page) => page.locator('.cm-content .cm-line').allTextConte
 async function single(page: Page, value: string) {
   await page.goto('/')
   await page.locator('.cm-content').fill(value)
-  await page.getByRole('button', { name: 'Single-page editing', exact: true }).click()
+  await page.getByRole('button', { name: 'Write', exact: true }).click()
 }
 
 async function handle(page: Page, block: Locator) {
@@ -52,7 +52,7 @@ test('a heading converted to a toggle retains its document and downloaded Markdo
   await single(page, '# Project plan\n\nDocument content.\n')
   await convert(page, body(page).locator(':scope > h1'), 'toggle')
   await expect(page.locator('.save-status')).toHaveText('Saved locally')
-  await page.locator('.header-actions').getByRole('button', { name: 'Documents', exact: true }).click()
+  await page.locator('.activity-rail').getByRole('button', { name: 'Documents', exact: true }).click()
   const library = page.getByRole('complementary', { name: 'Documents', exact: true })
   await expect(library.locator('.document-list__open').filter({ has: page.getByText('Project plan', { exact: true }) })).toBeVisible()
   await library.getByRole('button', { name: 'Close documents', exact: true }).click()
@@ -147,7 +147,7 @@ test('the > space shortcut creates editable toggles in source and single-page ed
   await page.keyboard.type('Visual child')
   await expect(body(page).locator('summary')).toHaveText('Visual toggle')
   await expect(body(page).locator('.markdown-toggle-content')).toHaveText('Visual child')
-  await page.getByRole('button', { name: 'Split editing', exact: true }).click()
+  await page.getByRole('button', { name: 'Split', exact: true }).click()
   await page.locator('.cm-content').fill('')
   await page.keyboard.type('> ')
   await page.keyboard.type('Source toggle')
@@ -199,7 +199,7 @@ test('desktop and mobile retain readable toggle headings and ordinary toggles wi
   await expect(body(page).locator('summary h1')).toHaveText('專案筆記與待辦')
   await expect(body(page).locator('.markdown-toggle-content').first()).toBeHidden()
   await expect(body(page).locator('details').last().locator('.markdown-toggle-content')).toBeVisible()
-  await page.locator('.pane--preview .pane-title').click()
+  await page.locator('.document-heading').click()
   await expect(page.locator('.save-status')).toHaveText('Saved locally')
   await page.screenshot({ path: '/tmp/markword-toggle-headings-desktop.png', fullPage: false })
   await page.setViewportSize({ width: 390, height: 844 })

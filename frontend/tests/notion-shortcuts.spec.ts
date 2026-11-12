@@ -48,7 +48,7 @@ test('shorthand [] and [ ] render as tasks in loaded Markdown, without affecting
 
 test('Enter splits at cursor and Shift+Enter writes a visible line break in same block', async ({ page }) => {
   await start(page, 'AlphaBeta')
-  await page.getByRole('button', { name: 'Single-page editing' }).click()
+  await page.getByRole('button', { name: 'Write', exact: true }).click()
   const edit = preview(page).locator('p [contenteditable]').first()
   await edit.focus()
   await page.keyboard.press('Home')
@@ -115,7 +115,7 @@ test('typing [ ] plus space also creates a checkbox without losing the caret', a
 
 test('typing after Shift+Enter continues on the next visible line in the same block', async ({ page }) => {
   await start(page, 'BeforeAfter')
-  await page.getByRole('button', { name: 'Single-page editing' }).click()
+  await page.getByRole('button', { name: 'Write', exact: true }).click()
   const edit = preview(page).locator('p [contenteditable]').first()
   await edit.focus()
   await page.keyboard.press('Home')

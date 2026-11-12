@@ -14,6 +14,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from threading import Lock
 from typing import Literal
+from urllib.parse import quote
 
 from fastapi import APIRouter, HTTPException, Query, Response
 from pydantic import BaseModel, Field
@@ -425,10 +426,19 @@ def list_assets() -> list[dict]:
 @router.get("/assets/{asset_id}")
 def get_asset(asset_id: str) -> Response:
     with database() as connection:
-        row = connection.execute("SELECT blob, type FROM assets WHERE id = ?", (asset_id,)).fetchone()
+        row = connection.execute("SELECT blob, type, name FROM assets WHERE id = ?", (asset_id,)).fetchone()
         if row is None:
             raise HTTPException(404, "Asset not found.")
-        return Response(content=row["blob"], media_type=row["type"] or "application/octet-stream")
+        # Attachments can contain HTML or SVG. Opening one must not give its
+        # scripts the workspace origin; fetch/blob consumers keep the MIME type.
+        return Response(
+            content=row["blob"], media_type=row["type"] or "application/octet-stream",
+            headers={
+                "Content-Disposition": "attachment; filename*=UTF-8''" + quote(row["name"], safe=""),
+                "Content-Security-Policy": "sandbox; default-src 'none'; base-uri 'none'; form-action 'none'",
+                "X-Content-Type-Options": "nosniff",
+            },
+        )
 
 
 @router.delete("/assets/{asset_id}")

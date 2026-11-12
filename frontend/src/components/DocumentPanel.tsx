@@ -106,7 +106,12 @@ export function DocumentPanel({ currentId, busy, onClose, onOpen, onDuplicate, o
             </div></details>}
         </div>
         {renaming?.id === document.id ? <form className="document-list__rename" onSubmit={(event) => { event.preventDefault(); void run((retry) => onRename(renaming.id, renaming.name, retry ? currentVersion(renaming.id) : renaming.version)) }}>
-          <input aria-label={t('Document name')} autoFocus maxLength={120} value={renaming.name} onChange={(event) => { setRenaming({ ...renaming, name: event.target.value }); clearAction() }} />
+          <input aria-label={t('Document name')} autoFocus maxLength={120} onKeyDown={(event) => {
+            if ((event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) && (event.key === 'Enter' || event.key === 'Escape')) {
+              event.preventDefault()
+              event.stopPropagation()
+            }
+          }} value={renaming.name} onChange={(event) => { setRenaming({ ...renaming, name: event.target.value }); clearAction() }} />
           <div><button type="button" disabled={busy} onClick={() => { setRenaming(null); clearAction() }}>{t('Cancel')}</button><button type="submit" disabled={busy || !renaming.name.trim()}>{t('Save name')}</button></div>
         </form> : null}
       </li>)}

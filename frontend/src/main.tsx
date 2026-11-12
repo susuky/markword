@@ -5,6 +5,7 @@ import { I18nProvider } from './i18n'
 import './persistence.css'
 import './styles.css'
 import './htmlEditor.css'
+import './workspaceShell.css'
 
 const baseUrl = import.meta.env.BASE_URL
 

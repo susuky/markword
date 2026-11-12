@@ -1,7 +1,7 @@
 import {
-  AlignCenter, ArrowLeftRight, BarChart3, CheckCircle2, Circle, Command,
-  Ellipsis, Eye, FileText, FolderOpen, HelpCircle, History, Languages, Link2,
-  ListTree, Maximize2, Paperclip, Save, Search, Unlink2, AlertCircle, Table2, PanelsTopLeft, PanelTopClose, PanelTopOpen, Undo2, Redo2, Plus, Files,
+  AlignCenter, ArrowLeftRight, BarChart3, CheckCircle2, Circle,
+  Ellipsis, Eye, FileText, FolderOpen, Link2,
+  Maximize2, Paperclip, Save, Search, Unlink2, AlertCircle, Table2, PanelsTopLeft, PanelTopClose, PanelTopOpen, Undo2, Redo2, Plus,
 } from 'lucide-react'
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import { exportDocument } from './api'
@@ -14,6 +14,7 @@ import {
   referencedAssetPaths,
   requestPersistentStorage,
 } from './assets'
+import { ActivityRail } from './components/ActivityRail'
 import { AssetPanel } from './components/AssetPanel'
 import { CommandPalette, type CommandAction } from './components/CommandPalette'
 import { EditorPane, type EditorHandle } from './components/EditorPane'
@@ -153,14 +154,21 @@ export default function App({ initialDocumentId, documentsOpen, onDocumentsOpenC
   const [mobileView, setMobileView] = useState<'editor' | 'preview'>('editor')
   const visualEditing = mode === 'markdown'
   const canHideSource = visualEditing || mode === 'html'
-  const [showVisualSource, setShowVisualSource] = useState(() => loadPreference<unknown>('show-source', !loadPreference('live-editing', false)) !== false)
+  const [showMarkdownSource, setShowMarkdownSource] = useState(() => loadPreference<unknown>('show-source', !loadPreference('live-editing', false)) !== false)
+  const [showHtmlSource, setShowHtmlSource] = useState(() => loadPreference('html-show-source', false))
+  const showVisualSource = mode === 'html' ? showHtmlSource : showMarkdownSource
   const [toolbarCollapsed, setToolbarCollapsed] = useState(() => loadPreference('toolbar-collapsed', false))
-  const toggleSource = useCallback(() => { setShowVisualSource((shown) => !shown); setMobileView('preview') }, [])
+  const toggleSource = useCallback(() => {
+    if (mode === 'html') setShowHtmlSource((shown) => !shown)
+    else setShowMarkdownSource((shown) => !shown)
+    setMobileView('preview')
+  }, [mode])
   const runInSource = useCallback((action: () => void) => {
-    setShowVisualSource(true)
+    if (mode === 'html') setShowHtmlSource(true)
+    else setShowMarkdownSource(true)
     setMobileView('editor')
     requestAnimationFrame(action)
-  }, [])
+  }, [mode])
   const [dragActive, setDragActive] = useState(false)
   const [revisionsOpen, setRevisionsOpen] = useState(false)
   const [assetsOpen, setAssetsOpen] = useState(false)
@@ -223,10 +231,15 @@ export default function App({ initialDocumentId, documentsOpen, onDocumentsOpenC
     return true
   }, [])
 
+  const changeVisualHtml = useCallback((next: string, target?: Element) => {
+    editorRef.current?.replaceFromPreview(next, target ?? null)
+  }, [])
+
   const changeMode = useCallback((nextMode: DocumentMode) => {
     if (nextMode !== currentDocumentRef.current.mode) documentVersionRef.current += 1
     currentDocumentRef.current.mode = nextMode
     setMode(nextMode)
+    if (nextMode === 'html') setMobileView('preview')
   }, [])
 
   const changeImportSummary = useCallback((summary: ImportSummary | null) => {
@@ -283,9 +296,10 @@ export default function App({ initialDocumentId, documentsOpen, onDocumentsOpenC
     savePreference('export-style', exportStyle)
     savePreference('export-settings', exportSettings)
     savePreference('preview-typography', previewTypography)
-    savePreference('show-source', showVisualSource)
+    savePreference('show-source', showMarkdownSource)
+    savePreference('html-show-source', showHtmlSource)
     savePreference('toolbar-collapsed', toolbarCollapsed)
-  }, [exportSettings, exportStyle, outlineCollapsed, previewTypography, showVisualSource, split, syncEnabled, theme, toolbarCollapsed])
+  }, [exportSettings, exportStyle, outlineCollapsed, previewTypography, showMarkdownSource, showHtmlSource, split, syncEnabled, theme, toolbarCollapsed])
 
   const setMarkdownFontSize = useCallback((size: number) => {
     setPreviewTypography((current) => normalizePreviewTypography({ ...current, markdownFontSize: size }))
@@ -675,7 +689,7 @@ export default function App({ initialDocumentId, documentsOpen, onDocumentsOpenC
   }, [syncEnabled])
 
   const jumpToLine = useCallback((line: number) => {
-    setShowVisualSource(true)
+    setShowMarkdownSource(true)
     setMobileView('editor')
     setMobileOutlineOpen(false)
     setActiveLine(line)
@@ -833,6 +847,20 @@ export default function App({ initialDocumentId, documentsOpen, onDocumentsOpenC
     requestAnimationFrame(() => document.querySelector<HTMLButtonElement>('[aria-controls="workspace-documents"]')?.focus())
   }, [setDocumentsOpen])
 
+  const enterFocus = useCallback(() => {
+    setMobileView('editor')
+    setFocusMode(true)
+    requestAnimationFrame(() => editorRef.current?.focus())
+  }, [])
+  const exitFocus = useCallback(() => {
+    setFocusMode(false)
+    requestAnimationFrame(() => {
+      const trigger = document.querySelector<HTMLButtonElement>('.focus-trigger')
+      if (trigger?.getClientRects().length) trigger.focus()
+      else document.querySelector<HTMLButtonElement>('.utility-command')?.focus()
+    })
+  }, [])
+
   const commandActions = useMemo<CommandAction[]>(() => [
     { id: 'commands', label: t('Open command palette'), run: () => setCommandOpen(true) },
     { id: 'documents', label: t('Documents'), description: t('Find and switch between saved documents'), keywords: 'notes workspace library 文件 工作區', run: () => { setImportSummaryOpen(false); setStatsOpen(false); setDocumentsOpen(true) } },
@@ -853,7 +881,7 @@ export default function App({ initialDocumentId, documentsOpen, onDocumentsOpenC
     ...(mode !== 'html' ? [{ id: 'insert-code', label: t('Insert: Code block'), description: t('Fenced code block'), keywords: '/ code 程式碼', run: () => runInSource(() => editorRef.current?.insert('\n```text\n\n```\n', 9)) },
     { id: 'insert-mermaid', label: t('Insert: Mermaid diagram'), description: t('Basic flowchart'), keywords: '/ diagram 圖表', run: () => runInSource(() => editorRef.current?.insert(mode === 'mermaid' ? `flowchart TD\n  A[${t('Start')}] --> B[${t('Done')}]\n` : `\n\`\`\`mermaid\ngraph TD\n  A[${t('Start')}] --> B[${t('Done')}]\n\`\`\`\n`)) },
     ] : []),
-    { id: 'focus', label: t(focusMode ? 'Exit focus mode' : 'Enter focus mode'), run: () => setFocusMode((enabled) => !enabled) },
+    { id: 'focus', label: t(focusMode ? 'Exit focus mode' : 'Enter focus mode'), run: focusMode ? exitFocus : enterFocus },
     { id: 'typewriter', label: t(typewriterMode ? 'Disable typewriter mode' : 'Enable typewriter mode'), run: () => setTypewriterMode((enabled) => !enabled) },
     ...(mode !== 'html' ? [{ id: 'sync', label: t(syncEnabled ? 'Disable synchronized scrolling' : 'Enable synchronized scrolling'), run: () => setSyncEnabled((enabled) => !enabled) }] : []),
     { id: 'fold', label: t('Fold all sections'), run: () => runInSource(() => editorRef.current?.foldAll()) },
@@ -861,7 +889,7 @@ export default function App({ initialDocumentId, documentsOpen, onDocumentsOpenC
     { id: 'snapshot', label: t('Create current revision'), description: t('Save to local revision history'), run: () => void createManualSnapshot() },
     { id: 'revisions', label: t('Open revision history'), description: t('Preview, download, or restore an older revision'), run: () => setRevisionsOpen(true) },
     { id: 'shortcuts', label: t('Show keyboard shortcuts'), run: () => setHelpOpen(true) },
-  ].map((action) => ({ ...action, shortcut: formatShortcut(shortcuts[action.id]) })), [canHideSource, createDocument, createManualSnapshot, downloadHtml, downloadSource, downloadProject, focusMode, loadFile, mode, runInSource, saveDocument, saveFile, setDocumentsOpen, shortcuts, showNotice, showVisualSource, syncEnabled, t, toggleSource, typewriterMode])
+  ].map((action) => ({ ...action, shortcut: formatShortcut(shortcuts[action.id]) })), [canHideSource, createDocument, createManualSnapshot, downloadHtml, downloadSource, downloadProject, enterFocus, exitFocus, focusMode, loadFile, mode, runInSource, saveDocument, saveFile, setDocumentsOpen, shortcuts, showNotice, showVisualSource, syncEnabled, t, toggleSource, typewriterMode])
 
   useEffect(() => {
     if (!hydrated) return
@@ -869,6 +897,7 @@ export default function App({ initialDocumentId, documentsOpen, onDocumentsOpenC
       if (event.defaultPrevented || event.isComposing || event.keyCode === 229 || event.repeat) return
       const target = event.target as HTMLElement | null
       if (target?.closest('dialog[open], [role="dialog"]')) return
+      if (event.key === 'Escape' && document.querySelector('.menu-wrap > button[aria-expanded="true"]')) return
       const shortcut = shortcutFromEvent(event)
       const isTyping = Boolean(target?.closest('input, select, textarea, [contenteditable], .cm-editor'))
       if (shortcut === '?' && isTyping) return
@@ -883,7 +912,7 @@ export default function App({ initialDocumentId, documentsOpen, onDocumentsOpenC
         event.preventDefault()
         event.stopPropagation()
       } else if (event.key === 'Escape' && focusMode) {
-        setFocusMode(false)
+        exitFocus()
       } else if (event.key === 'Escape') {
         if (documentsOpen && !target?.closest('.document-panel')) closeDocuments()
         setMobileOutlineOpen(false)
@@ -893,14 +922,14 @@ export default function App({ initialDocumentId, documentsOpen, onDocumentsOpenC
     }
     window.addEventListener('keydown', onKeyDown, true)
     return () => window.removeEventListener('keydown', onKeyDown, true)
-  }, [closeDocuments, commandActions, documentBusy, documentsOpen, focusMode, hydrated, shortcuts])
+  }, [closeDocuments, commandActions, documentBusy, documentsOpen, exitFocus, focusMode, hydrated, shortcuts])
 
   if (!hydrated) {
     return <main className="app-shell productivity-shell"><div className="app-loading">{t('Loading local draft…')}</div></main>
   }
 
   return (
-    <main className={`app-shell productivity-shell ${focusMode ? 'is-focus-mode' : ''} ${typewriterMode ? 'is-typewriter-mode' : ''} ${toolbarCollapsed ? 'is-toolbar-collapsed' : ''} ${canHideSource && !showVisualSource ? 'is-visual-only' : ''}`}>
+    <main className={`app-shell productivity-shell ${focusMode ? 'is-focus-mode' : ''} ${typewriterMode ? 'is-typewriter-mode' : ''} ${toolbarCollapsed ? 'is-toolbar-collapsed' : ''} ${canHideSource && !showVisualSource ? 'is-visual-only' : ''} ${documentsOpen || (mode === 'markdown' && !outlineCollapsed) ? 'has-sidebar' : ''} ${mobileOutlineOpen ? 'has-mobile-outline' : ''}`} data-document-mode={mode}>
       <input ref={fileInputRef} className="visually-hidden-file" type="file" disabled={importingWord} accept=".md,.markdown,.txt,.mmd,.mermaid,.docx,.html,.htm,.zip,text/plain,text/markdown,text/html,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/zip" onChange={(event) => {
         const file = event.target.files?.[0]
         if (file) void loadFile(file)
@@ -911,39 +940,82 @@ export default function App({ initialDocumentId, documentsOpen, onDocumentsOpenC
         if (files.length) void handleAssetFiles(files)
         event.currentTarget.value = ''
       }} />
+      <ActivityRail mode={mode} documentsOpen={documentsOpen} outlineOpen={!documentsOpen && !outlineCollapsed} mobileOutlineOpen={mobileOutlineOpen}
+        busy={documentBusy || Boolean(fileBusy) || assetBusy || Boolean(clientExporting)} assetsCount={assets.length}
+        onCreate={() => void createDocument().catch((error: Error) => showNotice(error.message))}
+        onDocuments={() => { setImportSummaryOpen(false); setStatsOpen(false); setDocumentsOpen(!documentsOpen); setMobileOutlineOpen(false) }}
+        onOutline={() => {
+          setDocumentsOpen(false)
+          if (window.matchMedia('(max-width: 900px)').matches) setMobileOutlineOpen((open) => !open)
+          else setOutlineCollapsed(documentsOpen ? false : !outlineCollapsed)
+        }}
+        onAssets={() => setAssetsOpen(true)} onRevisions={() => setRevisionsOpen(true)}
+        onLanguage={() => setLocale(locale === 'en' ? 'zh-TW' : 'en')} onHelp={() => setHelpOpen(true)} />
+      <div className="workspace-sidebar">
+        {mode === 'markdown' && mobileOutlineOpen ? <button className="outline-scrim" type="button" aria-label={t('Collapse document outline')} onClick={() => setMobileOutlineOpen(false)} /> : null}
+        {documentsOpen ? <DocumentPanel currentId={documentId} busy={Boolean(fileBusy) || assetBusy || Boolean(clientExporting)} onClose={closeDocuments}
+          onOpen={openDocument} onDuplicate={duplicateDocument} onRename={renameDocument} onTrash={trashDocument} onRestore={restoreDocument}
+          onSaveCopy={persistenceStatus === 'conflict' ? () => duplicateDocument(documentId) : undefined} /> : null}
+        {mode === 'markdown' && !documentsOpen ? <OutlinePanel mobileOpen={mobileOutlineOpen} onMobileClose={() => setMobileOutlineOpen(false)} headings={headings} collapsed={outlineCollapsed} activeLine={activeLine} onCollapsedChange={setOutlineCollapsed} onJump={(line) => {
+          if (visualEditing && !showVisualSource) {
+            setMobileOutlineOpen(false)
+            setMobileView('preview')
+            setActiveLine(line)
+            previewRef.current?.scrollToLine(line)
+          } else jumpToLine(line)
+        }} /> : null}
+      </div>
       <header className="app-header">
-        <div className="brand"><img src={`${import.meta.env.BASE_URL}markword-icon.svg`} width="36" height="36" alt="" /><span>Markword<span className="brand-caption">{t('A space for your words')}</span></span></div>
         <div className="document-heading"><FileText size={18} aria-hidden="true" /><span title={title}>{title}</span><span className="document-extension">.{DOCUMENT_MODES[mode].extension}</span></div>
         <nav className="header-actions" aria-label={t('Document tools')} inert={documentBusy}>
-          <button className="toolbar-button new-document-trigger" type="button" disabled={Boolean(fileBusy) || assetBusy || Boolean(clientExporting)} onClick={() => void createDocument().catch((error: Error) => showNotice(error.message))} aria-label={t('New document')} title={t('New document')}><Plus size={17} aria-hidden="true" /><span>{t('New document')}</span></button>
-          <button className={`toolbar-button documents-trigger ${documentsOpen ? 'is-active' : ''}`} type="button" onClick={() => { setImportSummaryOpen(false); setStatsOpen(false); setDocumentsOpen(!documentsOpen); setMobileOutlineOpen(false) }} aria-label={t('Documents')} title={t('Documents')} aria-controls="workspace-documents" aria-expanded={documentsOpen}><Files size={17} aria-hidden="true" /><span>{t('Documents')}</span></button>
+          <button className="toolbar-button utility-command" type="button" onClick={() => setCommandOpen(true)} aria-label={t('Command palette')} title={t('Command palette')}><Search size={17} aria-hidden="true" />{shortcuts.commands && <kbd>{formatShortcut(shortcuts.commands)}</kbd>}</button>
+          <button className={`toolbar-button focus-trigger ${focusMode ? 'is-active' : ''}`} type="button" onClick={focusMode ? exitFocus : enterFocus} aria-pressed={focusMode} aria-label={t('Toggle focus mode')} title={t('Toggle focus mode')}><Maximize2 size={17} aria-hidden="true" /></button>
+          <span className="header-divider" aria-hidden="true" />
           <button className="toolbar-button open-trigger" type="button" disabled={Boolean(fileBusy) || importingWord} onClick={() => void loadFile()} aria-label={t(importingWord ? 'Converting Word…' : 'Open document or project')} title={t('Open document or project')}><FolderOpen size={17} aria-hidden="true" /><span>{t(importingWord ? 'Converting Word…' : 'Open')}</span></button>
           <button className="toolbar-button save-trigger" type="button" disabled={Boolean(fileBusy) || assetBusy} onClick={() => void saveDocument()} aria-label={t(!IS_STATIC_DEPLOYMENT ? 'Save' : canSaveLocalFile ? 'Save file' : 'Download source')} title={t(!IS_STATIC_DEPLOYMENT ? 'Save' : canSaveLocalFile ? 'Save file' : 'Download source')}><Save size={17} aria-hidden="true" /><span>{t(fileBusy === 'saving' ? 'Saving…' : !IS_STATIC_DEPLOYMENT || canSaveLocalFile ? 'Save' : 'Download')}</span></button>
-          <button className="toolbar-button language-toggle" type="button" onClick={() => setLocale(locale === 'en' ? 'zh-TW' : 'en')} title={t(locale === 'en' ? 'Switch to Traditional Chinese' : 'Switch to English')} aria-label={t(locale === 'en' ? 'Switch to Traditional Chinese' : 'Switch to English')}><Languages size={17} aria-hidden="true" /><span>{locale === 'en' ? t('Traditional Chinese') : 'EN'}</span></button>
           <button className="toolbar-button workspace-toolbar-toggle" type="button" aria-label={t(toolbarCollapsed ? 'Show toolbar' : 'Hide toolbar')} title={t(toolbarCollapsed ? 'Show toolbar' : 'Hide toolbar')} aria-controls="workspace-tools" aria-expanded={!toolbarCollapsed} onClick={() => setToolbarCollapsed((collapsed) => !collapsed)}>{toolbarCollapsed ? <PanelTopOpen size={17} aria-hidden="true" /> : <PanelTopClose size={17} aria-hidden="true" />}</button>
           <ExportMenu mode={mode} disabled={!markdown.trim()} exporting={exporting} clientExporting={clientExporting} exportStyle={exportStyle} onStyleChange={setExportStyle} onPreview={() => setExportPreviewOpen(true)} hasAssets={referencedAssets.size > 0} onSource={downloadSource} onSaveAs={canSaveLocalFile ? () => void saveFile(true) : undefined} onProject={(scope) => void downloadProject(scope)} onHtml={() => void downloadHtml()} onExport={(format) => void handleExport(format)} />
         </nav>
       </header>
 
       <nav id="workspace-tools" className="workspace-toolbar" aria-label={t('Workspace tools')}>
-        <div className="workspace-toolbar__group">
-          {mode === 'markdown' ? <button className="toolbar-button outline-trigger" type="button" aria-label={t('Document outline')} aria-controls="document-outline" aria-expanded={window.matchMedia('(max-width: 900px)').matches ? mobileOutlineOpen : !outlineCollapsed} onClick={() => {
-            if (window.matchMedia('(max-width: 900px)').matches) setMobileOutlineOpen((open) => !open)
-            else setOutlineCollapsed((collapsed) => !collapsed)
-          }}><ListTree size={17} aria-hidden="true" /><span>{t('Outline')}</span></button> : null}
-          <button className="toolbar-button asset-trigger" type="button" onClick={() => setAssetsOpen(true)} aria-label={t('Manage local assets')}><Paperclip size={17} aria-hidden="true" /><span>{t('Assets')}</span>{assets.length ? <small>{assets.length}</small> : null}</button>
-          <button className="toolbar-button revision-trigger" type="button" onClick={() => setRevisionsOpen(true)} aria-label={t('Revision history')}><History size={17} aria-hidden="true" /><span>{t('Revision history')}</span></button>
-        </div>
-        <div className="workspace-toolbar__group">
-          {canHideSource ? <button className={`toolbar-button view-mode-trigger ${!showVisualSource ? 'is-active' : ''}`} type="button" onClick={toggleSource} aria-pressed={!showVisualSource} aria-label={t(showVisualSource ? 'Single-page editing' : 'Split editing')} title={t(showVisualSource ? 'Single-page editing' : 'Split editing')}><PanelsTopLeft size={17} aria-hidden="true" /><span>{t(showVisualSource ? 'Single-page editing' : 'Split editing')}</span></button> : null}
-          <button className="toolbar-button utility-command" type="button" onClick={() => setCommandOpen(true)} aria-label={t('Command palette')}><Command size={16} aria-hidden="true" /><span>{t('Find a command')}</span>{shortcuts.commands && <kbd>{formatShortcut(shortcuts.commands)}</kbd>}</button>
-          <button className={`toolbar-button focus-trigger ${focusMode ? 'is-active' : ''}`} type="button" onClick={() => { setMobileView('editor'); setFocusMode((enabled) => !enabled) }} aria-pressed={focusMode} aria-label={t('Toggle focus mode')}><Maximize2 size={16} aria-hidden="true" /><span>{t('Focus')}</span></button>
-        </div>
+        <select className="document-mode" aria-label={t('Document mode')} value={mode} disabled={documentBusy} onChange={(event) => changeMode(normalizeDocumentMode(event.target.value))}>
+          {(Object.keys(DOCUMENT_MODES) as DocumentMode[]).map((value) => <option key={value} value={value}>{t(DOCUMENT_MODES[value].label)}</option>)}
+        </select>
+        {canHideSource ? <div className="view-mode-switch" role="group" aria-label={t('Editor layout')}>
+          <button className={`view-mode-trigger ${!showVisualSource ? 'is-active' : ''}`} type="button" onClick={() => { if (showVisualSource) toggleSource() }} aria-pressed={!showVisualSource} aria-label={t('Write')} title={t('Single-page editing')}><FileText size={15} aria-hidden="true" /><span>{t('Write')}</span></button>
+          <button className={`view-mode-trigger ${showVisualSource ? 'is-active' : ''}`} type="button" onClick={() => { if (!showVisualSource) toggleSource() }} aria-pressed={showVisualSource} aria-label={t('Split')} title={t('Split editing')}><PanelsTopLeft size={15} aria-hidden="true" /><span>{t('Split')}</span></button>
+        </div> : <span className="toolbar-spacer" />}
+        <div className="preview-tools" inert={documentBusy}>
+            {visualEditing ? <button className="toolbar-button" type="button" aria-label={t('Add content')} title={t('Add content')} onClick={() => previewRef.current?.addBlock(writingPaneRef.current === 'source' ? editorRef.current?.cursorPosition() : undefined)}><Plus size={17} aria-hidden="true" /></button> : null}
+            {visualEditing ? <div className="markdown-edit-controls">
+              <ToolbarMenu label={t('Preview editing tools')} trigger={<Ellipsis size={17} aria-hidden="true" />}>
+                {(close) => <div className="markdown-edit-menu" role="dialog" aria-label={t('Preview editing tools')}>
+                  <button type="button" className="toolbar-button" onClick={() => { editorRef.current?.undo(); close() }}><Undo2 size={17} aria-hidden="true" />{t('Undo')}</button>
+                  <button type="button" className="toolbar-button" onClick={() => { editorRef.current?.redo(); close() }}><Redo2 size={17} aria-hidden="true" />{t('Redo')}</button>
+                  <div className="markdown-edit-help"><p>{t('Enter creates a paragraph or list item. Press / on an empty line to add a block.')}</p><p>{t('Click code to edit. Enter adds a line; Esc finishes editing.')}</p><p>{t('Edit tables with “Edit table”. Use “Edit source” for formulas and media.')}</p></div>
+                </div>}
+              </ToolbarMenu>
+            </div> : null}
+            {mode === 'html' ? <>
+              <button type="button" className="toolbar-button" aria-label={t('Undo')} title={t('Undo')} onClick={() => editorRef.current?.undo()}><Undo2 size={17} aria-hidden="true" /></button>
+              <button type="button" className="toolbar-button" aria-label={t('Redo')} title={t('Redo')} onClick={() => editorRef.current?.redo()}><Redo2 size={17} aria-hidden="true" /></button>
+            </> : <>
+            <PreviewSettings theme={theme} onThemeChange={setTheme} markdownSize={previewTypography.markdownFontSize} mermaidSize={previewTypography.mermaidFontSize} onMarkdownSizeChange={setMarkdownFontSize} onMermaidSizeChange={setMermaidFontSize} onReset={resetPreviewFontSizes} />
+            <button className={`toolbar-button sync-toggle ${syncEnabled ? 'is-active' : ''}`} type="button" aria-label={t('Toggle synchronized scrolling')} title={t(syncEnabled ? 'Disable synchronized scrolling' : 'Enable synchronized scrolling')} aria-pressed={syncEnabled} onClick={() => setSyncEnabled((enabled) => !enabled)}>{syncEnabled ? <Link2 size={17} aria-hidden="true" /> : <Unlink2 size={17} aria-hidden="true" />}</button>
+            </>}
+          </div>
       </nav>
 
-      <div className="mobile-view-tabs" role="tablist" aria-label={t('Editor and preview')}>
-        <button type="button" role="tab" aria-selected={mobileView === 'editor'} className={mobileView === 'editor' ? 'is-active' : ''} onClick={() => setMobileView('editor')}><FileText size={15} />{t('Editor')}</button>
-        <button type="button" role="tab" aria-selected={mobileView === 'preview'} className={mobileView === 'preview' ? 'is-active' : ''} onClick={() => setMobileView('preview')}><Eye size={15} />{t('Preview')}</button>
+      <div className="mobile-view-tabs" role="tablist" aria-label={t('Editor and preview')} onKeyDown={(event) => {
+        if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
+        event.preventDefault()
+        const next = event.key === 'Home' ? 'editor' : event.key === 'End' ? 'preview' : mobileView === 'editor' ? 'preview' : 'editor'
+        setMobileView(next)
+        document.getElementById(`mobile-tab-${next}`)?.focus()
+      }}>
+        <button type="button" role="tab" id="mobile-tab-editor" aria-controls="workspace-editor" tabIndex={mobileView === 'editor' ? 0 : -1} aria-selected={mobileView === 'editor'} className={mobileView === 'editor' ? 'is-active' : ''} onClick={() => setMobileView('editor')}><FileText size={15} />{t('Editor')}</button>
+        <button type="button" role="tab" id="mobile-tab-preview" aria-controls="workspace-preview" tabIndex={mobileView === 'preview' ? 0 : -1} aria-selected={mobileView === 'preview'} className={mobileView === 'preview' ? 'is-active' : ''} onClick={() => setMobileView('preview')}><Eye size={15} />{t('Preview')}</button>
       </div>
 
       <section
@@ -959,29 +1031,13 @@ export default function App({ initialDocumentId, documentsOpen, onDocumentsOpenC
           if (files.length) void handleDroppedFiles(files)
         }}
       >
-        {mode === 'markdown' && mobileOutlineOpen ? <button className="outline-scrim" type="button" aria-label={t('Collapse document outline')} onClick={() => setMobileOutlineOpen(false)} /> : null}
-        {documentsOpen ? <DocumentPanel currentId={documentId} busy={Boolean(fileBusy) || assetBusy || Boolean(clientExporting)} onClose={closeDocuments}
-          onOpen={openDocument} onDuplicate={duplicateDocument} onRename={renameDocument} onTrash={trashDocument} onRestore={restoreDocument}
-          onSaveCopy={persistenceStatus === 'conflict' ? () => duplicateDocument(documentId) : undefined} /> : null}
-        {mode === 'markdown' && !documentsOpen ? <OutlinePanel mobileOpen={mobileOutlineOpen} onMobileClose={() => setMobileOutlineOpen(false)} headings={headings} collapsed={outlineCollapsed} activeLine={activeLine} onCollapsedChange={setOutlineCollapsed} onJump={(line) => {
-          if (visualEditing && !showVisualSource) {
-            setMobileOutlineOpen(false)
-            setMobileView('preview')
-            setActiveLine(line)
-            previewRef.current?.scrollToLine(line)
-          } else jumpToLine(line)
-        }} /> : null}
-        <section className="pane pane--editor" style={{ flex: `${split} 1 0` }} inert={documentBusy} onFocusCapture={(event) => {
+        <section id="workspace-editor" role="tabpanel" aria-labelledby="mobile-tab-editor" aria-label={t('Editor')} className="pane pane--editor" style={{ flex: `${split} 1 0` }} inert={documentBusy} onFocusCapture={(event) => {
           if ((event.target as Element).closest('.cm-editor')) writingPaneRef.current = 'source'
         }}>
           <header className="pane-header">
             <div className="pane-title">
               <FileText size={16} aria-hidden="true" />{t('Editor')}
-              <select className="document-mode" aria-label={t('Document mode')} value={mode} onChange={(event) => {
-                changeMode(normalizeDocumentMode(event.target.value))
-              }}>
-                {(Object.keys(DOCUMENT_MODES) as DocumentMode[]).map((value) => <option key={value} value={value}>{t(DOCUMENT_MODES[value].label)}</option>)}
-              </select>
+
             </div>
             <div className="editor-pane-actions">
               <div className="pane-tools">
@@ -1000,29 +1056,11 @@ export default function App({ initialDocumentId, documentsOpen, onDocumentsOpenC
           setSplit((value) => event.key === 'Home' ? 50 : Math.min(70, Math.max(30, value + (event.key === 'ArrowRight' ? 5 : -5))))
         }} aria-label={t('Resize editor and preview')} title={t('Drag or use arrow keys to resize')}><ArrowLeftRight size={14} aria-hidden="true" /></button>
 
-        <section className="pane pane--preview" style={{ flex: `${100 - split} 1 0` }} inert={documentBusy} onFocusCapture={(event) => {
+        <section id="workspace-preview" role="tabpanel" aria-labelledby="mobile-tab-preview" aria-label={t('Preview')} className="pane pane--preview" style={{ flex: `${100 - split} 1 0` }} inert={documentBusy} onFocusCapture={(event) => {
           if ((event.target as Element).closest('.markdown-body, .markdown-block-controls')) writingPaneRef.current = 'preview'
         }}>
-          <header className="pane-header preview-header"><div className="pane-title"><Eye size={16} aria-hidden="true" />{t('Preview')}</div><div className="preview-tools">
-            {visualEditing ? <button className="toolbar-button" type="button" aria-label={t('Add content')} title={t('Add content')} onClick={() => previewRef.current?.addBlock(writingPaneRef.current === 'source' ? editorRef.current?.cursorPosition() : undefined)}><Plus size={17} aria-hidden="true" /></button> : null}
-            {visualEditing ? <div className="markdown-edit-controls">
-              <ToolbarMenu label={t('Preview editing tools')} trigger={<Ellipsis size={17} aria-hidden="true" />}>
-                {(close) => <div className="markdown-edit-menu" role="dialog" aria-label={t('Preview editing tools')}>
-                  <button type="button" className="toolbar-button" onClick={() => { editorRef.current?.undo(); close() }}><Undo2 size={17} aria-hidden="true" />{t('Undo')}</button>
-                  <button type="button" className="toolbar-button" onClick={() => { editorRef.current?.redo(); close() }}><Redo2 size={17} aria-hidden="true" />{t('Redo')}</button>
-                  <div className="markdown-edit-help"><p>{t('Enter creates a paragraph or list item. Press / on an empty line to add a block.')}</p><p>{t('Click code to edit. Enter adds a line; Esc finishes editing.')}</p><p>{t('Edit tables with “Edit table”. Use “Edit source” for formulas and media.')}</p></div>
-                </div>}
-              </ToolbarMenu>
-            </div> : null}
-            {mode === 'html' ? <>
-              <button type="button" className="toolbar-button" aria-label={t('Undo')} title={t('Undo')} onClick={() => editorRef.current?.undo()}><Undo2 size={17} aria-hidden="true" /></button>
-              <button type="button" className="toolbar-button" aria-label={t('Redo')} title={t('Redo')} onClick={() => editorRef.current?.redo()}><Redo2 size={17} aria-hidden="true" /></button>
-            </> : <>
-            <PreviewSettings theme={theme} onThemeChange={setTheme} markdownSize={previewTypography.markdownFontSize} mermaidSize={previewTypography.mermaidFontSize} onMarkdownSizeChange={setMarkdownFontSize} onMermaidSizeChange={setMermaidFontSize} onReset={resetPreviewFontSizes} />
-            <button className={`toolbar-button sync-toggle ${syncEnabled ? 'is-active' : ''}`} type="button" aria-label={t('Toggle synchronized scrolling')} title={t(syncEnabled ? 'Disable synchronized scrolling' : 'Enable synchronized scrolling')} aria-pressed={syncEnabled} onClick={() => setSyncEnabled((enabled) => !enabled)}>{syncEnabled ? <Link2 size={17} aria-hidden="true" /> : <Unlink2 size={17} aria-hidden="true" />}</button>
-            </>}
-          </div></header>
-          {mode === 'html' ? <HtmlPreview key={documentId} value={markdown} onChange={changeMarkdown} onSave={() => void saveDocument()} onOpenFile={(file) => void loadFile(file)} onUndo={() => editorRef.current?.undo()} onRedo={() => editorRef.current?.redo()} /> : <PreviewPane key={documentId} ref={previewRef} mode={mode} markdown={visualEditing ? markdown : deferredMarkdown} theme={theme} markdownFontSize={previewTypography.markdownFontSize} mermaidFontSize={previewTypography.mermaidFontSize} assetVersion={assetVersion} onScrollLine={handlePreviewScroll} onLayout={handlePreviewLayout} onSourceLine={jumpToLine} onEditTable={editPreviewTable} onResizeTable={resizePreviewTable} editing={visualEditing} onVisualChange={changeVisualMarkdown} onUndo={() => editorRef.current?.undo()} onRedo={() => editorRef.current?.redo()} />}
+          <header className="pane-header preview-header"><div className="pane-title"><Eye size={16} aria-hidden="true" />{t('Preview')}</div></header>
+          {mode === 'html' ? <HtmlPreview key={documentId} value={markdown} onChange={changeVisualHtml} onSave={() => void saveDocument()} onOpenFile={(file) => void loadFile(file)} onUndo={() => editorRef.current?.undo()} onRedo={() => editorRef.current?.redo()} /> : <PreviewPane key={documentId} ref={previewRef} mode={mode} markdown={visualEditing ? markdown : deferredMarkdown} theme={theme} markdownFontSize={previewTypography.markdownFontSize} mermaidFontSize={previewTypography.mermaidFontSize} assetVersion={assetVersion} onScrollLine={handlePreviewScroll} onLayout={handlePreviewLayout} onSourceLine={jumpToLine} onEditTable={editPreviewTable} onResizeTable={resizePreviewTable} editing={visualEditing} onVisualChange={changeVisualMarkdown} onUndo={() => editorRef.current?.undo()} onRedo={() => editorRef.current?.redo()} />}
         </section>
 
         {dragActive ? <div className="drop-target" aria-hidden="true"><Paperclip size={34} /><strong>{t('Drop to open or insert files')}</strong><span>{t('Markdown, text, Mermaid, Word (.docx), HTML, project ZIP, and media')}</span></div> : null}
@@ -1039,9 +1077,9 @@ export default function App({ initialDocumentId, documentsOpen, onDocumentsOpenC
           <span className={`save-status ${saveWarning ? 'status-warn' : persistenceStatus === 'saved' ? 'status-ok' : ''}`} role="status" title={saveLabel}>{persistenceStatus === 'saved' ? <CheckCircle2 size={14} aria-hidden="true" /> : saveWarning ? <AlertCircle size={14} aria-hidden="true" /> : <Circle size={12} aria-hidden="true" />}<span>{saveLabel}</span></span>
         </div>
         <span className="status-line">{t('Line {line} / {total}', { line: Math.round(activeLine), total: totalLines })}</span>
-        <button className="status-action help-trigger" type="button" onClick={() => setHelpOpen(true)} aria-label={t('Keyboard shortcuts')} title={t('Keyboard shortcuts')}><HelpCircle size={16} aria-hidden="true" /></button>
+
       </footer>
-      {focusMode ? <button className="focus-exit" type="button" onClick={() => setFocusMode(false)}>{t('Esc to exit focus')}</button> : null}
+      {focusMode ? <button className="focus-exit" type="button" onClick={exitFocus}>{t('Esc to exit focus')}</button> : null}
       <CommandPalette open={commandOpen} actions={commandActions.filter((action) => action.id !== 'commands')} onClose={() => setCommandOpen(false)} />
       {helpOpen && <ShortcutHelp open onClose={() => setHelpOpen(false)} actions={commandActions} shortcuts={shortcuts} onChange={updateShortcuts} onReset={() => updateShortcuts({ ...DEFAULT_SHORTCUTS })} />}
       {exportPreviewOpen ? <ExportPreview markdown={markdown} mode={mode} theme={theme} title={documentTitle(markdown, name)} style={exportStyle} onStyleChange={setExportStyle} settings={exportSettings} onSettingsChange={setExportSettings} mermaidFontSize={previewTypography.mermaidFontSize} onClose={() => setExportPreviewOpen(false)} /> : null}

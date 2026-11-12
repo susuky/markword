@@ -4,7 +4,7 @@ import { type Page } from '@playwright/test'
 const source = (page: Page) => page.locator('.editor-host .cm-line').allTextContents().then((lines) => lines.join('\n'))
 const library = (page: Page) => page.getByRole('complementary', { name: 'Documents', exact: true })
 async function showDocuments(page: Page) {
-  if (!await library(page).isVisible()) await page.locator('.header-actions').getByRole('button', { name: 'Documents', exact: true }).click()
+  if (!await library(page).isVisible()) await page.locator('.activity-rail').getByRole('button', { name: 'Documents', exact: true }).click()
   await expect(library(page)).toBeVisible()
 }
 function documentRow(page: Page, name: string) {
@@ -19,7 +19,7 @@ async function openDocument(page: Page, name: string) {
 }
 async function createDocument(page: Page) {
   await showDocuments(page)
-  await page.locator('.header-actions').getByRole('button', { name: 'New document', exact: true }).click()
+  await page.locator('.activity-rail').getByRole('button', { name: 'New document', exact: true }).click()
   await expect.poll(() => source(page)).toBe('')
 }
 async function snapshot(page: Page) {
@@ -134,7 +134,7 @@ test('switching documents keeps the page and filtered list steady through a fail
   releaseRead()
   await expect.poll(() => source(page)).toBe('# Switch note 11\n\nContent 11.')
   await expect(target).toBeEnabled()
-  await expect(page.locator('.asset-trigger small')).toHaveText('1')
+  await expect(page.locator('.asset-trigger .rail-count')).toHaveText('1')
   await expect(search).toHaveValue('Switch note')
   expect(await list.evaluate((element) => element.scrollTop)).toBeCloseTo(scrollTop, 0)
   expect(await continuity.evaluate(({ state, observer }) => {
@@ -254,10 +254,10 @@ test('migration preserves Markdown data and opens the legacy HTML draft in the w
   await openDocument(page, 'legacy')
   await expect(page.getByRole('combobox', { name: 'Document mode', exact: true })).toHaveValue('html')
   await expect.poll(() => source(page)).toBe('<h1>Separate HTML</h1>')
-  await expect(page.frameLocator('iframe').locator('h1')).toHaveText('Separate HTML')
+  await expect(page.frameLocator('iframe[title="HTML page preview"]').locator('h1')).toHaveText('Separate HTML')
   await expect(page.locator('.save-status')).toHaveText('Saved locally')
   await page.reload()
-  await expect(page.frameLocator('iframe').locator('h1')).toHaveText('Separate HTML')
+  await expect(page.frameLocator('iframe[title="HTML page preview"]').locator('h1')).toHaveText('Separate HTML')
   await showDocuments(page)
   await expect(library(page).locator('.document-list__open')).toHaveCount(2)
   await openDocument(page, 'Legacy note')
@@ -281,7 +281,7 @@ test('a save conflict stops switching without discarding either tab’s content'
   await other.locator('.cm-content').fill('# Shared note\n\nSecond tab still has this copy.')
   await expect(other.locator('.save-status')).toContainText('Changed elsewhere')
   await showDocuments(other)
-  await other.locator('.header-actions').getByRole('button', { name: 'New document', exact: true }).click()
+  await other.locator('.activity-rail').getByRole('button', { name: 'New document', exact: true }).click()
   await expect(library(other).getByRole('alert')).toContainText('Another tab saved changes')
   await expect.poll(() => source(other)).toBe('# Shared note\n\nSecond tab still has this copy.')
   await expect.poll(() => source(page)).toBe('# Shared note\n\nFirst tab saved.')
@@ -314,7 +314,7 @@ test('mobile document navigation keeps long names readable, traps focus, and ret
   await page.getByRole('button', { name: 'Switch to Traditional Chinese', exact: true }).click()
   await page.locator('.cm-content').fill('# 很長的中文文件名稱，用來確認手機上的文件導覽仍然清楚並且可操作\n\n保留原文。')
   await expect(page.locator('.save-status')).toHaveText('已儲存在本機')
-  await page.locator('.header-actions').getByRole('button', { name: '文件', exact: true }).click()
+  await page.locator('.activity-rail').getByRole('button', { name: '文件', exact: true }).click()
   const dialog = page.getByRole('dialog', { name: '文件', exact: true })
   await expect(dialog.getByRole('searchbox', { name: '搜尋文件', exact: true })).toBeFocused()
   for (let i = 0; i < 20; i++) await page.keyboard.press('Tab')
@@ -323,7 +323,7 @@ test('mobile document navigation keeps long names readable, traps focus, and ret
   await page.screenshot({ path: testInfo.outputPath('documents-mobile.png') })
   await page.keyboard.press('Escape')
   await expect(dialog).toHaveCount(0)
-  await expect(page.locator('.header-actions').getByRole('button', { name: '文件', exact: true })).toBeFocused()
+  await expect(page.locator('.activity-rail').getByRole('button', { name: '文件', exact: true })).toBeFocused()
 })
 
 test('trashing the last document opens an empty document and keeps the trashed version recoverable', async ({ page }) => {

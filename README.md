@@ -2,15 +2,15 @@
 
 **English** | [繁體中文](README.zh-TW.md)
 
-Markword is a browser-based Markdown and HTML editor. Write Markdown directly in an editable preview, add content with a block menu, or keep the source beside your document. HTML documents use the same workspace and document list, with an editable page preview.
+Markword is a browser-based Markdown and HTML editor. Write Markdown directly in an editable preview, add content with a block menu, or keep the source beside your document. HTML documents use the same workspace and document list, with visual layout and embedded-data editing.
 
-![Markword writing workspace](assets/markword_preview.png)
+![Markword single-page writing workspace](assets/markword-writing.png)
 
 ## Features
 
 - **Single-page writing**: edit text in place, press Enter to keep writing, and use `/` or **Add content** for headings, lists, quotes, code, tables, and dividers.
 - **Source and preview together**: switch to split editing with synchronized scrolling, a document outline, and search. Both views edit the same document and share undo/redo.
-- **HTML editing**: open or paste HTML, click to change text and links, and download the edited page with its original styles.
+- **HTML editing**: edit text, blocks, layout, images, and embedded JSON data while preserving the original page source and styles.
 - **Rich content**: editable code blocks with syntax highlighting, task checkboxes, a table editor, Mermaid diagrams, and math.
 - **Import and export**: open Markdown, text, Mermaid, HTML, Word (`.docx`), and project ZIP files. Export Markdown, portable HTML, or project ZIP; the full edition also exports PDF and Word.
 - **Quick capture and backups**: the local edition shares documents, revision history, and attachments in one database. Press `Ctrl/Cmd+S` to save immediately, or download a project backup.
@@ -30,12 +30,14 @@ Once the build finishes, open [http://localhost:27860](http://localhost:27860). 
 
 For installation without Docker, see the [local installation and deployment guide](docs/development.md) (Traditional Chinese).
 
+The local service has no sign-in; anyone who can reach port 27860 can read and change its workspace. Restrict network access or use an authenticated reverse proxy before sharing it. See the [security review](docs/security-review-2026-11-12.md).
+
 ### Full edition and Pages edition
 
 | Feature | Local full edition | Pages edition |
 | --- | --- | --- |
 | Single-page / split editing, diagrams, and math | Supported | Supported |
-| HTML source and visual text editing | Supported | Supported |
+| HTML source, block layout, and data editing | Supported | Supported |
 | Documents, revisions, and attachments | Shared local database | Separate browser storage |
 | Markdown, portable HTML, and project ZIP | Supported | Supported |
 | Direct PDF / Word export | Supported | Unavailable |
@@ -46,9 +48,13 @@ In the Pages edition, download portable HTML and use your browser to print it as
 
 ### Markdown: single-page or split editing
 
+The left navigation rail opens documents, the outline, attachments, and revision history. **+** creates a document; language and keyboard shortcuts are at the bottom. On mobile, these actions move to the bottom navigation bar. The document sidebar has search, rename, duplicate, and trash controls.
+
 Click **Open**, drop a document into the workspace, or start writing. HTML files open in the HTML editor with their original layout. Word files convert to Markdown; review the result because complex layouts may change.
 
-The preview is editable by default. On desktop, click **Single-page editing** to hide the source, or **Split editing** to bring it back. On mobile, use the **Editor** and **Preview** tabs. The toolbar button beside **Export** collapses or expands the workspace tools and remembers your choice.
+The preview is editable by default. Choose **Write** for a single page or **Split** to keep the source alongside it. The shared toolbar holds the document format, preview theme, font size, and **Add content** controls. On mobile, use the **Editor** and **Preview** tabs; the arrow keys, Home, and End also switch tabs. The toolbar button beside **Export** collapses or expands these controls and remembers your choice.
+
+[Desktop split view](assets/markword_preview.png) · [Mobile preview](assets/markword-mobile.png)
 
 ![Single-page writing with the Add content menu](assets/markword-block-editor.png)
 
@@ -56,11 +62,11 @@ The preview is editable by default. On desktop, click **Single-page editing** to
 | --- | --- |
 | Write or change text | Click a paragraph or heading and type; empty documents are editable too |
 | Continue writing | Press `Enter` for a new paragraph or list item; press `Enter` on an empty item to leave the list |
-| Insert a block | Type `/` on an empty line or click **+** above the preview to open **Add content** |
+| Insert a block | Type `/` on an empty line or click **+** in the shared toolbar to open **Add content** |
 | Insert between blocks | Use the **+** beside a block to insert after it; **Add content** at the bottom continues the document |
 | Edit code | Click the code block; type or paste multiple lines, then press `Escape` or `Ctrl/Cmd+Enter` to finish |
 | Edit links, tasks, or tables | Select a link to change its address, toggle a checkbox, or choose **Edit table** to change cells, rows, and columns |
-| Undo or redo | Open the **…** preview tools menu |
+| Undo or redo | Open the **…** editing tools menu |
 
 The block menu includes paragraphs, four heading levels, bulleted/numbered/task lists, quotes, code, tables, and dividers. Paste or drop images and attachments into the workspace to add them.
 
@@ -72,11 +78,15 @@ Edits update the same source and browser draft. Code highlighting returns when y
 
 Open or drop an `.html`/`.htm` file to create an HTML document in the current workspace. Your document list and other documents stay available. To edit HTML already in the source pane, choose **HTML editor** from the document mode menu; switching modes keeps the current content.
 
+![HTML source and visual page editing](assets/markword-html-editor.png)
+
 1. **Open a page**: choose an `.html`/`.htm` file, or paste a complete page or fragment into the source pane and select HTML mode.
-2. **Edit the preview**: click text and type, then press `Enter` to finish. Select a link to change its address. The source stays in sync; hide it on desktop or switch tabs on mobile.
+2. **Edit the page**: click text or form fields to edit them. Use the page structure to select, reorder, duplicate, or delete blocks. Block settings control layout, spacing, width, alignment, typography, and images. Changes share the source editor’s undo history.
 3. **Save or download**: `Ctrl/Cmd+S` saves the document. Use **Export** to download HTML or a project ZIP.
 
-The downloaded file retains its original styles and scripts. The editing preview disables scripts and supports changes to static text and existing links.
+The downloaded file retains its original styles and scripts. Inline page scripts render charts and tables in an isolated frame. Use **Data** to edit embedded JSON fields and recalculate the page, or **Interactive preview** to operate its controls. External scripts, API calls, and navigation are blocked.
+
+Use **Create static copy** to turn the current rendered page into a separate editable document, including generated text and tables. The copy removes scripts and interactive buttons; the original document remains in the workspace.
 
 Relative-path resources are not imported with the HTML file; use embedded assets or full URLs. Visual edits may normalize markup whitespace and quoting.
 

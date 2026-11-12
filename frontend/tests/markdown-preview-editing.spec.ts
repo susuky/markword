@@ -54,7 +54,7 @@ test('direct typing preserves formatting, other source blocks, save, undo and re
 
 test('link edits are validated and source-only view can be hidden without losing undo', async ({ page }) => {
   await start(page, '# Links\n\nVisit [our **site**][ref].\n\n[ref]: https://example.com/old "A title"\n')
-  await page.getByRole('button', { name: 'Single-page editing', exact: true }).click()
+  await page.getByRole('button', { name: 'Write', exact: true }).click()
   await expect(page.locator('.pane--editor')).toBeHidden()
   await preview(page).getByRole('link').click()
   await page.getByLabel('Link address', { exact: true }).fill('javascript:alert(1)')
@@ -69,7 +69,7 @@ test('link edits are validated and source-only view can be hidden without losing
   await expect(preview(page).getByRole('link')).toHaveAttribute('href', 'https://example.com/old')
   await page.getByRole('button', { name: 'Preview editing tools', exact: true }).click()
   await page.getByRole('button', { name: 'Redo', exact: true }).click()
-  await page.getByRole('button', { name: 'Split editing', exact: true }).click()
+  await page.getByRole('button', { name: 'Split', exact: true }).click()
   expect(await download(page)).toContain('[our **site**](https://example.com/new?q=1&v=2 "A title")')
 })
 
@@ -110,7 +110,7 @@ test('tables remain editable after preceding block length changes, protected con
   const tail = '| Column | State |\n| --- | --- |\n| Item | Open |\n\nFormula $x^2$ and note[^one].\n\n```mermaid\ngraph LR\n A --> B\n```\n\n[^one]: Keep this note.\n'
   await start(page, '# Heading\n\nA paragraph.\nAnother line.\n\n' + tail)
   await preview(page).locator(`p ${text}`).filter({ hasText: 'A paragraph.' }).fill('Shorter paragraph.')
-  await page.getByRole('button', { name: 'Single-page editing', exact: true }).click()
+  await page.getByRole('button', { name: 'Write', exact: true }).click()
   await preview(page).getByRole('button', { name: 'Edit table 1', exact: true }).click()
   const dialog = page.getByRole('dialog', { name: 'Edit table', exact: true })
   await expect(dialog).toBeVisible()
@@ -241,7 +241,7 @@ test('empty and nested code blocks accept literal text without creating HTML or 
 test('protected paragraphs can edit their source, cancel, and undo without changing other blocks', async ({ page }) => {
   const original = '# 區塊原文\n\n修改前的公式 $x^2$。\n\n後段 **完整保留**。\n'
   await start(page, original)
-  await page.getByRole('button', { name: 'Single-page editing', exact: true }).click()
+  await page.getByRole('button', { name: 'Write', exact: true }).click()
   const block = preview(page).locator('.preview-source-block').filter({ hasText: '修改前' })
   await expect(block.locator('[contenteditable]')).toHaveCount(0)
   await block.getByRole('button', { name: 'Edit block source', exact: true }).click()
@@ -291,7 +291,7 @@ test('a pending file does not discard an unfinished source edit', async ({ page 
   await expect.poll(() => page.evaluate(() => typeof Reflect.get(window, 'releaseSourceImport'))).toBe('function')
   await page.evaluate(() => Reflect.get(window, 'releaseSourceImport')())
   await expect.poll(() => page.locator('.cm-line').allTextContents().then((lines) => lines.join('\n'))).toBe('# Incoming document\n\nKeep this newer content.')
-  await page.locator('.header-actions').getByRole('button', { name: 'Documents', exact: true }).click()
+  await page.locator('.activity-rail').getByRole('button', { name: 'Documents', exact: true }).click()
   await page.locator('.document-list__open').filter({ has: page.getByText('Earlier draft', { exact: true }) }).click()
   await expect.poll(() => page.locator('.cm-line').allTextContents().then((lines) => lines.join('\n'))).toBe('# Earlier draft\n\nAn older edit $y$.')
 })

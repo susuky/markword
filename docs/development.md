@@ -20,6 +20,14 @@
 | `MARKWORD_HOST` | `127.0.0.1` | 使用 `python app.py` 或 `python -m backend.main` 啟動時的監聽位址 |
 | `MARKWORD_PORT` | `27860` | 使用 `python app.py` 啟動時的監聽埠 |
 
+### SQLite 相容性
+
+Linux 部署請避開 SQLite 3.51.0、3.51.1：WAL 模式下，同時開啟與關閉連線可能造成內部鎖互等，讓文件 API 持續無回應。此問題已在 [SQLite 3.51.2](https://sqlite.org/releaselog/3_51_2.html) 修正。Python 的 `sqlite3` 版本取決於載入的函式庫；請用服務實際使用的 Python 查詢，並帶入服務中的 `LD_PRELOAD` 或 `LD_LIBRARY_PATH` 設定（若有）：
+
+```bash
+.venv/bin/python -c 'import sqlite3; print(sqlite3.sqlite_version)'
+```
+
 ### systemd 部署
 
 systemd 範例假設專案已部署到 `/opt/markword`，執行帳號為 `markword`。Debian／Ubuntu 主機先安裝 Node.js、Python、`uv`，以及 WeasyPrint 所需的系統字型與函式庫，接著建立服務帳號和可寫的資料、匯出目錄：
@@ -164,6 +172,8 @@ npm run build:pages
 npm run test:ui
 npm run test:shared
 ```
+
+Linux 測試程序應使用與正式服務相同的 SQLite 函式庫。若服務設定了 `LD_PRELOAD` 或 `LD_LIBRARY_PATH`，執行 pytest 和 Playwright 時也帶入相同設定，並以上方指令確認版本。這次驗收使用 SQLite 3.53.3；3.51.1 曾讓文件 API 卡住，當時健康檢查仍回應正常。
 
 介面測試會啟動隔離 SQLite 與本機預覽；`test:shared` 驗證 Ctrl+S、跨瀏覽器共用、舊資料合併及三篇文件側欄。其他介面測試驗證版本還原、下載、鍵盤操作與手機版面；需先備妥 Playwright Chromium 瀏覽器（`npx playwright install chromium`）。
 

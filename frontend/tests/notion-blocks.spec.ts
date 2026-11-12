@@ -6,11 +6,11 @@ const body = (page: Page) => page.locator('.markdown-body')
 async function single(page: Page, markdown: string) {
   await page.goto('/')
   await page.locator('.cm-content').fill(markdown)
-  await page.getByRole('button', { name: 'Single-page editing', exact: true }).click()
+  await page.getByRole('button', { name: 'Write', exact: true }).click()
 }
 
 async function source(page: Page) {
-  const split = page.getByRole('button', { name: 'Split editing', exact: true })
+  const split = page.getByRole('button', { name: 'Split', exact: true })
   if (await split.isVisible()) await split.click()
   return (await page.locator('.cm-content .cm-line').allTextContents()).join('\n')
 }

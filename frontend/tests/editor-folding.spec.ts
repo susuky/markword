@@ -6,7 +6,7 @@ const folds = (page: Page) => page.locator('.editor-host .cm-foldPlaceholder')
 const library = (page: Page) => page.getByRole('complementary', { name: 'Documents', exact: true })
 
 async function showDocuments(page: Page) {
-  if (!await library(page).isVisible()) await page.locator('.header-actions').getByRole('button', { name: 'Documents', exact: true }).click()
+  if (!await library(page).isVisible()) await page.locator('.activity-rail').getByRole('button', { name: 'Documents', exact: true }).click()
 }
 
 async function openDocument(page: Page, name: string) {
@@ -72,9 +72,9 @@ test('folds survive editing before them, display changes and switching HTML mode
   await expect(folds(page)).toHaveCount(1)
   await page.locator('.markdown-body > p').first().locator('[contenteditable]').fill('Preview edit before the folded section.')
   await expect(folds(page)).toHaveCount(1)
-  await page.getByRole('button', { name: 'Single-page editing', exact: true }).click()
+  await page.getByRole('button', { name: 'Write', exact: true }).click()
   await expect(editor(page)).toBeHidden()
-  await page.getByRole('button', { name: 'Split editing', exact: true }).click()
+  await page.getByRole('button', { name: 'Split', exact: true }).click()
   await expect(folds(page)).toHaveCount(1)
   await page.setViewportSize({ width: 390, height: 844 })
   await page.getByRole('tab', { name: 'Editor', exact: true }).click()
@@ -91,6 +91,7 @@ test('folds survive editing before them, display changes and switching HTML mode
   await page.getByRole('combobox', { name: 'Document mode', exact: true }).selectOption('html')
   await expect(page).toHaveTitle('Markword')
   await expect(page).toHaveURL(/\/$/)
+  await page.getByRole('button', { name: 'Split', exact: true }).click()
   await page.getByRole('combobox', { name: 'Document mode', exact: true }).selectOption('markdown')
   await expect(folds(page)).toHaveCount(1)
   await expect(editor(page)).not.toContainText('Hidden content.')

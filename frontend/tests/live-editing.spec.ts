@@ -3,7 +3,7 @@ import { expect, test } from './shared-workspace-fixture'
 test('single-page editing shares preview, undo and persisted source visibility', async ({ page }) => {
   await page.goto('/')
   await page.locator('.cm-content').fill('# Same document\n\nA **bold** word.\n\n## Details\n\nKeep this.')
-  await page.getByRole('button', { name: 'Single-page editing', exact: true }).click()
+  await page.getByRole('button', { name: 'Write', exact: true }).click()
   await expect(page.locator('.pane--editor')).toBeHidden()
   await expect(page.locator('.pane--preview')).toBeVisible()
   await expect(page.getByRole('button', { name: 'Live editing', exact: true })).toHaveCount(0)
@@ -15,9 +15,9 @@ test('single-page editing shares preview, undo and persisted source visibility',
   await heading.press('Control+z')
   await expect(heading).toHaveText('Same document')
   await heading.fill('Changed again')
-  await page.getByRole('button', { name: 'Split editing', exact: true }).click()
+  await page.getByRole('button', { name: 'Split', exact: true }).click()
   await expect(page.locator('.cm-content')).toContainText('# Changed again')
-  await page.getByRole('button', { name: 'Single-page editing', exact: true }).click()
+  await page.getByRole('button', { name: 'Write', exact: true }).click()
   await page.locator('.outline-panel nav button').last().click()
   await expect(page.locator('.pane--editor')).toBeHidden()
   await expect(page.locator('.save-status')).toHaveText('Saved locally')
@@ -37,7 +37,7 @@ test('the previous single-pane preference migrates to the shared editable previe
   await page.goto('/')
   await expect(page.locator('.pane--editor')).toBeHidden()
   await expect(page.locator('.markdown-body h1 [contenteditable]')).toBeVisible()
-  await page.getByRole('button', { name: 'Split editing', exact: true }).click()
+  await page.getByRole('button', { name: 'Split', exact: true }).click()
   await page.reload()
   await expect(page.locator('.pane--editor')).toBeVisible()
 })
@@ -46,12 +46,13 @@ test('toolbar collapse reclaims equal space in both panes and survives reload', 
   await page.setViewportSize({ width: 1440, height: 960 })
   await page.goto('/')
   const before = (await page.locator('.preview-scroll').boundingBox())!
+  const toolbarHeight = (await page.locator('.workspace-toolbar').boundingBox())!.height
   await page.getByRole('button', { name: 'Hide toolbar', exact: true }).click()
   await expect(page.getByRole('navigation', { name: 'Workspace tools' })).toBeHidden()
   const left = (await page.locator('.editor-host').boundingBox())!
   const right = (await page.locator('.preview-scroll').boundingBox())!
-  expect(right.y).toBe(before.y - 56)
-  expect(right.height).toBe(before.height + 56)
+  expect(right.y).toBe(before.y - toolbarHeight)
+  expect(right.height).toBe(before.height + toolbarHeight)
   expect(left.y).toBe(right.y)
   expect(left.height).toBe(right.height)
   await page.reload()
@@ -67,14 +68,14 @@ test('mobile toolbar and preview menus stay reachable when collapsed', async ({ 
   await page.getByRole('button', { name: 'Hide toolbar', exact: true }).click()
   await page.getByRole('tab', { name: 'Preview', exact: true }).click()
   await page.locator('.markdown-body h1 [contenteditable]').fill('Edited on mobile')
+  await page.getByRole('button', { name: 'Show toolbar', exact: true }).click()
   await page.getByRole('button', { name: 'Preview editing tools', exact: true }).click()
   const menu = (await page.locator('.markdown-edit-menu').boundingBox())!
-  const header = (await page.locator('.preview-header').boundingBox())!
+  const header = (await page.locator('.workspace-toolbar').boundingBox())!
   expect(menu.y).toBeGreaterThanOrEqual(header.y + header.height)
   expect(menu.x).toBeGreaterThanOrEqual(0)
   expect(menu.x + menu.width).toBeLessThanOrEqual(375)
   await page.keyboard.press('Escape')
-  await page.getByRole('button', { name: 'Show toolbar', exact: true }).click()
   await expect(page.getByRole('navigation', { name: 'Workspace tools' })).toBeVisible()
   await page.getByRole('tab', { name: 'Editor', exact: true }).click()
   await expect(page.locator('.cm-content')).toContainText('Edited on mobile')

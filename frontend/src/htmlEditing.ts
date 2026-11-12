@@ -1,7 +1,13 @@
 import DOMPurify from 'dompurify'
+import { collectHtmlBlocks, getHtmlBlockId } from './htmlBlocks'
+
+export { getHtmlBlockId, getHtmlBlockLabel } from './htmlBlocks'
 
 const TEXT_ATTRIBUTE = 'data-markword-edit-text'
 const LINK_ATTRIBUTE = 'data-markword-edit-link'
+const BLOCK_ATTRIBUTE = 'data-markword-edit-block'
+const SOURCE_ATTRIBUTE = 'data-markword-source-id'
+const CONTROL_ATTRIBUTE = 'data-markword-edit-control'
 const NON_TEXT = 'script, style, noscript, textarea, select, svg, math, iframe, object, template'
 
 export function serializeHtml(document: Document) {
@@ -10,44 +16,72 @@ export function serializeHtml(document: Document) {
     : new XMLSerializer().serializeToString(node)).join('\n')
 }
 
-export function createHtmlEditingDocument(source: string) {
+export function createHtmlEditingDocument(source: string, snapshot?: { html: string; dynamicIds: string[] }) {
   const original = new DOMParser().parseFromString(source, 'text/html')
-  const preview = original.cloneNode(true) as Document
+  const preview = snapshot ? new DOMParser().parseFromString(snapshot.html, 'text/html') : original.cloneNode(true) as Document
   const texts = new Map<string, Text>()
   const links = new Map<string, HTMLAnchorElement>()
+  const controls = new Map<string, HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>()
+  const originals = new Map(Array.from([original.body, ...original.body.querySelectorAll<HTMLElement>('*')], (element) => [getHtmlBlockId(element), element]))
+  const dynamicIds = new Set(snapshot?.dynamicIds ?? [])
+  if (!snapshot) [preview.body, ...preview.body.querySelectorAll('*')].forEach((element) => element.setAttribute(SOURCE_ATTRIBUTE, getHtmlBlockId(element)))
+  const sourceId = (element: Element) => element.getAttribute(SOURCE_ATTRIBUTE)
+  const { blocks: renderedBlocks, elements: renderedElements } = collectHtmlBlocks(preview)
+  const elements = new Map<string, HTMLElement>()
+  const blocks = renderedBlocks.flatMap((block) => {
+    const rendered = renderedElements.get(block.id)!
+    const id = sourceId(rendered)
+    const element = id === null ? undefined : originals.get(id)
+    if (!element) return []
+    let parent = rendered.parentElement
+    while (parent && parent !== preview.body && !elements.has(sourceId(parent) ?? '')) parent = parent.parentElement
+    const parentId = parent && parent !== preview.body ? sourceId(parent) : null
+    elements.set(id!, element)
+    return [{ ...block, id: id!, parentId, depth: parentId ? (parentId.split('.').length - 1) : 0 }]
+  })
 
-  // Only our own markers may identify editable nodes; the original remains untouched.
   preview.querySelectorAll('*').forEach((element) => {
-    element.removeAttribute(TEXT_ATTRIBUTE)
-    element.removeAttribute(LINK_ATTRIBUTE)
-    element.removeAttribute('contenteditable')
+    for (const attribute of [TEXT_ATTRIBUTE, LINK_ATTRIBUTE, BLOCK_ATTRIBUTE, CONTROL_ATTRIBUTE, 'contenteditable']) element.removeAttribute(attribute)
   })
-  const originals = original.createTreeWalker(original.body, NodeFilter.SHOW_TEXT)
-  const copies = preview.createTreeWalker(preview.body, NodeFilter.SHOW_TEXT)
-  const pairs: [Text, Text][] = []
-  while (originals.nextNode() && copies.nextNode()) pairs.push([originals.currentNode as Text, copies.currentNode as Text])
-  for (const [node, copy] of pairs) {
-    if (!node.textContent?.trim() || node.parentElement?.closest(NON_TEXT)) continue
-    const id = String(texts.size)
-    texts.set(id, node)
-    // A custom tag avoids inheriting rules intended for the page's own spans.
-    const editable = preview.createElement('markword-edit-text')
-    editable.setAttribute(TEXT_ATTRIBUTE, id)
-    editable.setAttribute('contenteditable', 'plaintext-only')
-    editable.textContent = copy.textContent
-    copy.replaceWith(editable)
-  }
-  const previewLinks = preview.querySelectorAll('a[href]')
-  original.querySelectorAll<HTMLAnchorElement>('a[href]').forEach((link, index) => {
-    const id = String(index)
-    links.set(id, link)
-    previewLinks[index].setAttribute(LINK_ATTRIBUTE, id)
+  ;[preview.body, ...preview.body.querySelectorAll<HTMLElement>('*')].forEach((element) => {
+    const id = sourceId(element)
+    const sourceElement = id === null ? undefined : originals.get(id)
+    if (!sourceElement) return
+    if (elements.has(id!)) element.setAttribute(BLOCK_ATTRIBUTE, id!)
+    if (sourceElement.matches('a[href]')) {
+      links.set(id!, sourceElement as HTMLAnchorElement)
+      element.setAttribute(LINK_ATTRIBUTE, id!)
+    }
+    if (sourceElement.matches('textarea, select, input:not([type=file]):not([type=hidden]):not([type=submit]):not([type=button]):not([type=reset]):not([type=image])') && !dynamicIds.has(id!)) {
+      controls.set(id!, sourceElement as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement)
+      element.setAttribute(CONTROL_ATTRIBUTE, id!)
+      element.removeAttribute('readonly')
+      element.removeAttribute('disabled')
+    }
+    if (element.closest(NON_TEXT) || dynamicIds.has(id!)) return
+    Array.from(element.childNodes).forEach((copy, index) => {
+      const node = sourceElement.childNodes[index]
+      if (copy.nodeType !== Node.TEXT_NODE || node?.nodeType !== Node.TEXT_NODE || !copy.textContent?.trim() || node.textContent !== copy.textContent) return
+      const textId = String(texts.size)
+      texts.set(textId, node as Text)
+      const editable = preview.createElement('markword-edit-text')
+      editable.setAttribute(TEXT_ATTRIBUTE, textId)
+      editable.setAttribute('contenteditable', 'plaintext-only')
+      editable.textContent = copy.textContent
+      copy.replaceWith(editable)
+    })
   })
+  preview.querySelectorAll(`[${SOURCE_ATTRIBUTE}]`).forEach((element) => element.removeAttribute(SOURCE_ATTRIBUTE))
   preview.querySelectorAll('link').forEach((link) => { if (link.rel !== 'stylesheet') link.remove() })
-  preview.querySelectorAll('input, textarea, select').forEach((element) => element.setAttribute('disabled', ''))
+  preview.querySelectorAll('input, textarea, select').forEach((element) => {
+    if (!element.hasAttribute(CONTROL_ATTRIBUTE)) element.setAttribute('disabled', '')
+  })
 
   const safe = DOMPurify.sanitize(preview.documentElement.outerHTML, {
     WHOLE_DOCUMENT: true,
+    // IDs drive the page's CSS and anchors. This script-free iframe is accessed
+    // through DOM methods and our own markers, never through named properties.
+    SANITIZE_DOM: false,
     ADD_TAGS: ['link', 'markword-edit-text'],
     ADD_ATTR: ['contenteditable'],
     FORBID_TAGS: ['script', 'noscript', 'iframe', 'object', 'embed', 'base', 'meta'],
@@ -65,7 +99,27 @@ export function createHtmlEditingDocument(source: string) {
   const editingStyle = rendered.createElement('style')
   editingStyle.textContent = `[${TEXT_ATTRIBUTE}]{cursor:text;min-width:.5em}[${TEXT_ATTRIBUTE}]:hover{outline:1px dashed #167469;outline-offset:3px}[${TEXT_ATTRIBUTE}]:focus{outline:2px solid #167469;outline-offset:3px}[${LINK_ATTRIBUTE}]{cursor:text}`
   rendered.head.append(editingStyle)
-  return { original, texts, links, preview: '<!doctype html>\n' + rendered.documentElement.outerHTML }
+  return { original, texts, links, controls, dynamicIds, elements, blocks, preview: '<!doctype html>\n' + rendered.documentElement.outerHTML }
+}
+
+export function createStaticHtml(source: string) {
+  const safe = DOMPurify.sanitize(source, {
+    WHOLE_DOCUMENT: true, SANITIZE_DOM: false, ADD_TAGS: ['link'],
+    FORBID_TAGS: ['script', 'noscript', 'iframe', 'object', 'embed', 'base', 'meta'],
+    FORBID_ATTR: ['autofocus', 'contenteditable'],
+  })
+  const document = new DOMParser().parseFromString(safe, 'text/html')
+  document.querySelectorAll('*').forEach((element) => {
+    for (const attribute of Array.from(element.attributes)) {
+      if (attribute.name.startsWith('data-markword-source') || attribute.name.startsWith('data-markword-edit') || attribute.name.startsWith('data-markword-runtime')) element.removeAttribute(attribute.name)
+    }
+  })
+  document.querySelectorAll('button, input[type=button], input[type=submit], input[type=reset]').forEach((element) => element.remove())
+  const viewport = document.createElement('meta')
+  viewport.name = 'viewport'
+  viewport.content = 'width=device-width, initial-scale=1'
+  document.head.prepend(viewport)
+  return '<!doctype html>\n' + document.documentElement.outerHTML
 }
 
 export function isEditableLink(value: string) {

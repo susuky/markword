@@ -52,7 +52,7 @@ test('dropping a wrapped Markdown ZIP loads images, exports attachments, and kee
   const library = await downloadedEntries(await libraryDownload)
   expect(strFromU8(library[Object.keys(library).find((path) => path.endsWith('/unused.txt'))!])).toBe('Keep the unreferenced attachment too')
 
-  await page.locator('.header-actions').getByRole('button', { name: 'Documents', exact: true }).click()
+  await page.locator('.activity-rail').getByRole('button', { name: 'Documents', exact: true }).click()
   const documents = page.getByRole('complementary', { name: 'Documents', exact: true })
   await expect(documents.locator('.document-list__open')).toHaveCount(2)
   await documents.locator('.document-list > li').filter({ has: page.getByText('Previous draft', { exact: true }) }).locator('.document-list__open').click()
@@ -168,7 +168,7 @@ test('root Markdown wins over earlier nested candidates and a ZIP without Markdo
   await expect(page.locator('.toast')).toHaveText('Project archive does not contain a Markdown or HTML document')
   expect(await source(page)).toBe(before)
   expect(await assetPaths()).toEqual(beforeAssets)
-  await page.locator('.header-actions').getByRole('button', { name: 'Documents', exact: true }).click()
+  await page.locator('.activity-rail').getByRole('button', { name: 'Documents', exact: true }).click()
   await expect(page.getByRole('complementary', { name: 'Documents', exact: true }).locator('.document-list__open')).toHaveCount(2)
 })
 

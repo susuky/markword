@@ -76,7 +76,7 @@ test('dropping a wrapped report ZIP selects its HTML homepage, resolves images, 
   expect(Buffer.from(exported[imagePath])).toEqual(png)
   expect(strFromU8(exported[auditPath])).toBe(audit)
 
-  await page.locator('.header-actions').getByRole('button', { name: 'Documents', exact: true }).click()
+  await page.locator('.activity-rail').getByRole('button', { name: 'Documents', exact: true }).click()
   const documents = page.getByRole('complementary', { name: 'Documents', exact: true })
   await expect(documents.locator('.document-list__open')).toHaveCount(2)
   await documents.locator('.document-list__open').filter({ has: page.getByText('Earlier draft', { exact: true }) }).click()

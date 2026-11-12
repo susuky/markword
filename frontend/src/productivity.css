@@ -34,7 +34,7 @@
   width: min(780px, 100%);
   max-height: min(760px, calc(100dvh - 32px));
   overflow: hidden;
-  border: 1px solid #d9dee8;
+  border: 1px solid var(--border);
   border-radius: 13px;
   background: #fff;
   box-shadow: 0 28px 80px rgb(15 23 42 / 24%);
@@ -49,7 +49,7 @@
 }
 .asset-panel > header > div { display: flex; align-items: center; gap: 11px; }
 .asset-panel > header > div > span:last-child { display: grid; gap: 3px; }
-.asset-panel h2 { margin: 0; color: #1f2937; font-size: 18px; }
+.asset-panel h2 { margin: 0; color: var(--text); font-size: 18px; }
 .asset-panel header p { margin: 0; color: var(--muted); font-size: 12px; }
 .asset-panel > header > button {
   display: grid;
@@ -66,7 +66,7 @@
 .asset-panel__icon { display: grid; width: 38px; height: 38px; place-items: center; border-radius: 9px; color: var(--accent); background: var(--accent-soft); }
 .asset-panel__summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; border-bottom: 1px solid var(--border); background: var(--border); }
 .asset-panel__summary > span { display: grid; gap: 2px; padding: 11px 16px; color: var(--muted); background: #fbfcfe; font-size: 12px; }
-.asset-panel__summary strong { color: #273449; font-size: 13px; font-weight: 700; }
+.asset-panel__summary strong { color: var(--text); font-size: 13px; font-weight: 700; }
 .asset-panel__actions { display: flex; gap: 8px; padding: 12px 16px; border-bottom: 1px solid #edf0f4; }
 .asset-panel__actions > button {
   display: inline-flex;
@@ -83,7 +83,7 @@
   font-weight: 650;
   cursor: pointer;
 }
-.asset-panel__actions > button:hover:not(:disabled) { border-color: #88b9aa; color: var(--accent); background: var(--accent-soft); }
+.asset-panel__actions > button:hover:not(:disabled) { border-color: #d2a184; color: var(--accent); background: var(--accent-soft); }
 .asset-panel__actions > button.asset-primary { border-color: var(--accent); color: #fff; background: var(--accent); }
 .asset-panel__actions > button:disabled { cursor: not-allowed; opacity: .48; }
 .asset-list { min-height: 190px; padding: 8px; overflow-y: auto; background: #fbfcfe; }
@@ -106,7 +106,7 @@
 .asset-thumbnail--audio { color: #2563eb; background: #eff6ff; }
 .asset-thumbnail--file { color: #64748b; background: #f1f5f9; }
 .asset-item__copy { display: grid; min-width: 0; gap: 3px; }
-.asset-item__copy strong { overflow: hidden; color: #273449; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.asset-item__copy strong { overflow: hidden; color: var(--text); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
 .asset-item__copy span { color: var(--muted); font-size: 12px; }
 .asset-item__copy code { overflow: hidden; color: var(--muted); background: none; font: 12px/1.4 ui-monospace, monospace; text-overflow: ellipsis; white-space: nowrap; }
 .asset-item__actions { display: flex; align-items: center; gap: 4px; }
@@ -180,7 +180,7 @@
 .shortcut-help {
   width: min(620px, 100%);
   overflow: hidden;
-  border: 1px solid #d9dee8;
+  border: 1px solid var(--border);
   border-radius: 12px;
   background: #fff;
   box-shadow: 0 28px 80px rgb(15 23 42 / 24%);
@@ -200,7 +200,7 @@
   padding: 0;
   border: 0;
   outline: 0;
-  color: #1f2937;
+  color: var(--text);
   background: transparent;
   font: inherit; font-size: 14px;
 }
@@ -256,7 +256,7 @@
 .shortcut-help { display: flex; flex-direction: column; width: min(700px, 100%); max-height: 78dvh; padding: 18px; }
 .shortcut-help header { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 14px; }
 .shortcut-help header button { flex-shrink: 0; }
-.shortcut-help h2 { margin: 0; color: #1f2937; font-size: 18px; }
+.shortcut-help h2 { margin: 0; color: var(--text); font-size: 18px; }
 .shortcut-help p { margin: 4px 0 0; color: var(--muted); font-size: 12px; }
 .shortcut-help .shortcut-help__hint { margin: 0 0 12px; line-height: 1.6; }
 .shortcut-help__scroll { min-height: 0; overflow: auto; overscroll-behavior: contain; }

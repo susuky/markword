@@ -196,3 +196,20 @@ def test_targeted_draft_endpoint_includes_html_and_missing_drafts_return_404(cli
     assert client.get("/api/workspace/drafts/missing").status_code == 404
     assert save(client, "html", "<h1>HTML</h1>", metadata={"mode": "html"}).status_code == 200
     assert client.get("/api/workspace/drafts").json()[0]["id"] == "html"
+
+
+@pytest.mark.parametrize("content_type,content", [
+    ("text/html", b"<script>fetch('/api/workspace')</script>"),
+    ("image/svg+xml", b'<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>'),
+    ("image/png", b"image bytes remain available to fetch consumers"),
+])
+def test_assets_download_without_executing_as_workspace_documents(client, content_type, content):
+    uploaded = {**asset(content=content), "name": "附件\r\n安全.html", "type": content_type}
+    assert client.post("/api/workspace/assets", json=[uploaded]).status_code == 200
+    response = client.get("/api/workspace/assets/asset-1")
+    assert response.content == content
+    assert response.headers["content-type"].startswith(content_type)
+    assert response.headers["content-disposition"].startswith("attachment; filename*=UTF-8''")
+    assert "%0D%0A" in response.headers["content-disposition"]
+    assert response.headers["content-security-policy"] == "sandbox; default-src 'none'; base-uri 'none'; form-action 'none'"
+    assert response.headers["x-content-type-options"] == "nosniff"

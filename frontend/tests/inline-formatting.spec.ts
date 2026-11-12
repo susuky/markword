@@ -137,7 +137,7 @@ test('typing can undo and redo without losing the preview caret', async ({ page 
 test('clicking inline code edits its text, preserves literal backticks, and saves with shared undo', async ({ page }) => {
   const definition = '[ref]: https://example.com "Keep reference"\n'
   await start(page, '# 程式碼點選\n\n- 區分 `on_tick` / `on_bar_update` / `on_bar_close`\n  - 子項目保留。\n\n其他內容保留。\n\n' + definition)
-  await page.getByRole('button', { name: 'Single-page editing', exact: true }).click()
+  await page.getByRole('button', { name: 'Write', exact: true }).click()
   const codes = page.locator('.markdown-body li code')
   for (const index of [0, 1, 2]) {
     await codes.nth(index).click()
@@ -154,7 +154,7 @@ test('clicking inline code edits its text, preserves literal backticks, and save
   await page.reload()
   await expect(codes).toHaveText(['on_tick_修改', 'on_bar_update_修改', 'on_bar_close_新增`值'])
   await expect(page.locator('.markdown-body li li')).toHaveText('子項目保留。')
-  await page.getByRole('button', { name: 'Split editing', exact: true }).click()
+  await page.getByRole('button', { name: 'Split', exact: true }).click()
   expect((await page.locator('.cm-line').allTextContents()).join('\n')).toContain(definition)
 })
 

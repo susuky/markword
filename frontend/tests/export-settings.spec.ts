@@ -80,7 +80,7 @@ test('a missing attachment shows a recoverable preview error and keeps the origi
   expect((await page.locator('.cm-line').allTextContents()).join('\n')).toBe(source)
 })
 
-test('mobile settings in Traditional Chinese fit, trap focus and return to the export trigger', async ({ page }) => {
+test('mobile settings in Traditional Chinese fit, keep workspace inert and return to the export trigger', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto('/')
   await expect(page.locator('.cm-content')).toBeEditable()
@@ -95,10 +95,89 @@ test('mobile settings in Traditional Chinese fit, trap focus and return to the e
   const box = (await dialog.boundingBox())!
   expect(box.x).toBeGreaterThanOrEqual(0)
   expect(box.x + box.width).toBeLessThanOrEqual(390)
-  for (let index = 0; index < 9; index++) {
-    await page.keyboard.press('Tab')
-    expect(await dialog.evaluate((element) => element.contains(document.activeElement))).toBe(true)
+  const close = dialog.getByRole('button', { name: '關閉', exact: true })
+  const trigger = page.getByRole('button', { name: '匯出', exact: true })
+  await expect(close).toBeFocused()
+  expect(await dialog.evaluate((element) => element.matches(':modal'))).toBe(true)
+  await trigger.focus()
+  await expect(close).toBeFocused()
+
+  const focusOrder = [
+    page.getByLabel('紙張尺寸', { exact: true }),
+    page.getByLabel('頁面邊界（mm）', { exact: true }),
+    page.getByLabel('內文字級（px）', { exact: true }),
+    page.getByLabel('成品版型', { exact: true }),
+    dialog.getByRole('button', { name: '重設匯出設定', exact: true }),
+    dialog.getByRole('button', { name: '完成', exact: true }),
+  ]
+  for (const [key, targets] of [
+    ['Tab', [...focusOrder, close]],
+    ['Shift+Tab', [...focusOrder].reverse().concat(close)],
+  ] as const) {
+    for (const target of targets) {
+      await page.keyboard.press(key)
+      // Native modal dialogs allow browser chrome; background page controls stay inert.
+      if (!(await page.evaluate(() => document.hasFocus()))) {
+        expect(await page.evaluate(() => document.activeElement === document.body)).toBe(true)
+        await page.keyboard.press(key)
+      }
+      expect(await dialog.evaluate((element) => document.hasFocus() && element.contains(document.activeElement))).toBe(true)
+      await expect(target).toBeFocused()
+    }
   }
+  await page.frameLocator('iframe[title="匯出外觀"]').locator('h1').click()
+  await expect(dialog.locator('iframe')).toBeFocused()
+  expect(await dialog.evaluate((element) => element.contains(document.activeElement))).toBe(true)
   await page.keyboard.press('Escape')
-  await expect(page.getByRole('button', { name: '匯出', exact: true })).toBeFocused()
+  await expect(dialog).toHaveCount(0)
+  await expect(trigger).toBeFocused()
+})
+
+test('export preview retains selection and scrolling while sandboxing scripts and navigation', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', (error) => errors.push(error.message))
+  await page.route('https://export-preview.invalid/navigated', (route) => route.fulfill({
+    contentType: 'text/html',
+    body: '<h1>Navigated preview</h1>',
+  }))
+  await page.goto('/')
+  await expect(page.locator('.cm-content')).toBeEditable()
+  const payload = '<script>parent.document.documentElement.dataset.exportScript = "source"</script><iframe srcdoc="<script>alert(1)</script>"></iframe>'
+  await page.locator('.cm-content').fill('# Sandbox preview\n\n[Frame navigation](https://export-preview.invalid/navigated)\n\n' + payload + '\n\n' + 'A paragraph for scrolling.\n\n'.repeat(50))
+  await openSettings(page)
+  const dialog = page.getByRole('dialog', { name: 'Export settings and preview' })
+  const frameElement = dialog.locator('iframe')
+  const preview = page.frameLocator('iframe[title="Export appearance"]')
+  await expect(preview.locator('h1')).toHaveText('Sandbox preview')
+  await expect(preview.locator('iframe, object, embed, script:not([type="application/json"])')).toHaveCount(0)
+  await expect(preview.locator('#markword-source')).toHaveAttribute('type', 'application/json')
+  expect(await page.locator('html').getAttribute('data-export-script')).toBeNull()
+
+  const blockedScript = page.waitForEvent('console', {
+    predicate: (message) => message.type() === 'error' && message.text().includes('Blocked script execution'),
+  })
+  await preview.locator('body').evaluate((body) => {
+    const script = body.ownerDocument.createElement('script')
+    script.textContent = 'parent.document.documentElement.dataset.exportScript = "executed"'
+    body.append(script)
+  })
+  await blockedScript
+  expect(await page.locator('html').getAttribute('data-export-script')).toBeNull()
+
+  await preview.locator('h1').dblclick()
+  expect(await preview.locator('body').evaluate(() => window.getSelection()?.toString().length)).toBeGreaterThan(0)
+  await page.mouse.wheel(0, 500)
+  await expect.poll(() => preview.locator('body').evaluate(() => window.scrollY)).toBeGreaterThan(0)
+  await preview.locator('h1').click()
+  await preview.locator('body').dispatchEvent('keydown', { key: 'Escape', isComposing: true })
+  await expect(dialog).toBeVisible()
+  await preview.locator('body').dispatchEvent('keydown', { key: 'Escape', keyCode: 229 })
+  await expect(dialog).toBeVisible()
+
+  await preview.getByRole('link', { name: 'Frame navigation', exact: true }).click()
+  await expect(preview.locator('h1')).toHaveText('Navigated preview')
+  expect(await frameElement.evaluate((frame) => (frame as HTMLIFrameElement).contentDocument)).toBeNull()
+  expect(errors).toEqual([])
+  await dialog.getByRole('button', { name: 'Close', exact: true }).click()
+  await expect(page.getByRole('button', { name: 'Export', exact: true })).toBeFocused()
 })

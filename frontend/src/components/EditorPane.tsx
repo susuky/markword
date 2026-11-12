@@ -90,7 +90,7 @@ function modeExtensions(mode: DocumentMode) {
 }
 
 export interface EditorHandle {
-  replaceFromPreview: (value: string, target: Element) => void
+  replaceFromPreview: (value: string, target: Element | null) => void
   undo: () => void
   redo: () => void
   scrollToLine: (line: number) => void
@@ -172,11 +172,11 @@ export const EditorPane = forwardRef<EditorHandle, EditorPaneProps>(function Edi
       if (!view) return
       const previous = view.state.doc.toString()
       if (value === previous) return
-      const isolate = visualEditTargetRef.current !== target
+      const isolation = target === null ? 'full' : visualEditTargetRef.current !== target ? 'before' : null
       visualEditTargetRef.current = target
       view.dispatch({
         changes: documentChange(previous, value),
-        annotations: [Transaction.userEvent.of('input.preview'), ...(isolate ? [isolateHistory.of('before')] : [])],
+        annotations: [Transaction.userEvent.of('input.preview'), ...(isolation ? [isolateHistory.of(isolation)] : [])],
       })
     },
     undo() { if (viewRef.current) undo(viewRef.current) },

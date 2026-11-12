@@ -8,24 +8,22 @@ export function Modal({ label, onClose, className = '', children, closeOnBackdro
   closeOnBackdrop?: boolean
 }) {
   const ref = useRef<HTMLDialogElement>(null)
+  const pressedBackdrop = useRef(false)
   useLayoutEffect(() => {
     const dialog = ref.current
-    const previousFocus = document.activeElement
     dialog?.showModal()
-    return () => {
-      dialog?.close()
-      if (previousFocus instanceof HTMLElement && previousFocus.isConnected) previousFocus.focus({ preventScroll: true })
-    }
+    return () => dialog?.close()
   }, [])
 
-  return <dialog ref={ref} className={`productivity-overlay ${className}`} aria-label={label} onCancel={onClose} onMouseDown={(event) => {
-    if (closeOnBackdrop && event.target === event.currentTarget) onClose()
-  }} onKeyDown={(event) => {
-    if (event.key !== 'Tab') return
-    const fields = Array.from(event.currentTarget.querySelectorAll<HTMLElement>('button, input, textarea, select, a[href], [tabindex]')).filter((element) => element.tabIndex >= 0 && !element.matches(':disabled') && element.getClientRects().length)
-    const target = event.shiftKey ? fields.at(-1) : fields[0]
-    if (fields.length && document.activeElement === (event.shiftKey ? fields[0] : fields.at(-1))) {
-      event.preventDefault(); target?.focus()
-    }
-  }}>{children}</dialog>
+  return <dialog ref={ref} className={`productivity-overlay ${className}`} aria-label={label} onCancel={(event) => {
+    event.preventDefault()
+    onClose()
+  }} onPointerDown={(event) => {
+    // The dialog fills the viewport; its child panels contain the visible content.
+    pressedBackdrop.current = event.target === event.currentTarget
+  }} onPointerUp={(event) => {
+    const dismiss = closeOnBackdrop && pressedBackdrop.current && event.target === event.currentTarget
+    pressedBackdrop.current = false
+    if (dismiss) onClose()
+  }} onPointerCancel={() => { pressedBackdrop.current = false }}>{children}</dialog>
 }

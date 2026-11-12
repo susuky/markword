@@ -479,6 +479,7 @@ const PreviewPaneComponent = forwardRef<PreviewHandle, PreviewPaneProps>(functio
     void getAssetsByPaths(paths).then((assets) => {
       if (cancelled) return
       const urls = new Map<string, string>()
+      const downloadUrls = new Map<string, string>()
       assets.forEach((asset, path) => {
         const url = URL.createObjectURL(asset.blob)
         objectUrls.push(url)
@@ -506,8 +507,18 @@ const PreviewPaneComponent = forwardRef<PreviewHandle, PreviewPaneProps>(functio
           element.addEventListener('error', invalidateGeometry, { once: true })
           mediaListeners.push({ element, event: settleEvent }, { element, event: 'error' })
           element.src = url
-        } else if (element instanceof HTMLAnchorElement) {
-          element.href = url
+        } else if (element instanceof HTMLAnchorElement && path) {
+          // A blob inherits this page's origin. Download HTML/SVG as binary so
+          // opening an attachment cannot execute it inside the workspace.
+          let downloadUrl = downloadUrls.get(path)
+          const asset = assets.get(path)!
+          if (!downloadUrl) {
+            downloadUrl = URL.createObjectURL(new Blob([asset.blob], { type: 'application/octet-stream' }))
+            objectUrls.push(downloadUrl)
+            downloadUrls.set(path, downloadUrl)
+          }
+          element.href = downloadUrl
+          element.download = asset.name
         }
         element.classList.remove('is-loading', 'is-missing')
         element.classList.add('is-resolved')
@@ -964,7 +975,7 @@ const PreviewPaneComponent = forwardRef<PreviewHandle, PreviewPaneProps>(functio
         {linkError && <p id="markdown-link-error" role="alert">{t('Enter a valid address, such as https://example.com.')}</p>}
         {linkOpenDeferred && <p role="alert">{t('The file has not been opened. Apply or cancel this edit, then open the file again.')}</p>}
       </form> : null}
-      <div className="preview-scroll" ref={scrollRef} onScroll={handleScroll} style={{ background: THEME_META[theme].background }}>
+      <div className="preview-scroll" ref={scrollRef} onScroll={handleScroll} style={{ '--preview-page': THEME_META[theme].background } as CSSProperties}>
         {markdown.trim() || editing ? (
           <article
             ref={contentRef}

@@ -62,6 +62,7 @@ export function CommandPalette({ open, actions, onClose }: CommandPaletteProps) 
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             onKeyDown={(event) => {
+              if (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return
               if (event.key === 'Escape') onClose()
               if (event.key === 'ArrowDown') {
                 event.preventDefault()

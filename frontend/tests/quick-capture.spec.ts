@@ -108,7 +108,7 @@ test('three captures remain in the open sidebar while switching, importing, and 
   await startAt(page, await seedDocument(request, `# ${names[0]}\n\nFirst capture.`))
   await page.locator('.documents-trigger').click()
   for (const name of names.slice(1)) {
-    await page.locator('.header-actions').getByRole('button', { name: 'New document', exact: true }).click()
+    await page.locator('.activity-rail').getByRole('button', { name: 'New document', exact: true }).click()
     await expect(library(page)).toBeVisible()
     await expect.poll(() => source(page)).toBe('')
     await page.locator('.cm-content').fill(`# ${name}\n\nKeep every capture.`)

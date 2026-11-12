@@ -49,7 +49,14 @@ export function ExportPreview({ markdown, mode, theme, title, style, onStyleChan
         <button type="button" className="toolbar-button" onClick={() => { onSettingsChange({ ...DEFAULT_EXPORT_SETTINGS }); onStyleChange('Classic') }}><RotateCcw size={16} />{t('Reset export settings')}</button>
       </section>
       <section className="export-preview-document" aria-label={t('Export appearance')}>
-        {error ? <div className="export-preview-message" role="alert"><p>{error}</p><button type="button" className="toolbar-button" onClick={() => setRetry((value) => value + 1)}>{t('Try again')}</button></div> : !snapshot ? <p className="export-preview-message" role="status">{t('Preparing export preview…')}</p> : <iframe title={t('Export appearance')} sandbox="" tabIndex={-1} srcDoc={html} />}
+        {error ? <div className="export-preview-message" role="alert"><p>{error}</p><button type="button" className="toolbar-button" onClick={() => setRetry((value) => value + 1)}>{t('Try again')}</button></div> : !snapshot ? <p className="export-preview-message" role="status">{t('Preparing export preview…')}</p> : <iframe title={t('Export appearance')} sandbox="allow-same-origin" tabIndex={-1} srcDoc={html} onLoad={(event) => {
+          // Keep scripts disabled while the parent handles keys in this document.
+          event.currentTarget.contentDocument?.addEventListener('keydown', (keyEvent) => {
+            if (keyEvent.key !== 'Escape' || keyEvent.defaultPrevented || keyEvent.isComposing || keyEvent.keyCode === 229) return
+            keyEvent.preventDefault()
+            onClose()
+          })
+        }} />}
       </section>
     </div>
     <footer className="export-preview-footer"><span>{t('Settings are remembered in this browser.')}</span><button type="button" className="toolbar-button export-trigger" onClick={onClose}>{t('Done')}</button></footer>
