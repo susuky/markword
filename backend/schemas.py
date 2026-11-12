@@ -3,8 +3,8 @@
 from pydantic import BaseModel, Field, field_validator
 from typing import Literal
 
-from themes import THEMES
-from export_styles import EXPORT_STYLES
+from backend.themes import THEMES
+from backend.export_styles import EXPORT_STYLES
 
 
 MAX_TEXT_LENGTH = 5_000_000

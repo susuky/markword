@@ -12,10 +12,8 @@ from PIL import Image
 import pytest
 from weasyprint.urls import FatalURLFetchingError
 
-import app
-import export_markdown
-import math_renderer
-from themes import THEMES
+from backend import app, export_markdown, math_renderer
+from backend.themes import THEMES
 
 
 def image_url(format='PNG', mime='image/png', size=(40, 20)):

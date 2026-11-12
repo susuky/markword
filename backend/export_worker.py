@@ -45,7 +45,7 @@ def main():
     # allocations instead; the parent also measures the entire job's RSS.
     resource.setrlimit(resource.RLIMIT_DATA, (memory, memory))
     resource.setrlimit(resource.RLIMIT_FSIZE, (128 * 1024 * 1024, 128 * 1024 * 1024))
-    from app import export_pdf, export_word
+    from backend.app import export_pdf, export_word
     from weasyprint.urls import FatalURLFetchingError
 
     payload = json.load(sys.stdin)

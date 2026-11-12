@@ -15,7 +15,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from starlette.background import BackgroundTask
 from weasyprint.urls import FatalURLFetchingError
 
-from app import (
+from backend.app import (
     _cleanup_old_exports,
     analyze_text,
 )
@@ -29,7 +29,7 @@ from backend.schemas import (
     ThemeResponse,
     ThemesResponse,
 )
-from themes import THEMES
+from backend.themes import THEMES
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent

@@ -5,10 +5,10 @@ from pathlib import Path
 
 from playwright.async_api import async_playwright
 
-from themes import Theme
+from backend.themes import Theme
 
 
-MERMAID_BUNDLE = Path(__file__).resolve().parent / 'frontend/node_modules/mermaid/dist/mermaid.min.js'
+MERMAID_BUNDLE = Path(__file__).resolve().parent.parent / 'frontend/node_modules/mermaid/dist/mermaid.min.js'
 
 
 async def _draw_diagram(browser, code: str, theme: Theme) -> bytes | None:

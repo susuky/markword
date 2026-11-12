@@ -50,7 +50,7 @@ sudo -u markword uv venv
 sudo -u markword uv pip install -r requirements.txt
 sudo /opt/markword/.venv/bin/python -m playwright install-deps chromium
 sudo -u markword /opt/markword/.venv/bin/python -m playwright install chromium
-sudo install -m 0644 markword.service.example /etc/systemd/system/markword.service
+sudo install -m 0644 deploy/markword.service.example /etc/systemd/system/markword.service
 ```
 
 若路徑或帳號不同，請先修改 `/etc/systemd/system/markword.service`，然後啟用服務：
@@ -79,10 +79,16 @@ sudo systemctl restart markword
 ### 專案結構
 
 ```text
-backend/             FastAPI API、統計與匯出邏輯
+backend/             FastAPI API、統計、主題與匯出邏輯
 frontend/            React + TypeScript + Vite 前端
 frontend/dist/       npm run build 的正式版產物（不提交 Git）
+tests/               Python 後端與實際匯出測試
+deploy/              systemd 部署範例
+docs/                開發、部署與審查文件
+assets/              README 使用的圖片
+data/                共用工作區資料庫（不提交 Git）
 exports/             匯出檔案（不提交 Git）
+app.py               既有 python app.py 啟動命令的相容入口
 Dockerfile           前後端 multi-stage production image
 docker-compose.yml   單機容器部署範例
 ```

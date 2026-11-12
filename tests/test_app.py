@@ -8,8 +8,8 @@ from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml.ns import qn
 
-from app import _annotate_html_lines, _cleanup_old_exports, _get_export_filename, _render_md_to_html_for_export, analyze_text, export_pdf, export_word, render_preview, EXPORT_DIR
-from themes import THEMES
+from backend.app import _annotate_html_lines, _cleanup_old_exports, _get_export_filename, _render_md_to_html_for_export, analyze_text, export_pdf, export_word, render_preview, EXPORT_DIR
+from backend.themes import THEMES
 
 
 class TestAnalyzeText(unittest.TestCase):
@@ -85,7 +85,7 @@ class TestExportFilename(unittest.TestCase):
 
     def test_long_unicode_titles_are_written_in_both_formats(self):
         for title in ['長' * 120, 'Report台灣🌟' * 60]:
-            with tempfile.TemporaryDirectory() as directory, patch('app.EXPORT_DIR', directory):
+            with tempfile.TemporaryDirectory() as directory, patch('backend.app.EXPORT_DIR', directory):
                 for exporter in [export_pdf, export_word]:
                     path = exporter(f'# {title}\n\n保留全文')
                     self.assertTrue(os.path.isfile(path))
@@ -173,7 +173,7 @@ class TestRenderPreview(unittest.TestCase):
 
     def test_table_export_preserves_line_breaks_pipes_and_alignment(self):
         markdown = '| 項目 | 備註 |\n| :--- | ---: |\n| A\\|B | 第一行<br>第二行 |'
-        with tempfile.TemporaryDirectory() as directory, patch('app.EXPORT_DIR', directory):
+        with tempfile.TemporaryDirectory() as directory, patch('backend.app.EXPORT_DIR', directory):
             document = Document(export_word(markdown))
         table = document.tables[0]
         self.assertEqual(table.cell(1, 0).text, 'A|B')
@@ -186,7 +186,7 @@ class TestRenderPreview(unittest.TestCase):
 
     def test_word_nested_lists_keep_text_order_indentation_and_numbering(self):
         markdown = '3. Parent\n    - Child **bold** *italic*\n        7. Grandchild\n        8. Next grandchild\n    - Next child\n4. Next parent\n\nParagraph\n\n1. Restart'
-        with tempfile.TemporaryDirectory() as directory, patch('app.EXPORT_DIR', directory):
+        with tempfile.TemporaryDirectory() as directory, patch('backend.app.EXPORT_DIR', directory):
             document = Document(export_word(markdown))
         paragraphs = document.paragraphs
         self.assertEqual([p.text.strip() for p in paragraphs], [

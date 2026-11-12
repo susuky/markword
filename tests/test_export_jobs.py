@@ -5,7 +5,7 @@ import sys
 from fastapi import HTTPException
 import pytest
 
-import app
+from backend import app
 from backend import export_jobs as jobs
 from backend.schemas import ExportRequest
 

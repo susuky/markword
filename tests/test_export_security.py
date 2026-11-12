@@ -12,10 +12,9 @@ from PIL import Image
 import pytest
 from weasyprint.urls import FatalURLFetchingError
 
-import app
-import mermaid_renderer
-from mermaid_renderer import render_mermaid_png
-from themes import THEMES
+from backend import app, mermaid_renderer
+from backend.mermaid_renderer import render_mermaid_png
+from backend.themes import THEMES
 
 
 def data_url(mime, content):

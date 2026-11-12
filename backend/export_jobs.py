@@ -12,7 +12,7 @@ import tempfile
 from fastapi import HTTPException
 from weasyprint.urls import FatalURLFetchingError
 
-import app as exporter
+from backend import app as exporter
 
 
 MAX_CONCURRENT_EXPORTS = max(1, int(os.getenv('MARKWORD_EXPORT_MAX_CONCURRENT', '2')))

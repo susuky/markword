@@ -20,8 +20,8 @@ from markdown_it import MarkdownIt
 from PIL import Image
 from weasyprint.urls import FatalURLFetchingError
 
-from math_renderer import render_math_pngs
-from mermaid_renderer import render_mermaid_png
+from backend.math_renderer import render_math_pngs
+from backend.mermaid_renderer import render_mermaid_png
 
 
 MAX_IMAGE_BYTES = 3 * 1024 * 1024

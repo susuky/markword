@@ -104,7 +104,7 @@ async def test_worker_applies_page_settings(client, monkeypatch, tmp_path, expor
     from docx import Document
     import re
     import zlib
-    import app as export_app
+    from backend import app as export_app
 
     monkeypatch.setattr(export_app, 'EXPORT_DIR', str(tmp_path))
     response = await client.post(f'/api/export/{export_format}', json={
@@ -164,7 +164,7 @@ async def test_pdf_export_download_and_cleanup(client, monkeypatch, tmp_path):
 
 @pytest.mark.anyio
 async def test_pdf_export_rejects_local_resources_without_disclosing_path(client, monkeypatch, tmp_path):
-    import app as export_app
+    from backend import app as export_app
 
     monkeypatch.setattr(export_app, "EXPORT_DIR", str(tmp_path))
     response = await client.post(
@@ -189,7 +189,7 @@ async def test_word_rejects_unsupported_layouts(client, style):
 async def test_real_export_job_downloads_and_cleans_up(client, monkeypatch, tmp_path, export_format):
     from io import BytesIO
     from docx import Document
-    import app as export_app
+    from backend import app as export_app
 
     monkeypatch.setattr(export_app, 'EXPORT_DIR', str(tmp_path))
     response = await client.post(f'/api/export/{export_format}', json={
@@ -214,7 +214,7 @@ async def test_worker_preserves_math_and_embedded_image(client, monkeypatch, tmp
     from io import BytesIO
     from docx import Document
     from PIL import Image
-    import app as export_app
+    from backend import app as export_app
 
     monkeypatch.setattr(export_app, 'EXPORT_DIR', str(tmp_path))
     image = BytesIO()

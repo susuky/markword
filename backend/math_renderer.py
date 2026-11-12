@@ -8,7 +8,7 @@ import re
 from playwright.async_api import async_playwright
 
 
-KATEX_DIST = Path(__file__).resolve().parent / 'frontend/node_modules/katex/dist'
+KATEX_DIST = Path(__file__).resolve().parent.parent / 'frontend/node_modules/katex/dist'
 MAX_FORMULAS = 200
 MAX_FORMULA_CHARS = 10_000
 
